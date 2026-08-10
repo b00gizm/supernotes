@@ -86,10 +86,12 @@ export function useNotes(options: UseNotesOptions = {}) {
       }
     }
   };
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
   useEffect(() => {
     mountedRef.current = true;
-    void refresh();
+    void refreshRef.current();
     return () => {
       mountedRef.current = false;
       saveGeneration.current += 1;
