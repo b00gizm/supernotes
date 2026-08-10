@@ -137,10 +137,10 @@ function IconWaveform() {
   return (
     <svg className="waveform-icon" viewBox="0 0 12 12" aria-hidden="true">
       <path
-        d="M1.5 6v0M3.2 3.8v4.4M4.9 2.4v7.2M6.6 4.2v3.6M8.3 3.1v5.8M10 5.2v1.6"
+        d="M1.25 5v2M3.1 3.25v5.5M4.95 1.75v8.5M6.8 4v4M8.65 2.75v6.5M10.5 4.75v2.5"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.2"
+        strokeWidth="1.35"
         strokeLinecap="round"
       />
     </svg>

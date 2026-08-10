@@ -297,9 +297,9 @@ button {
 }
 
 .waveform-icon {
-  width: 0.75rem;
-  height: 0.75rem;
-  color: var(--text-tertiary);
+  width: 0.85rem;
+  height: 0.85rem;
+  color: var(--text-secondary);
   flex: 0 0 auto;
 }
 
