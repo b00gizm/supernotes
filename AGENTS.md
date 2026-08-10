@@ -4,7 +4,7 @@ Minimalist note-taking and productivity app: notes, daily notes, tasks, calendar
 
 ## Current state
 
-This repository is early / greenfield. Prefer small, reversible diffs. Do not invent a large app scaffold unless the task explicitly asks for it.
+Tauri 2 + React + TypeScript scaffold is in place (`src/` frontend, `src-tauri/` backend). Prefer small, reversible diffs on top of this skeleton.
 
 ## Working style
 
@@ -59,4 +59,15 @@ Common gitmoji map: `✨ feat`, `🐛 fix`, `📝 docs`, `💄 style`, `♻️ r
 - Cloud agent install config lives in `.cursor/environment.json`.
 - Keep `install` idempotent and free of long-running servers.
 - Put per-boot services in `start` or `terminals` once the app has a real runtime.
-- Update this section when real install/dev/test commands exist.
+
+### Common commands
+
+```bash
+npm install
+npm run lint
+npm run typecheck
+npm test
+npm run build
+cd src-tauri && cargo test
+npm run tauri dev   # needs display + Tauri OS deps
+```
