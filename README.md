@@ -54,4 +54,5 @@ npm run tauri build
 | -------------------------- | ----------------------------------- |
 | `src/`                     | React frontend                      |
 | `src-tauri/`               | Rust / Tauri backend                |
+| `docs/data-model.md`       | SQLite schema and storage notes     |
 | `.github/workflows/ci.yml` | Lint, typecheck, tests, Tauri build |
