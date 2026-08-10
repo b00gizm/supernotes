@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { NotesApi } from "./api";
 import { notesApi as defaultNotesApi } from "./api";
-import type { Note } from "./types";
+import type { CreateNoteInput, Note } from "./types";
 
 export const AUTOSAVE_DEBOUNCE_MS = 500;
 
@@ -10,6 +10,8 @@ export type NotesSaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 export type UseNotesOptions = {
   api?: NotesApi;
   debounceMs?: number;
+  /** When false, load without selecting a note (shell picks Daily / overview). */
+  autoSelect?: boolean;
 };
 
 function byUpdatedAtDesc(a: Note, b: Note): number {
@@ -19,8 +21,11 @@ function byUpdatedAtDesc(a: Note, b: Note): number {
 export function useNotes(options: UseNotesOptions = {}) {
   const api = options.api ?? defaultNotesApi;
   const debounceMs = options.debounceMs ?? AUTOSAVE_DEBOUNCE_MS;
+  const autoSelect = options.autoSelect ?? true;
   const apiRef = useRef(api);
+  const autoSelectRef = useRef(autoSelect);
   apiRef.current = api;
+  autoSelectRef.current = autoSelect;
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -70,9 +75,9 @@ export function useNotes(options: UseNotesOptions = {}) {
       const currentId = selectedIdRef.current;
       if (currentId) {
         if (!listed.some((note) => note.id === currentId)) {
-          applySelection(listed[0] ?? null);
+          applySelection(autoSelectRef.current ? (listed[0] ?? null) : null);
         }
-      } else if (listed[0]) {
+      } else if (autoSelectRef.current && listed[0]) {
         applySelection(listed[0]);
       }
     } catch (err) {
@@ -194,7 +199,10 @@ export function useNotes(options: UseNotesOptions = {}) {
     );
   };
 
-  const createNote = async (title = "Untitled") => {
+  const createNote = async (
+    title = "Untitled",
+    input: Omit<CreateNoteInput, "title" | "body_markdown"> = {},
+  ) => {
     setError(null);
     try {
       if (selectedIdRef.current && statusRef.current === "dirty") {
@@ -203,6 +211,7 @@ export function useNotes(options: UseNotesOptions = {}) {
       const created = await apiRef.current.createNote({
         title,
         body_markdown: "",
+        ...input,
       });
       setNotes((prev) => [created, ...prev].sort(byUpdatedAtDesc));
       saveGeneration.current += 1;
