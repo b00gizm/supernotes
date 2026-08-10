@@ -58,7 +58,9 @@ export function useNotes(options: UseNotesOptions = {}) {
   const refresh = async () => {
     setLoading(true);
     try {
-      const listed = [...(await apiRef.current.listNotes())].sort(byUpdatedAtDesc);
+      const listed = [...(await apiRef.current.listNotes())].sort(
+        byUpdatedAtDesc,
+      );
       if (!mountedRef.current) {
         return;
       }
@@ -117,16 +119,18 @@ export function useNotes(options: UseNotesOptions = {}) {
     setError(null);
 
     setNotes((prev) =>
-      [...prev.map((note) =>
-        note.id === id
-          ? {
-              ...note,
-              title,
-              body_markdown: body,
-              updated_at: new Date().toISOString(),
-            }
-          : note,
-      )].sort(byUpdatedAtDesc),
+      [
+        ...prev.map((note) =>
+          note.id === id
+            ? {
+                ...note,
+                title,
+                body_markdown: body,
+                updated_at: new Date().toISOString(),
+              }
+            : note,
+        ),
+      ].sort(byUpdatedAtDesc),
     );
 
     try {
