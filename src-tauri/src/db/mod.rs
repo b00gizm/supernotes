@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rusqlite::Connection;
-use serde::Serialize;
 
 pub use error::{DbError, DbResult};
 pub use migrate::{current_version, migrate};
@@ -20,13 +19,8 @@ const DB_FILE_NAME: &str = "supernotes.sqlite3";
 
 pub struct Db {
     path: PathBuf,
+    // ponytail: process-wide mutex; upgrade to a pool if concurrent writers hurt.
     conn: Mutex<Connection>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct DbStatus {
-    pub path: String,
-    pub schema_version: i64,
 }
 
 impl Db {
@@ -64,15 +58,6 @@ impl Db {
         let conn = self.conn.lock().expect("db mutex poisoned");
         f(&conn)
     }
-
-    pub fn status(&self) -> DbResult<DbStatus> {
-        self.with_conn(|conn| {
-            Ok(DbStatus {
-                path: self.path.display().to_string(),
-                schema_version: current_version(conn)?,
-            })
-        })
-    }
 }
 
 #[cfg(test)]
@@ -89,14 +74,14 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("supernotes-db-test-{nanos}"));
         let db = Db::open(&dir).unwrap();
         assert!(dir.join(DB_FILE_NAME).exists());
-
-        let status = db.status().unwrap();
-        assert_eq!(status.schema_version, 1);
-        assert!(status.path.ends_with(DB_FILE_NAME));
         assert_eq!(db.path(), dir.join(DB_FILE_NAME).as_path());
+        assert_eq!(
+            db.with_conn(current_version).unwrap(),
+            1
+        );
 
         let memory = Db::open_in_memory().unwrap();
-        assert_eq!(memory.status().unwrap().schema_version, 1);
+        assert_eq!(memory.with_conn(current_version).unwrap(), 1);
 
         let _ = fs::remove_dir_all(dir);
     }

@@ -3,7 +3,6 @@ import type { CreateNoteInput, Note, UpdateNoteInput } from "./types";
 
 export type NotesApi = {
   listNotes: () => Promise<Note[]>;
-  getNote: (id: string) => Promise<Note>;
   createNote: (input: CreateNoteInput) => Promise<Note>;
   updateNote: (input: UpdateNoteInput) => Promise<Note>;
   deleteNote: (id: string) => Promise<void>;
@@ -11,7 +10,6 @@ export type NotesApi = {
 
 export const notesApi: NotesApi = {
   listNotes: () => invoke<Note[]>("list_notes"),
-  getNote: (id) => invoke<Note>("get_note", { id }),
   createNote: (input) => invoke<Note>("create_note", { input }),
   updateNote: (input) => invoke<Note>("update_note", { input }),
   deleteNote: async (id) => {

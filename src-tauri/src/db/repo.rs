@@ -25,7 +25,7 @@ impl<'a> Repository<'a> {
         note_type: NoteType,
         pinned: bool,
     ) -> DbResult<Note> {
-        let now = utc_now();
+        let now = utc_now(self.conn)?;
         let note = Note {
             id: Uuid::new_v4().to_string(),
             title: title.to_string(),
@@ -81,7 +81,7 @@ impl<'a> Repository<'a> {
         body_markdown: &str,
         pinned: bool,
     ) -> DbResult<Note> {
-        let updated_at = utc_now();
+        let updated_at = utc_now(self.conn)?;
         let changed = self.conn.execute(
             "UPDATE notes
              SET title = ?1, body_markdown = ?2, pinned = ?3, updated_at = ?4
@@ -110,7 +110,7 @@ impl<'a> Repository<'a> {
         let link = Link {
             source_note_id: source_note_id.to_string(),
             target_note_id: target_note_id.to_string(),
-            created_at: utc_now(),
+            created_at: utc_now(self.conn)?,
         };
         self.conn.execute(
             "INSERT INTO links (source_note_id, target_note_id, created_at)
@@ -164,7 +164,7 @@ impl<'a> Repository<'a> {
         due_date: Option<&str>,
         priority: Option<TaskPriority>,
     ) -> DbResult<Task> {
-        let now = utc_now();
+        let now = utc_now(self.conn)?;
         let completed_at = matches!(state, TaskState::Done | TaskState::Cancelled).then(|| now.clone());
         let task = Task {
             id: Uuid::new_v4().to_string(),
@@ -228,7 +228,7 @@ impl<'a> Repository<'a> {
         priority: Option<TaskPriority>,
     ) -> DbResult<Task> {
         let existing = self.get_task(id)?;
-        let updated_at = utc_now();
+        let updated_at = utc_now(self.conn)?;
         let completed_at = match state {
             TaskState::Done | TaskState::Cancelled => {
                 existing.completed_at.or_else(|| Some(updated_at.clone()))
@@ -282,7 +282,7 @@ impl<'a> Repository<'a> {
             start: start.to_string(),
             end: end.to_string(),
             task_id: task_id.map(str::to_string),
-            created_at: utc_now(),
+            created_at: utc_now(self.conn)?,
         };
         self.conn.execute(
             "INSERT INTO calendar_events (id, title, start, \"end\", task_id, created_at)

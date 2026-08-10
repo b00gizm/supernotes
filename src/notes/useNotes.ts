@@ -12,48 +12,11 @@ export type UseNotesOptions = {
   debounceMs?: number;
 };
 
-export type UseNotesResult = {
-  notes: Note[];
-  selectedId: string | null;
-  selectedNote: Note | null;
-  titleDraft: string;
-  bodyDraft: string;
-  status: NotesSaveStatus;
-  error: string | null;
-  loading: boolean;
-  selectNote: (id: string | null) => void;
-  setTitleDraft: (title: string) => void;
-  setBodyDraft: (body: string) => void;
-  createNote: (title?: string) => Promise<Note | null>;
-  deleteSelected: () => Promise<void>;
-  refresh: () => Promise<void>;
-};
-
-function sortByUpdatedAtDesc(notes: Note[]): Note[] {
-  return [...notes].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+function byUpdatedAtDesc(a: Note, b: Note): number {
+  return b.updated_at.localeCompare(a.updated_at);
 }
 
-function applySelection(
-  note: Note | null,
-  setSelectedId: (id: string | null) => void,
-  setTitleDraftState: (title: string) => void,
-  setBodyDraftState: (body: string) => void,
-  setStatus: (status: NotesSaveStatus) => void,
-) {
-  if (!note) {
-    setSelectedId(null);
-    setTitleDraftState("");
-    setBodyDraftState("");
-    setStatus("idle");
-    return;
-  }
-  setSelectedId(note.id);
-  setTitleDraftState(note.title);
-  setBodyDraftState(note.body_markdown);
-  setStatus("idle");
-}
-
-export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
+export function useNotes(options: UseNotesOptions = {}) {
   const api = options.api ?? defaultNotesApi;
   const debounceMs = options.debounceMs ?? AUTOSAVE_DEBOUNCE_MS;
   const apiRef = useRef(api);
@@ -85,10 +48,19 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
     ? (notes.find((note) => note.id === selectedId) ?? null)
     : null;
 
+  const applySelection = (note: Note | null) => {
+    setSelectedId(note?.id ?? null);
+    setTitleDraftState(note?.title ?? "");
+    setBodyDraftState(note?.body_markdown ?? "");
+    setStatus("idle");
+  };
+
   const refresh = async () => {
     setLoading(true);
     try {
-      const listed = sortByUpdatedAtDesc(await apiRef.current.listNotes());
+      const listed = [...(await apiRef.current.listNotes())].sort(
+        byUpdatedAtDesc,
+      );
       if (!mountedRef.current) {
         return;
       }
@@ -97,24 +69,11 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
 
       const currentId = selectedIdRef.current;
       if (currentId) {
-        const current = listed.find((note) => note.id === currentId) ?? null;
-        if (!current) {
-          applySelection(
-            listed[0] ?? null,
-            setSelectedId,
-            setTitleDraftState,
-            setBodyDraftState,
-            setStatus,
-          );
+        if (!listed.some((note) => note.id === currentId)) {
+          applySelection(listed[0] ?? null);
         }
       } else if (listed[0]) {
-        applySelection(
-          listed[0],
-          setSelectedId,
-          setTitleDraftState,
-          setBodyDraftState,
-          setStatus,
-        );
+        applySelection(listed[0]);
       }
     } catch (err) {
       if (!mountedRef.current) {
@@ -127,10 +86,12 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
       }
     }
   };
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
   useEffect(() => {
     mountedRef.current = true;
-    void refresh();
+    void refreshRef.current();
     return () => {
       mountedRef.current = false;
       saveGeneration.current += 1;
@@ -160,8 +121,8 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
     setError(null);
 
     setNotes((prev) =>
-      sortByUpdatedAtDesc(
-        prev.map((note) =>
+      [
+        ...prev.map((note) =>
           note.id === id
             ? {
                 ...note,
@@ -171,7 +132,7 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
               }
             : note,
         ),
-      ),
+      ].sort(byUpdatedAtDesc),
     );
 
     try {
@@ -185,8 +146,8 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
         return;
       }
       setNotes((prev) =>
-        sortByUpdatedAtDesc(
-          prev.map((note) => (note.id === id ? saved : note)),
+        [...prev.map((note) => (note.id === id ? saved : note))].sort(
+          byUpdatedAtDesc,
         ),
       );
       setStatus("saved");
@@ -228,15 +189,8 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
       void persistDraftRef.current();
     }
     saveGeneration.current += 1;
-    const note = id
-      ? (notesRef.current.find((item) => item.id === id) ?? null)
-      : null;
     applySelection(
-      note,
-      setSelectedId,
-      setTitleDraftState,
-      setBodyDraftState,
-      setStatus,
+      id ? (notesRef.current.find((item) => item.id === id) ?? null) : null,
     );
   };
 
@@ -250,15 +204,9 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
         title,
         body_markdown: "",
       });
-      setNotes((prev) => sortByUpdatedAtDesc([created, ...prev]));
+      setNotes((prev) => [created, ...prev].sort(byUpdatedAtDesc));
       saveGeneration.current += 1;
-      applySelection(
-        created,
-        setSelectedId,
-        setTitleDraftState,
-        setBodyDraftState,
-        setStatus,
-      );
+      applySelection(created);
       return created;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -276,26 +224,13 @@ export function useNotes(options: UseNotesOptions = {}): UseNotesResult {
     const previous = notesRef.current;
     const remaining = previous.filter((note) => note.id !== id);
     setNotes(remaining);
-    applySelection(
-      remaining[0] ?? null,
-      setSelectedId,
-      setTitleDraftState,
-      setBodyDraftState,
-      setStatus,
-    );
+    applySelection(remaining[0] ?? null);
     try {
       await apiRef.current.deleteNote(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setNotes(previous);
-      const restored = previous.find((note) => note.id === id) ?? null;
-      applySelection(
-        restored,
-        setSelectedId,
-        setTitleDraftState,
-        setBodyDraftState,
-        setStatus,
-      );
+      applySelection(previous.find((note) => note.id === id) ?? null);
     }
   };
 

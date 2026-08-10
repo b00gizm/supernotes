@@ -1,14 +1,9 @@
 pub mod db;
 mod notes;
 
-use db::{Db, DbStatus};
+use db::Db;
 use notes::{create_note, delete_note, get_note, list_notes, update_note};
 use tauri::Manager;
-
-#[tauri::command]
-fn db_status(state: tauri::State<'_, Db>) -> Result<DbStatus, String> {
-    state.status().map_err(|err| err.to_string())
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,7 +19,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            db_status,
             create_note,
             get_note,
             list_notes,

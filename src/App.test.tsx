@@ -15,16 +15,12 @@ vi.mock("./notes/api", async () => {
   return {
     ...actual,
     notesApi: {
-      listNotes: (...args: Parameters<NotesApi["listNotes"]>) =>
-        apiRef.current.listNotes(...args),
-      getNote: (...args: Parameters<NotesApi["getNote"]>) =>
-        apiRef.current.getNote(...args),
-      createNote: (...args: Parameters<NotesApi["createNote"]>) =>
-        apiRef.current.createNote(...args),
-      updateNote: (...args: Parameters<NotesApi["updateNote"]>) =>
-        apiRef.current.updateNote(...args),
-      deleteNote: (...args: Parameters<NotesApi["deleteNote"]>) =>
-        apiRef.current.deleteNote(...args),
+      listNotes: () => apiRef.current.listNotes(),
+      createNote: (input: Parameters<NotesApi["createNote"]>[0]) =>
+        apiRef.current.createNote(input),
+      updateNote: (input: Parameters<NotesApi["updateNote"]>[0]) =>
+        apiRef.current.updateNote(input),
+      deleteNote: (id: string) => apiRef.current.deleteNote(id),
     },
   };
 });

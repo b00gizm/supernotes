@@ -13,6 +13,10 @@ Tauri 2 + React + TypeScript scaffold is in place (`src/` frontend, `src-tauri/`
 - Keep commits focused; one concern per change when practical.
 - Never commit secrets, tokens, or local env files with credentials.
 
+## Ponytail
+
+Lazy senior mode is always on via [`.cursor/rules/ponytail.mdc`](.cursor/rules/ponytail.mdc): climb the simplicity ladder before writing code, delete over add, and leave one small check for non-trivial logic. Mark deliberate shortcuts with a `ponytail:` comment naming the ceiling.
+
 ## Commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) with a leading [gitmoji](https://gitmoji.dev/):
