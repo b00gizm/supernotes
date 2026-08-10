@@ -40,7 +40,7 @@ pub fn migrate(conn: &Connection) -> DbResult<i64> {
         tx.execute_batch(migration.sql)?;
         tx.execute(
             "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?1, ?2, ?3)",
-            rusqlite::params![migration.version, migration.name, utc_now()],
+            rusqlite::params![migration.version, migration.name, utc_now(&tx)?],
         )?;
         tx.commit()?;
         current = migration.version;
