@@ -17,6 +17,7 @@ vi.mock("./notes/api", async () => {
     ...actual,
     notesApi: {
       listNotes: () => apiRef.current.listNotes(),
+      searchNotes: (query: string) => apiRef.current.searchNotes(query),
       createNote: (input: Parameters<NotesApi["createNote"]>[0]) =>
         apiRef.current.createNote(input),
       updateNote: (input: Parameters<NotesApi["updateNote"]>[0]) =>
@@ -127,5 +128,53 @@ describe("App shell", () => {
     expect(screen.getByLabelText("Supernotes")).toHaveClass(
       "is-sidebar-collapsed",
     );
+  });
+
+  it("opens title search with ⌘K, filters, and creates from the always-on row", async () => {
+    const user = userEvent.setup();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "n1",
+        title: "Pricing sync",
+        body_markdown: "",
+        note_type: "regular",
+        pinned: false,
+        created_at: "2026-08-09T10:00:00.000Z",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      },
+      {
+        id: "n2",
+        title: "Weekly review",
+        body_markdown: "",
+        note_type: "regular",
+        pinned: false,
+        created_at: "2026-08-08T10:00:00.000Z",
+        updated_at: "2026-08-08T10:00:00.000Z",
+      },
+    ]);
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    await user.keyboard("{Control>}k{/Control}");
+    const search = await screen.findByLabelText("Search notes");
+    expect(
+      screen.getByRole("option", { name: "Create note 'Untitled'" }),
+    ).toBeInTheDocument();
+
+    await user.type(search, "pricing");
+    expect(
+      await screen.findByRole("option", { name: "Pricing sync" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Weekly review" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Create note 'pricing'" }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(await screen.findByLabelText("Note title")).toHaveValue("pricing");
+    expect(screen.queryByLabelText("Search notes")).not.toBeInTheDocument();
   });
 });

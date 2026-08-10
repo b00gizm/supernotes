@@ -75,6 +75,13 @@ pub fn delete_note(state: State<'_, Db>, id: String) -> Result<(), String> {
         .map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+pub fn search_notes(state: State<'_, Db>, query: String) -> Result<Vec<Note>, String> {
+    state
+        .with_conn(|conn| Repository::new(conn).search_notes_by_title(&query))
+        .map_err(|err| err.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

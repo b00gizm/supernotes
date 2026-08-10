@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { SearchPalette } from "./SearchPalette";
+import { notesApi } from "./notes/api";
 import {
   formatDailyTitle,
   formatRelativeUpdated,
@@ -222,11 +224,30 @@ function App() {
   const [surface, setSurface] = useState<Surface>({ kind: "daily" });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [recentOpen, setRecentOpen] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
   const dailyOpening = useRef(false);
   const notesRef = useRef(notes);
   const selectedIdRef = useRef(selectedId);
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key !== "k" && key !== "o") {
+        return;
+      }
+      event.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   const recentNotes = notes.filter((note) => note.note_type !== "daily");
 
@@ -274,6 +295,23 @@ function App() {
   const openRecent = (note: Note) => {
     setSurface({ kind: "note", id: note.id });
     selectNote(note.id);
+  };
+
+  const openFromSearch = (note: Note) => {
+    if (note.note_type === "daily") {
+      setSurface({ kind: "daily" });
+    } else {
+      setSurface({ kind: "note", id: note.id });
+    }
+    selectNote(note.id);
+  };
+
+  const createFromSearch = (title: string) => {
+    void createNote(title).then((created) => {
+      if (created) {
+        setSurface({ kind: "note", id: created.id });
+      }
+    });
   };
 
   const activeNav: NavId | null =
@@ -395,7 +433,14 @@ function App() {
         </div>
 
         <div className="sidebar-footer">
-          <button type="button" className="search-hint" aria-label="Search">
+          <button
+            type="button"
+            className="search-hint"
+            aria-label="Search"
+            onClick={() => {
+              setSearchOpen(true);
+            }}
+          >
             <IconSearch />
             <span className="search-hint-label">Search</span>
             <kbd className="search-chip">⌘K</kbd>
@@ -492,6 +537,16 @@ function App() {
           </p>
         ) : null}
       </main>
+
+      <SearchPalette
+        open={searchOpen}
+        onClose={() => {
+          setSearchOpen(false);
+        }}
+        searchNotes={notesApi.searchNotes}
+        onOpenNote={openFromSearch}
+        onCreateNote={createFromSearch}
+      />
     </div>
   );
 }
