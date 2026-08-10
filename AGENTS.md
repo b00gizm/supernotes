@@ -13,6 +13,36 @@ This repository is early / greenfield. Prefer small, reversible diffs. Do not in
 - Keep commits focused; one concern per change when practical.
 - Never commit secrets, tokens, or local env files with credentials.
 
+## Commits
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) with a leading [gitmoji](https://gitmoji.dev/):
+
+```text
+<gitmoji> <type>(optional-scope): <short description>
+
+[optional body]
+```
+
+- `type`: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+- Put the gitmoji first, then the conventional type. Description is imperative mood, lowercase, no trailing period.
+- One logical change per commit. Use the body only when the why is not obvious from the subject.
+
+Examples:
+
+```text
+✨ feat(notes): add daily note template picker
+
+🐛 fix(tasks): prevent duplicate due-date reminders
+
+📝 docs: document agent commit conventions
+
+♻️ refactor(calendar): extract week-grid layout helper
+
+🔧 chore: ignore local env and build artifacts
+```
+
+Common gitmoji map: `✨ feat`, `🐛 fix`, `📝 docs`, `💄 style`, `♻️ refactor`, `⚡️ perf`, `✅ test`, `📦 build`, `👷 ci`, `🔧 chore`, `⏪️ revert`.
+
 ## Product principles
 
 - Minimalist UX: one clear job per screen/section.

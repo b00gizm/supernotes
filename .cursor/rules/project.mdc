@@ -10,3 +10,4 @@ alwaysApply: true
 - Match existing code style and structure once they exist; until then, keep new code boring and explicit.
 - No secrets in the tree. Use environment secrets / local env files that stay gitignored.
 - Prefer one focused PR-sized concern over drive-by refactors.
+- Commits: Conventional Commits with a leading gitmoji, e.g. `✨ feat(scope): add thing`. See `AGENTS.md`.
