@@ -1,0 +1,11 @@
+# Keep agent/index context focused once build artifacts appear
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+coverage/
+*.log
+.env
+.env.*
+!.env.example

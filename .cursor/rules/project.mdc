@@ -1,0 +1,12 @@
+---
+description: Core Supernotes project guidance for agents
+alwaysApply: true
+---
+
+# Supernotes
+
+- Product: minimalist notes, daily notes, tasks, calendar, meeting transcription, and an AI agent surface.
+- Repo is greenfield — ship the smallest change that satisfies the request; do not scaffold an entire app unprompted.
+- Match existing code style and structure once they exist; until then, keep new code boring and explicit.
+- No secrets in the tree. Use environment secrets / local env files that stay gitignored.
+- Prefer one focused PR-sized concern over drive-by refactors.
