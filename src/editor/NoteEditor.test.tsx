@@ -214,4 +214,20 @@ describe("note editor input rules", () => {
     expect(markdownOf(editor)).toContain("![chart]()");
     expect(markdownOf(editor)).toContain("![alt](images/x.png)");
   });
+
+  it("types ![chart]() into an empty image drop slot", () => {
+    editor = createEditor();
+    typeText(editor, "![chart]()");
+    expect(editor.getHTML()).toMatch(/<img[^>]*alt="chart"/);
+    expect(markdownOf(editor)).toContain("![chart]()");
+  });
+
+  it("types [name](url) into a link mark", () => {
+    editor = createEditor();
+    typeText(editor, "[docs](https://example.com)");
+    expect(editor.getHTML()).toMatch(
+      /<a[^>]+href="https:\/\/example\.com"[^>]*>docs<\/a>/,
+    );
+    expect(markdownOf(editor)).toContain("[docs](https://example.com)");
+  });
 });

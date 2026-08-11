@@ -747,7 +747,9 @@ button {
 }
 
 .note-editor .tiptap a.note-link,
-.note-editor .tiptap a {
+.note-editor .tiptap a,
+.note-editor-content a.note-link,
+.note-editor-content a {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 0.15em;

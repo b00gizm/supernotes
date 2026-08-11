@@ -5,7 +5,7 @@ import { Link } from "@tiptap/extension-link";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TableKit } from "@tiptap/extension-table";
-import type { Extensions } from "@tiptap/core";
+import { nodeInputRule, type Extensions } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { common, createLowlight } from "lowlight";
@@ -13,6 +13,10 @@ import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
 
 const lowlight = createLowlight(common);
+
+/** Allow empty src so `![chart]()` becomes a drop slot (TipTap default needs \\S+). */
+const imageInputRegex =
+  /(?:^|\s)(!\[([^\]]*)\]\(([^)\s]*)(?:(?:\s+)["']([^"']+)["'])?\))$/;
 
 type MarkdownItLike = {
   inline: {
@@ -117,9 +121,11 @@ const NoteLink = Link.extend({
   openOnClick: false,
   markdownLinks: true,
   autolink: true,
+  defaultProtocol: "https",
   HTMLAttributes: {
     class: "note-link",
     rel: "noopener noreferrer nofollow",
+    target: "_blank",
   },
 });
 
@@ -127,6 +133,18 @@ const NoteLink = Link.extend({
 const NoteImage = Image.extend({
   addNodeView() {
     return ReactNodeViewRenderer(ImageView);
+  },
+  addInputRules() {
+    return [
+      nodeInputRule({
+        find: imageInputRegex,
+        type: this.type,
+        getAttributes: (match) => {
+          const [, , alt, src, title] = match;
+          return { src: src ?? "", alt: alt ?? "", title };
+        },
+      }),
+    ];
   },
   addKeyboardShortcuts() {
     return {
