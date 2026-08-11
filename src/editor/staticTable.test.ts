@@ -69,7 +69,7 @@ describe("static markdown table", () => {
     expect(ed.getText()).toContain("after");
   });
 
-  it("Tab at the last cell does not add a row", () => {
+  it("Tab at the last cell adds a row", () => {
     const ed = create(DOC);
     let lastCellPos = -1;
     ed.state.doc.descendants((node, pos) => {
@@ -88,6 +88,6 @@ describe("static markdown table", () => {
     );
     expect(handled).toBe(true);
     const rowsAfter = ed.getHTML().match(/<tr/g)?.length ?? 0;
-    expect(rowsAfter).toBe(rowsBefore);
+    expect(rowsAfter).toBe(rowsBefore + 1);
   });
 });

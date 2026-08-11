@@ -26,7 +26,7 @@ function isTableNodeSelection(state: EditorState): boolean {
   );
 }
 
-/** First Backspace/Delete after a table selects it; second deletes. Tab never adds rows. */
+/** First Backspace/Delete after a table selects it; second deletes. */
 export function handleStaticTableBackspace(editor: Editor): boolean {
   if (isTableNodeSelection(editor.state)) {
     return editor.commands.deleteSelection();
@@ -44,30 +44,16 @@ export function handleStaticTableDelete(editor: Editor): boolean {
 }
 
 /**
- * Markdown tables stay fixed-size: no Tab-spawned rows, select-then-delete
- * with Backspace on the line after the table.
+ * Markdown tables: TipTap Tab still adds a row at the end; Backspace/Delete on
+ * the line after selects then deletes the whole table (no row/col chrome).
  */
 export const StaticMarkdownTable = Extension.create({
   name: "staticMarkdownTable",
-  // Beat TipTap Table's Tab → addRowAfter and join-on-Backspace.
+  // Beat TipTap Table / default join-on-Backspace when after a table.
   priority: 1000,
 
   addKeyboardShortcuts() {
     return {
-      Tab: () => {
-        if (!this.editor.isActive("table")) {
-          return false;
-        }
-        this.editor.commands.goToNextCell();
-        return true;
-      },
-      "Shift-Tab": () => {
-        if (!this.editor.isActive("table")) {
-          return false;
-        }
-        this.editor.commands.goToPreviousCell();
-        return true;
-      },
       Backspace: () => handleStaticTableBackspace(this.editor),
       "Mod-Backspace": () => handleStaticTableBackspace(this.editor),
       Delete: () => handleStaticTableDelete(this.editor),
