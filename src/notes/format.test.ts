@@ -1,5 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { formatDailyTitle, formatRelativeUpdated, noteSnippet } from "./format";
+import {
+  formatDailyTitle,
+  formatOverviewWhen,
+  formatRelativeUpdated,
+  groupNotesForOverview,
+  noteSnippet,
+  parseSnippetParts,
+} from "./format";
+import type { Note } from "./types";
+
+function note(overrides: Partial<Note>): Note {
+  return {
+    id: "n",
+    title: "Note",
+    body_markdown: "",
+    note_type: "regular",
+    pinned: false,
+    created_at: "2026-08-10T10:00:00.000Z",
+    updated_at: "2026-08-10T10:00:00.000Z",
+    ...overrides,
+  };
+}
 
 describe("formatRelativeUpdated", () => {
   const now = Date.parse("2026-08-10T18:00:00.000Z");
@@ -29,6 +50,98 @@ describe("formatDailyTitle", () => {
   it("formats like the daily note mockup", () => {
     expect(formatDailyTitle(new Date("2026-08-10T12:00:00.000Z"))).toBe(
       "Monday, Aug 10",
+    );
+  });
+});
+
+describe("groupNotesForOverview", () => {
+  // Local calendar days relative to this "now".
+  const now = new Date(2026, 7, 10, 18, 0, 0, 0).getTime();
+
+  it("puts pinned notes first and buckets the rest by local day", () => {
+    const groups = groupNotesForOverview(
+      [
+        note({
+          id: "daily",
+          note_type: "daily",
+          updated_at: new Date(2026, 7, 10, 17, 0).toISOString(),
+        }),
+        note({
+          id: "pin-old",
+          title: "Pinned old",
+          pinned: true,
+          updated_at: new Date(2026, 6, 1, 12, 0).toISOString(),
+        }),
+        note({
+          id: "today",
+          title: "Today note",
+          updated_at: new Date(2026, 7, 10, 9, 40).toISOString(),
+        }),
+        note({
+          id: "yesterday",
+          title: "Yesterday note",
+          note_type: "meeting",
+          updated_at: new Date(2026, 7, 9, 14, 0).toISOString(),
+        }),
+        note({
+          id: "earlier",
+          title: "Earlier note",
+          updated_at: new Date(2026, 7, 4, 12, 0).toISOString(),
+        }),
+      ],
+      now,
+    );
+
+    expect(groups.map((group) => group.id)).toEqual([
+      "pinned",
+      "today",
+      "yesterday",
+      "earlier",
+    ]);
+    expect(groups[0]?.notes.map((item) => item.id)).toEqual(["pin-old"]);
+    expect(groups[1]?.notes.map((item) => item.id)).toEqual(["today"]);
+    expect(groups[2]?.notes.map((item) => item.id)).toEqual(["yesterday"]);
+    expect(groups[3]?.notes.map((item) => item.id)).toEqual(["earlier"]);
+  });
+});
+
+describe("formatOverviewWhen", () => {
+  const now = new Date(2026, 7, 10, 18, 0, 0, 0).getTime();
+
+  it("uses relative time for pinned and clock/date for day buckets", () => {
+    expect(
+      formatOverviewWhen(
+        new Date(2026, 7, 10, 16, 0).toISOString(),
+        "pinned",
+        now,
+      ),
+    ).toBe("2h");
+    expect(
+      formatOverviewWhen(
+        new Date(2026, 7, 10, 9, 40).toISOString(),
+        "today",
+        now,
+      ),
+    ).toBe("09:40");
+    expect(
+      formatOverviewWhen(
+        new Date(2026, 7, 4, 12, 0).toISOString(),
+        "earlier",
+        now,
+      ),
+    ).toBe("Aug 4");
+  });
+});
+
+describe("parseSnippetParts", () => {
+  it("turns #tags and @mentions into chips", () => {
+    expect(parseSnippetParts("Draft for #meridian with @Priya Sharma")).toEqual(
+      [
+        { type: "text", value: "Draft for " },
+        { type: "tag", value: "#meridian" },
+        { type: "text", value: " with " },
+        { type: "mention", value: "@Priya Sharma" },
+      ],
     );
   });
 });

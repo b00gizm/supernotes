@@ -102,4 +102,27 @@ describe("useNotes", () => {
     expect(result.current.notes).toHaveLength(0);
     expect(result.current.selectedId).toBeNull();
   });
+
+  it("toggles pinned without requiring the note to be selected", async () => {
+    const api = createMemoryNotesApi([
+      seedNote({ id: "a", title: "A", pinned: false }),
+      seedNote({
+        id: "b",
+        title: "B",
+        pinned: false,
+        updated_at: "2026-08-09T10:00:00.000Z",
+      }),
+    ]);
+    const { result } = renderHook(() => useNotes({ api, autoSelect: false }));
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.setPinned("b", true);
+    });
+    expect(result.current.notes.find((note) => note.id === "b")?.pinned).toBe(
+      true,
+    );
+  });
 });
