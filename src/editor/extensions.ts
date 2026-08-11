@@ -16,10 +16,12 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { common, createLowlight } from "lowlight";
+import taskListPlugin from "markdown-it-task-lists";
 import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
 import { markdownTableFixupPlugin } from "./markdownTable";
 import { StaticMarkdownTable } from "./staticTable";
+import { WikiLink } from "./wikiLink";
 
 const lowlight = createLowlight(common);
 
@@ -306,6 +308,74 @@ const NoteImage = Image.extend({
 });
 
 /**
+ * markdown-it-task-lists merges adjacent bullets + checkboxes into one
+ * `.contains-task-list`. TipTap taskList only allows taskItem children, which
+ * left an empty checkbox before the bullets. Split contiguous runs first.
+ */
+function splitMixedTaskLists(element: HTMLElement): void {
+  for (const list of [...element.querySelectorAll(".contains-task-list")]) {
+    if (!(list instanceof HTMLElement)) {
+      continue;
+    }
+    const items = [...list.children].filter(
+      (child): child is HTMLLIElement => child instanceof HTMLLIElement,
+    );
+    const hasTask = items.some((li) => li.classList.contains("task-list-item"));
+    const hasRegular = items.some(
+      (li) => !li.classList.contains("task-list-item"),
+    );
+    if (!hasTask) {
+      continue;
+    }
+    if (!hasRegular) {
+      list.setAttribute("data-type", "taskList");
+      continue;
+    }
+    const parent = list.parentNode;
+    if (!parent) {
+      continue;
+    }
+    let currentType: "task" | "bullet" | null = null;
+    let currentUl: HTMLUListElement | null = null;
+    for (const li of items) {
+      const type = li.classList.contains("task-list-item") ? "task" : "bullet";
+      if (type !== currentType || !currentUl) {
+        currentUl = document.createElement("ul");
+        if (type === "task") {
+          currentUl.classList.add("contains-task-list");
+          currentUl.setAttribute("data-type", "taskList");
+        }
+        parent.insertBefore(currentUl, list);
+        currentType = type;
+      }
+      currentUl.appendChild(li);
+    }
+    list.remove();
+  }
+}
+
+/**
+ * TaskList with mixed bullet/checkbox split on markdown parse (see above).
+ * Shallow-merges over tiptap-markdown defaults — keep `setup` when overriding `parse`.
+ */
+const NoteTaskList = TaskList.extend({
+  addStorage() {
+    return {
+      markdown: {
+        parse: {
+          setup(markdownit: { use: (plugin: unknown) => void }) {
+            markdownit.use(taskListPlugin);
+          },
+          updateDOM(element: HTMLElement) {
+            splitMixedTaskLists(element);
+          },
+        },
+      },
+    };
+  },
+});
+
+/**
  * Checkbox input that works after `- ` has already become a bullet list.
  * TipTap's default wrappingInputRule cannot wrap taskItem inside listItem.
  */
@@ -353,7 +423,7 @@ export function noteEditorExtensions(): Extensions {
     Highlight,
     CodeBlockLowlight.configure({ lowlight }),
     // Square checklist items (`- [ ]`); M4 task pills are a separate node.
-    TaskList,
+    NoteTaskList,
     NoteTaskItem,
     TableKit.configure({
       table: {
@@ -365,8 +435,10 @@ export function noteEditorExtensions(): Extensions {
     StaticMarkdownTable,
     MarkdownTableFixup,
     NoteImage,
+    // Parse/serialize only; autocomplete + navigation are ENG-56.
+    WikiLink,
     Placeholder.configure({ placeholder: "Start writing…" }),
-    // ponytail: ENG-55 owns golden-file round-trip + wikilinks / tags / task pills.
+    // Tags (`#`/`@`) stay literal until ENG-57; task pills are ENG-61.
     Markdown.configure({
       html: false,
       transformPastedText: true,

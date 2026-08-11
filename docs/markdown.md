@@ -1,0 +1,87 @@
+# Note markdown conventions
+
+SQLite stores note bodies as markdown (`notes.body_markdown`). The TipTap editor
+parses that string on load and serializes back on save. Round-trip must be
+byte-stable for the canonical forms below (see `src/editor/fixtures/roundtrip/`
+and `markdown-roundtrip.test.ts`).
+
+External edits (pasting valid markdown into the DB) are supported: the first
+load may normalize to the serializer's canonical form (e.g. blank lines between
+task items, `\` hard breaks); after that, save/load is byte-stable.
+
+## Core CommonMark / GFM (supported now)
+
+| Element         | Markdown                                                  |
+| --------------- | --------------------------------------------------------- |
+| Headings        | `#` … `######`                                            |
+| Bold / italic   | `**bold**`, `*italic*`                                    |
+| Strike          | `~~strike~~`                                              |
+| Highlight       | `==highlight==`                                           |
+| Inline code     | `` `code` ``                                              |
+| Code block      | fenced ` ```lang ` … ` ``` `                              |
+| Blockquote      | `> quote`                                                 |
+| Bullet list     | `- item` (nested with 2-space indent)                     |
+| Ordered list    | `1. item`                                                 |
+| Checklist       | `- [ ] open` / `- [x] done` (square; not task pills)      |
+| Link            | `[label](https://…)`                                      |
+| Image           | `![alt](path)` — empty `![alt]()` is a drop slot          |
+| Table           | GFM pipe tables                                           |
+| Horizontal rule | `---`                                                     |
+| Hard break      | trailing `\` + newline (canonical; two spaces also parse) |
+
+Images are block-level in the editor: an image mid-paragraph serializes on its
+own lines.
+
+Adjacent bullet items and checkboxes may sit in one markdown-it list; on parse
+we split them into a bullet list + task list so TipTap does not invent an empty
+checkbox. The first save after an external edit is the canonical form (golden
+fixtures already use that form).
+
+## Wikilinks (ENG-56 UI; serialize/parse here)
+
+```text
+[[Note Title]]
+```
+
+- Title is the note's display title (same namespace as tags).
+- No aliases in MVP (`[[title\|alias]]` is not defined yet).
+- Titles must not contain `]`.
+- Editor node attrs may hold a resolved `noteId`; markdown always stores the
+  **title**. Renames update bodies / display in ENG-56; the `links` table is the
+  ID index (see `docs/data-model.md`).
+
+## Tags / mentions (ENG-57 UI; literal markdown)
+
+```text
+#project
+@Priya
+@Priya Sharma
+```
+
+- Logseq approach: `#` / `@` are shorthand for the note titled `project` /
+  `Priya` / `Priya Sharma` (same namespace as `[[project]]`).
+- Stay **literal** in markdown (no HTML wrapping in the stored string).
+- `#tag` has **no** space after `#` (a space makes an ATX heading).
+- `@Name` may include one optional capitalized surname token.
+
+Until ENG-57 lands nodes, these remain plain text in the editor and still
+round-trip.
+
+## Task pills (ENG-61; convention only)
+
+Square checklists (`- [ ]`) stay GFM task items. First-class tasks use a
+distinct pill node:
+
+```text
+[[task:<uuid>]] Buy milk
+```
+
+- `<uuid>` is the `tasks.id` row.
+- Text after the closing `]]` is the display title (DB is source of truth;
+  ENG-61 syncs edits).
+- One pill per line in MVP.
+- Does **not** use `- [ ]` syntax (that remains the lightweight checklist).
+
+ENG-61 owns the TipTap node, `[]` input rule, and click-to-Done behavior.
+Until then, `[[task:…]]` may parse as a wikilink title; golden fixtures for
+pills land with that issue.

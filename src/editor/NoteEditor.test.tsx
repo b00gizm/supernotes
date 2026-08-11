@@ -1,6 +1,7 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { noteEditorExtensions } from "./extensions";
+import { getEditorMarkdown } from "./markdown";
 
 /**
  * Drive ProseMirror input rules the same way TipTap's own tests do:
@@ -39,10 +40,7 @@ function createEditor() {
 }
 
 function markdownOf(editor: Editor): string {
-  const storage = editor.storage as {
-    markdown?: { getMarkdown: () => string };
-  };
-  return storage.markdown?.getMarkdown() ?? "";
+  return getEditorMarkdown(editor);
 }
 
 describe("note editor input rules", () => {

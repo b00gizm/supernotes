@@ -746,6 +746,12 @@ button {
   color: var(--text-secondary);
 }
 
+.note-editor .tiptap .wiki-link {
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
 .note-editor .tiptap a.note-link,
 .note-editor .tiptap a,
 .note-editor-content a.note-link,

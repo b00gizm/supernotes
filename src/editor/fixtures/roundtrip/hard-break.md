@@ -1,0 +1,2 @@
+line with hard\
+break

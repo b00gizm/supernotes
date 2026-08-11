@@ -14,7 +14,8 @@ SQLite is the source of truth. The database file is `supernotes.sqlite3` in the 
 
 ### `notes`
 
-Core note document. `body_markdown` is the canonical content; the editor round-trips to this column later (M2).
+Core note document. `body_markdown` is the canonical content; the TipTap editor
+round-trips to this column (see `docs/markdown.md`).
 
 | Column          | Type    | Notes                                              |
 | --------------- | ------- | -------------------------------------------------- |
