@@ -104,6 +104,19 @@ impl<'a> Repository<'a> {
         Ok(())
     }
 
+    /// Case-insensitive title substring match (`LIKE`), newest first.
+    pub fn search_notes_by_title(&self, query: &str) -> DbResult<Vec<Note>> {
+        let pattern = like_contains_pattern(&query.to_lowercase());
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, body_markdown, note_type, pinned, created_at, updated_at
+             FROM notes
+             WHERE LOWER(title) LIKE ?1 ESCAPE '\\'
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map([pattern], map_note)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
     // --- links ---
 
     pub fn create_link(&self, source_note_id: &str, target_note_id: &str) -> DbResult<Link> {
@@ -442,6 +455,22 @@ impl<'a> Repository<'a> {
     }
 }
 
+fn like_contains_pattern(query: &str) -> String {
+    let mut escaped = String::with_capacity(query.len().saturating_mul(2) + 2);
+    escaped.push('%');
+    for ch in query.chars() {
+        match ch {
+            '\\' | '%' | '_' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+    }
+    escaped.push('%');
+    escaped
+}
+
 fn map_note(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     let note_type: String = row.get(3)?;
     Ok(Note {
@@ -557,6 +586,62 @@ mod tests {
 
             repo.delete_note(&created.id).unwrap();
             assert!(matches!(repo.get_note(&created.id), Err(DbError::NotFound)));
+        });
+    }
+
+    #[test]
+    fn search_notes_by_title_is_case_insensitive_and_escapes_like() {
+        with_repo(|repo| {
+            repo.create_note("Pricing v2", "", NoteType::Regular, false)
+                .unwrap();
+            repo.create_note("pricing sync", "", NoteType::Meeting, false)
+                .unwrap();
+            repo.create_note("100% done_draft", "", NoteType::Regular, false)
+                .unwrap();
+            repo.create_note("Unrelated", "", NoteType::Regular, false)
+                .unwrap();
+
+            let hits = repo.search_notes_by_title("PRICING").unwrap();
+            assert_eq!(hits.len(), 2);
+            assert!(hits.iter().all(|n| n.title.to_lowercase().contains("pricing")));
+
+            let literal = repo.search_notes_by_title("100%").unwrap();
+            assert_eq!(literal.len(), 1);
+            assert_eq!(literal[0].title, "100% done_draft");
+
+            let underscore = repo.search_notes_by_title("done_draft").unwrap();
+            assert_eq!(underscore.len(), 1);
+
+            let empty = repo.search_notes_by_title("").unwrap();
+            assert_eq!(empty.len(), 4);
+        });
+    }
+
+    #[test]
+    fn search_notes_by_title_stays_fast_for_1k() {
+        with_repo(|repo| {
+            const COUNT: usize = 1000;
+            const BUDGET_MS: u128 = 50;
+            for i in 0..COUNT {
+                repo.create_note(&format!("Note {i:04}"), "", NoteType::Regular, false)
+                    .unwrap();
+            }
+            // Warm statement/cache path once, then measure the hot search.
+            let _ = repo.search_notes_by_title("Note 05").unwrap();
+            let start = std::time::Instant::now();
+            let hits = repo.search_notes_by_title("Note 05").unwrap();
+            let elapsed = start.elapsed();
+            eprintln!(
+                "[search-kpi] {COUNT} notes, query=\"Note 05\", hits={}, {:.2}ms (budget {BUDGET_MS}ms)",
+                hits.len(),
+                elapsed.as_secs_f64() * 1000.0
+            );
+            assert!(
+                elapsed.as_millis() < BUDGET_MS,
+                "search took {elapsed:?}, budget {BUDGET_MS}ms"
+            );
+            assert!(!hits.is_empty());
+            assert!(hits.len() < COUNT, "query should not return the full corpus");
         });
     }
 

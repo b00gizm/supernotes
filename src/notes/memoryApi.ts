@@ -12,6 +12,18 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
         [...notes].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
       );
     },
+    searchNotes(query: string) {
+      const needle = query.trim().toLowerCase();
+      const listed = [...notes].sort((a, b) =>
+        b.updated_at.localeCompare(a.updated_at),
+      );
+      if (!needle) {
+        return Promise.resolve(listed);
+      }
+      return Promise.resolve(
+        listed.filter((note) => note.title.toLowerCase().includes(needle)),
+      );
+    },
     createNote(input: CreateNoteInput) {
       seq += 1;
       const stamp = new Date().toISOString();

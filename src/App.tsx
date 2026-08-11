@@ -1,9 +1,24 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { SearchPalette } from "./SearchPalette";
+import { notesApi } from "./notes/api";
 import {
   formatDailyTitle,
   formatRelativeUpdated,
   noteSnippet,
 } from "./notes/format";
+import {
+  isSearchKpiMode,
+  runSearchKpi,
+  SEARCH_KPI_MAX_MS,
+  SEARCH_KPI_NOTE_COUNT,
+  type SearchKpiResult,
+} from "./notes/searchKpi";
 import type { Note } from "./notes/types";
 import { useNotes } from "./notes/useNotes";
 import "./App.css";
@@ -222,13 +237,64 @@ function App() {
   const [surface, setSurface] = useState<Surface>({ kind: "daily" });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [recentOpen, setRecentOpen] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [kpiMode] = useState(() => isSearchKpiMode());
+  const [kpiResult, setKpiResult] = useState<SearchKpiResult | null>(null);
+  const [lastSearchMs, setLastSearchMs] = useState<number | null>(null);
   const dailyOpening = useRef(false);
   const notesRef = useRef(notes);
   const selectedIdRef = useRef(selectedId);
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
 
-  const recentNotes = notes.filter((note) => note.note_type !== "daily");
+  useEffect(() => {
+    if (!kpiMode || loading) {
+      return;
+    }
+    let cancelled = false;
+    void runSearchKpi(notesApi).then((result) => {
+      if (!cancelled) {
+        setKpiResult(result);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [kpiMode, loading]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key !== "k" && key !== "o") {
+        return;
+      }
+      event.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  // Recent is a glance list, not the full corpus (search owns findability).
+  const nonDailyNotes = notes.filter((note) => note.note_type !== "daily");
+  const recentNotes = nonDailyNotes.slice(0, 12);
+
+  const timedSearchNotes = useCallback(
+    async (query: string) => {
+      const started = performance.now();
+      const hits = await notesApi.searchNotes(query);
+      if (kpiMode) {
+        setLastSearchMs(performance.now() - started);
+      }
+      return hits;
+    },
+    [kpiMode],
+  );
 
   const ensureDaily = async () => {
     if (dailyOpening.current) {
@@ -274,6 +340,23 @@ function App() {
   const openRecent = (note: Note) => {
     setSurface({ kind: "note", id: note.id });
     selectNote(note.id);
+  };
+
+  const openFromSearch = (note: Note) => {
+    if (note.note_type === "daily") {
+      setSurface({ kind: "daily" });
+    } else {
+      setSurface({ kind: "note", id: note.id });
+    }
+    selectNote(note.id);
+  };
+
+  const createFromSearch = (title: string) => {
+    void createNote(title).then((created) => {
+      if (created) {
+        setSurface({ kind: "note", id: created.id });
+      }
+    });
   };
 
   const activeNav: NavId | null =
@@ -395,7 +478,14 @@ function App() {
         </div>
 
         <div className="sidebar-footer">
-          <button type="button" className="search-hint" aria-label="Search">
+          <button
+            type="button"
+            className="search-hint"
+            aria-label="Search"
+            onClick={() => {
+              setSearchOpen(true);
+            }}
+          >
             <IconSearch />
             <span className="search-hint-label">Search</span>
             <kbd className="search-chip">⌘K</kbd>
@@ -422,7 +512,7 @@ function App() {
                 + New note
               </button>
             </div>
-            <p className="muted">{String(recentNotes.length)} notes</p>
+            <p className="muted">{String(nonDailyNotes.length)} notes</p>
             <p className="muted">
               Browse view groups arrive next; open a note from Recent for now.
             </p>
@@ -491,7 +581,46 @@ function App() {
             {error}
           </p>
         ) : null}
+
+        {kpiMode ? (
+          <aside className="kpi-banner" aria-label="Search KPI">
+            <strong>Search KPI</strong>
+            <span>
+              corpus {String(notes.length)} / target{" "}
+              {String(SEARCH_KPI_NOTE_COUNT)}
+            </span>
+            {kpiResult ? (
+              <span
+                data-testid="search-kpi-result"
+                data-passed={kpiResult.passed ? "true" : "false"}
+                data-ms={kpiResult.elapsedMs.toFixed(2)}
+              >
+                baseline {kpiResult.elapsedMs.toFixed(2)}ms
+                {kpiResult.passed ? " · pass" : " · FAIL"}
+                {" · budget "}
+                {String(SEARCH_KPI_MAX_MS)}ms
+              </span>
+            ) : (
+              <span>running…</span>
+            )}
+            {lastSearchMs !== null ? (
+              <span data-testid="search-kpi-live">
+                last palette search {lastSearchMs.toFixed(2)}ms
+              </span>
+            ) : null}
+          </aside>
+        ) : null}
       </main>
+
+      <SearchPalette
+        open={searchOpen}
+        onClose={() => {
+          setSearchOpen(false);
+        }}
+        searchNotes={timedSearchNotes}
+        onOpenNote={openFromSearch}
+        onCreateNote={createFromSearch}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@ pub mod db;
 mod notes;
 
 use db::Db;
-use notes::{create_note, delete_note, get_note, list_notes, update_note};
+use notes::{create_note, delete_note, get_note, list_notes, search_notes, update_note};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,6 +22,7 @@ pub fn run() {
             create_note,
             get_note,
             list_notes,
+            search_notes,
             update_note,
             delete_note
         ])
