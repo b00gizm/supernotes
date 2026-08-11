@@ -210,23 +210,41 @@ function IconChevron({ expanded }: { expanded: boolean }) {
 }
 
 function IconPin() {
-  // SF-Symbols-style pin: rotated square body, needle pointing bottom-left.
-  // Viewbox 12×12. Body is a square rotated 45° centred at (7,5), side≈4.
+  // Diagonal pushpin, stroke-only, 16×16 — matches sidebar icon weight.
+  // Body is a concave-sided kite (4-pointed star shape) pointing upper-right.
+  // A collar line bisects it; needle extends lower-left.
+  // Derived from Phosphor push-pin geometry, simplified to straight/arc strokes.
   return (
-    <svg className="pin-icon" viewBox="0 0 12 12" aria-hidden="true">
+    <svg className="pin-icon" viewBox="0 0 16 16" aria-hidden="true">
+      {/* kite body: top → right → bottom-notch → left-notch, concave sides via arcs */}
       <path
-        d="M7 1.5 10.5 5 7 8.5 3.5 5Z"
-        fill="currentColor"
-        opacity="0.2"
-        stroke="currentColor"
-        strokeWidth="1.15"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M5 7 2 10"
+        d="M9.5 1.5
+           C10.2 0.8 11.8 0.8 12.5 1.5
+           L14.5 3.5
+           C15.2 4.2 15.2 5.8 14.5 6.5
+           L11.5 9.5
+           C11.5 9.5 12 11 11.5 11.5
+           C11 12 9.5 11.5 9.5 11.5
+           L6.5 14.5
+           C5.8 15.2 4.2 15.2 3.5 14.5
+           L1.5 12.5
+           C0.8 11.8 0.8 10.2 1.5 9.5
+           L4.5 6.5
+           C4.5 6.5 4 5 4.5 4.5
+           C5 4 6.5 4.5 6.5 4.5
+           Z"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.2"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {/* collar — diagonal line across the waist of the pin body */}
+      <path
+        d="M6.5 4.5 L11.5 9.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
         strokeLinecap="round"
       />
     </svg>
