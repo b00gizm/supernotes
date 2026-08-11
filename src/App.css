@@ -25,6 +25,7 @@
 
   /* Typography scale */
   --font-sans: "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
   --text-xs: 0.72rem;
   --text-sm: 0.82rem;
   --text-md: 0.925rem;
@@ -32,6 +33,9 @@
   --text-xl: 1.65rem;
   --leading-tight: 1.25;
   --leading-body: 1.55;
+  --bg-code: color-mix(in srgb, var(--bg-chip) 70%, transparent);
+  --bg-code-block: color-mix(in srgb, var(--bg-chip) 55%, transparent);
+  --mark-highlight: color-mix(in srgb, #f5d76e 55%, transparent);
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
@@ -66,6 +70,7 @@
     --accent: #0a84ff;
     --danger: #ff453a;
     --border-subtle: #3a3a3c;
+    --mark-highlight: color-mix(in srgb, #c9a227 40%, transparent);
   }
 }
 
@@ -642,6 +647,162 @@ button {
   outline: none;
   line-height: var(--leading-body);
   font-size: var(--text-md);
+}
+
+.note-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.note-editor .tiptap,
+.note-editor-content {
+  flex: 1;
+  min-height: 12rem;
+  outline: none;
+  line-height: var(--leading-body);
+  font-size: var(--text-md);
+}
+
+.note-editor .tiptap > * + * {
+  margin-top: 0.65em;
+}
+
+.note-editor .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--text-tertiary);
+}
+
+.note-editor .tiptap h1,
+.note-editor .tiptap h2,
+.note-editor .tiptap h3,
+.note-editor .tiptap h4,
+.note-editor .tiptap h5,
+.note-editor .tiptap h6 {
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
+  font-weight: var(--weight-bold);
+}
+
+.note-editor .tiptap h1 {
+  font-size: 1.55rem;
+}
+
+.note-editor .tiptap h2 {
+  font-size: 1.3rem;
+}
+
+.note-editor .tiptap h3 {
+  font-size: 1.12rem;
+}
+
+.note-editor .tiptap h4,
+.note-editor .tiptap h5,
+.note-editor .tiptap h6 {
+  font-size: var(--text-md);
+}
+
+.note-editor .tiptap blockquote {
+  margin: 0;
+  padding-left: var(--space-4);
+  border-left: 3px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.note-editor .tiptap code {
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.note-editor .tiptap pre {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-code-block);
+  overflow-x: auto;
+}
+
+.note-editor .tiptap pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 0.85em;
+  color: inherit;
+}
+
+.note-editor .tiptap mark {
+  background: var(--mark-highlight);
+  border-radius: 0.15em;
+  padding: 0.05em 0.15em;
+}
+
+.note-editor .tiptap s {
+  color: var(--text-secondary);
+}
+
+/* lowlight / highlight.js token colors — light + dark via currentColor mix */
+.note-editor .tiptap .hljs-comment,
+.note-editor .tiptap .hljs-quote {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.note-editor .tiptap .hljs-keyword,
+.note-editor .tiptap .hljs-selector-tag,
+.note-editor .tiptap .hljs-addition {
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
+}
+
+.note-editor .tiptap .hljs-string,
+.note-editor .tiptap .hljs-meta .hljs-string,
+.note-editor .tiptap .hljs-attribute {
+  color: color-mix(in srgb, #22863a 70%, var(--text));
+}
+
+.note-editor .tiptap .hljs-number,
+.note-editor .tiptap .hljs-literal {
+  color: color-mix(in srgb, #b35900 75%, var(--text));
+}
+
+.note-editor .tiptap .hljs-title,
+.note-editor .tiptap .hljs-section,
+.note-editor .tiptap .hljs-name {
+  color: color-mix(in srgb, #6f42c1 65%, var(--text));
+}
+
+.note-editor .tiptap .hljs-built_in,
+.note-editor .tiptap .hljs-type {
+  color: color-mix(in srgb, #005cc5 70%, var(--text));
+}
+
+@media (prefers-color-scheme: dark) {
+  .note-editor .tiptap .hljs-string,
+  .note-editor .tiptap .hljs-meta .hljs-string,
+  .note-editor .tiptap .hljs-attribute {
+    color: color-mix(in srgb, #7ee787 55%, var(--text));
+  }
+
+  .note-editor .tiptap .hljs-number,
+  .note-editor .tiptap .hljs-literal {
+    color: color-mix(in srgb, #ffa657 55%, var(--text));
+  }
+
+  .note-editor .tiptap .hljs-title,
+  .note-editor .tiptap .hljs-section,
+  .note-editor .tiptap .hljs-name {
+    color: color-mix(in srgb, #d2a8ff 55%, var(--text));
+  }
+
+  .note-editor .tiptap .hljs-built_in,
+  .note-editor .tiptap .hljs-type {
+    color: color-mix(in srgb, #79c0ff 55%, var(--text));
+  }
 }
 
 .muted,
