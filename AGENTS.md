@@ -19,6 +19,8 @@ Lazy senior mode is always on via [`.cursor/rules/ponytail.mdc`](.cursor/rules/p
 
 ## Commits
 
+**Before every commit:** run `npm run format:check` and fix any reported files (`npm run format`). CI runs this check and it is a common failure mode when skipped.
+
 Use [Conventional Commits](https://www.conventionalcommits.org/) with a leading [gitmoji](https://gitmoji.dev/):
 
 ```text
@@ -68,6 +70,7 @@ Common gitmoji map: `✨ feat`, `🐛 fix`, `📝 docs`, `💄 style`, `♻️ r
 
 ```bash
 npm install
+npm run format:check   # required before commit; fix with npm run format
 npm run lint
 npm run typecheck
 npm test
