@@ -505,8 +505,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  padding: 0.7rem 0.15rem;
-  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.6rem;
+  border-radius: var(--radius-md);
   text-align: left;
 }
 
