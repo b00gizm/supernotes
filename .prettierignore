@@ -5,3 +5,5 @@ node_modules
 package-lock.json
 *.local
 src-tauri/gen
+# Golden markdown corpus — byte-stable against TipTap serialize; do not reformat.
+src/editor/fixtures/roundtrip/

@@ -1,6 +1,7 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
 import { noteEditorExtensions } from "./extensions";
+import { getEditorMarkdown } from "./markdown";
 import { openExternalUrl, saveNoteImage } from "./media";
 
 export type NoteEditorProps = {
@@ -105,10 +106,7 @@ export function NoteEditor({ markdown, onChange }: NoteEditorProps) {
       },
     },
     onUpdate: ({ editor: current }) => {
-      const storage = current.storage as {
-        markdown?: { getMarkdown: () => string };
-      };
-      onChange(storage.markdown?.getMarkdown() ?? current.getText());
+      onChange(getEditorMarkdown(current) || current.getText());
     },
   });
 
