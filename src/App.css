@@ -406,6 +406,13 @@ button {
   padding: var(--space-6) var(--space-10) var(--space-8);
 }
 
+/* Constrain readable line length; mirrors Bear/Apple Notes aesthetic */
+.editor-pane > *,
+.overview-pane > * {
+  width: 100%;
+  max-width: 42rem;
+}
+
 .placeholder-header,
 .overview-header,
 .editor-toolbar {
@@ -540,7 +547,7 @@ button {
   align-items: center;
   gap: 0.3rem;
   min-width: 0;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   font-size: var(--text-sm);
   line-height: var(--leading-tight);
 }

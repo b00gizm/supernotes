@@ -210,20 +210,23 @@ function IconChevron({ expanded }: { expanded: boolean }) {
 }
 
 function IconPin() {
+  // SF-Symbols-style pin: rotated square body, needle pointing bottom-left.
+  // Viewbox 12×12. Body is a square rotated 45° centred at (7,5), side≈4.
   return (
     <svg className="pin-icon" viewBox="0 0 12 12" aria-hidden="true">
       <path
-        d="M6 1.4 8.4 4.2 10 5.1 6.9 6.9 5.1 10 4.2 8.4 1.4 6l.9-1.6L4.2 3.6 6 1.4z"
-        fill="none"
+        d="M7 1.5 10.5 5 7 8.5 3.5 5Z"
+        fill="currentColor"
+        opacity="0.2"
         stroke="currentColor"
         strokeWidth="1.15"
         strokeLinejoin="round"
       />
       <path
-        d="M5.35 6.65 2.6 10.2"
+        d="M5 7 2 10"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.15"
+        strokeWidth="1.2"
         strokeLinecap="round"
       />
     </svg>
