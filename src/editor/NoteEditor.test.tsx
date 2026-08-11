@@ -107,4 +107,17 @@ describe("note editor input rules", () => {
     typeText(editor, "# Title");
     expect(markdownOf(editor)).toMatch(/^#\s+Title/);
   });
+
+  it("round-trips ==highlight== through markdown save/load", () => {
+    editor = createEditor();
+    typeText(editor, "==glow==");
+    const md = markdownOf(editor);
+    expect(md).toContain("==glow==");
+
+    editor.destroy();
+    editor = createEditor();
+    editor.commands.setContent(md);
+    expect(editor.getHTML()).toMatch(/<mark[^>]*>glow<\/mark>/);
+    expect(editor.getText().trim()).toBe("glow");
+  });
 });
