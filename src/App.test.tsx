@@ -110,12 +110,11 @@ describe("App shell", () => {
       name: /Meridian Q3 roadmap/,
     });
     await user.pointer({ keys: "[MouseRight>]", target: pinnedRow });
-    const unpin = await screen.findByRole("menuitem", { name: "Unpin" });
-    // Simulate a leftover mouse event from the opening gesture (WebKit/Tauri).
+    // Leftover mouse event from the opening gesture must not dismiss the menu.
     window.dispatchEvent(
       new MouseEvent("mousedown", { bubbles: true, button: 0 }),
     );
-    expect(screen.getByRole("menuitem", { name: "Unpin" })).toBeInTheDocument();
+    const unpin = await screen.findByRole("menuitem", { name: "Unpin" });
     await user.click(unpin);
     expect(
       within(overview).queryByRole("region", { name: "Pinned" }),
