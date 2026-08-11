@@ -35,7 +35,10 @@ export function extensionForFile(file: File): string {
  * data URL in browser preview).
  */
 export async function saveNoteImage(file: File): Promise<string> {
-  if (!file.type.startsWith("image/")) {
+  const looksLikeImage =
+    file.type.startsWith("image/") ||
+    (!file.type && /\.(png|jpe?g|gif|webp|svg)$/i.test(file.name));
+  if (!looksLikeImage) {
     throw new Error("not an image");
   }
   if (file.size > MAX_IMAGE_BYTES) {

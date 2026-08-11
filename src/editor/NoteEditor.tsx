@@ -17,6 +17,10 @@ function firstImageFile(data: DataTransfer | null): File | null {
     if (file.type.startsWith("image/")) {
       return file;
     }
+    // Some OS drops (esp. older webviews) omit MIME; fall back on extension.
+    if (!file.type && /\.(png|jpe?g|gif|webp|svg)$/i.test(file.name)) {
+      return file;
+    }
   }
   return null;
 }

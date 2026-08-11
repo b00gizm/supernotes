@@ -11,7 +11,7 @@ import {
   nodeInputRule,
   type Extensions,
 } from "@tiptap/core";
-import type { MarkType } from "@tiptap/pm/model";
+import type { MarkType, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import { ReactNodeViewRenderer } from "@tiptap/react";
@@ -22,6 +22,13 @@ import { markdownTableFixupPlugin } from "./markdownTable";
 import { StaticMarkdownTable } from "./staticTable";
 
 const lowlight = createLowlight(common);
+
+/** Minimal surface used by tiptap-markdown node serializers. */
+type MarkdownWriteState = {
+  esc: (text: string) => string;
+  write: (text: string) => void;
+  closeBlock: (node: ProseMirrorNode) => void;
+};
 
 /** Same pattern TipTap uses: `[ ]` / `[]` / `[x]` + trailing space. */
 const taskCheckboxInputRegex = /^\s*(\[([( |x])?\])\s$/;
@@ -255,6 +262,26 @@ const NoteLink = Link.extend({
 const NoteImage = Image.extend({
   addNodeView() {
     return ReactNodeViewRenderer(ImageView);
+  },
+  addStorage() {
+    return {
+      markdown: {
+        // Block images must closeBlock; PM's default image serializer is inline-only,
+        // so `![…](…)\n## heading` reloads as a paragraph of raw `## …`.
+        serialize(state: MarkdownWriteState, node: ProseMirrorNode) {
+          const alt = state.esc(String(node.attrs.alt ?? ""));
+          const src = String(node.attrs.src ?? "").replace(/[()]/g, "\\$&");
+          const title = node.attrs.title
+            ? ` "${String(node.attrs.title).replace(/"/g, '\\"')}"`
+            : "";
+          state.write(`![${alt}](${src}${title})`);
+          state.closeBlock(node);
+        },
+        parse: {
+          // markdown-it
+        },
+      },
+    };
   },
   addInputRules() {
     return [
