@@ -842,11 +842,16 @@ button {
 .note-editor .tiptap td {
   border: none;
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0.22em 0.65em;
+  padding: 0.05em 0.55em;
   vertical-align: middle;
   min-width: 4rem;
   text-align: left;
   font-weight: var(--weight-regular);
+}
+
+.note-editor .tiptap th p,
+.note-editor .tiptap td p {
+  margin: 0;
 }
 
 .note-editor .tiptap tr:last-child th,
