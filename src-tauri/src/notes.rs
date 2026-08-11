@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use tauri::State;
 
-use crate::db::{Db, Note, NoteType, Repository};
+use crate::db::{Db, Link, Note, NoteType, Repository};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateNoteInput {
@@ -80,6 +80,16 @@ pub fn delete_note(state: State<'_, Db>, id: String) -> Result<(), String> {
 pub fn search_notes(state: State<'_, Db>, query: String) -> Result<Vec<Note>, String> {
     state
         .with_conn(|conn| Repository::new(conn).search_notes_by_title(&query))
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn list_links_from(
+    state: State<'_, Db>,
+    source_note_id: String,
+) -> Result<Vec<Link>, String> {
+    state
+        .with_conn(|conn| Repository::new(conn).list_links_from(&source_note_id))
         .map_err(|err| err.to_string())
 }
 

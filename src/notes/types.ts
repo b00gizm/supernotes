@@ -10,6 +10,12 @@ export type Note = {
   updated_at: string;
 };
 
+export type Link = {
+  source_note_id: string;
+  target_note_id: string;
+  created_at: string;
+};
+
 export type CreateNoteInput = {
   title: string;
   body_markdown?: string;

@@ -21,7 +21,7 @@ import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
 import { markdownTableFixupPlugin } from "./markdownTable";
 import { StaticMarkdownTable } from "./staticTable";
-import { WikiLink } from "./wikiLink";
+import { WikiLink, type WikiLinkOptions } from "./wikiLink";
 
 const lowlight = createLowlight(common);
 
@@ -411,8 +411,10 @@ const MarkdownTableFixup = Extension.create({
   },
 });
 
-/** Shared TipTap extensions for the note body editor (ENG-53 + ENG-54). */
-export function noteEditorExtensions(): Extensions {
+/** Shared TipTap extensions for the note body editor (ENG-53 + ENG-54 + ENG-56). */
+export function noteEditorExtensions(
+  wikiLink: WikiLinkOptions = {},
+): Extensions {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3, 4, 5, 6] },
@@ -435,8 +437,7 @@ export function noteEditorExtensions(): Extensions {
     StaticMarkdownTable,
     MarkdownTableFixup,
     NoteImage,
-    // Parse/serialize only; autocomplete + navigation are ENG-56.
-    WikiLink,
+    WikiLink.configure(wikiLink),
     Placeholder.configure({ placeholder: "Start writing…" }),
     // Tags (`#`/`@`) stay literal until ENG-57; task pills are ENG-61.
     Markdown.configure({

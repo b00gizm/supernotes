@@ -1,10 +1,61 @@
-import type { CreateNoteInput, Note, UpdateNoteInput } from "./types";
+import type { CreateNoteInput, Link, Note, UpdateNoteInput } from "./types";
 import type { NotesApi } from "./api";
+import {
+  extractWikilinkTitles,
+  findNoteByTitle,
+  rewriteWikilinkTitle,
+} from "./wikilinks";
 
-/** In-memory NotesApi for tests. */
+/** In-memory NotesApi for tests / browser preview (mirrors SQLite link sync). */
 export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
   let notes = [...seed];
+  let links: Link[] = [];
   let seq = 0;
+
+  const syncLinksFromBody = (sourceId: string, body: string) => {
+    links = links.filter((link) => link.source_note_id !== sourceId);
+    const seen = new Set<string>();
+    const stamp = new Date().toISOString();
+    for (const title of extractWikilinkTitles(body)) {
+      const target = findNoteByTitle(notes, title);
+      if (!target || target.id === sourceId || seen.has(target.id)) {
+        continue;
+      }
+      seen.add(target.id);
+      links.push({
+        source_note_id: sourceId,
+        target_note_id: target.id,
+        created_at: stamp,
+      });
+    }
+  };
+
+  const rewriteIncoming = (
+    targetId: string,
+    oldTitle: string,
+    newTitle: string,
+  ) => {
+    for (const link of links.filter(
+      (item) => item.target_note_id === targetId,
+    )) {
+      const source = notes.find((note) => note.id === link.source_note_id);
+      if (!source) {
+        continue;
+      }
+      const rewritten = rewriteWikilinkTitle(
+        source.body_markdown,
+        oldTitle,
+        newTitle,
+      );
+      if (rewritten === source.body_markdown) {
+        continue;
+      }
+      // Don't bump updated_at — same as Rust (recency stays the author's).
+      notes = notes.map((note) =>
+        note.id === source.id ? { ...note, body_markdown: rewritten } : note,
+      );
+    }
+  };
 
   return {
     listNotes() {
@@ -37,6 +88,7 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
         updated_at: stamp,
       };
       notes = [note, ...notes];
+      syncLinksFromBody(note.id, note.body_markdown);
       return Promise.resolve(note);
     },
     updateNote(input: UpdateNoteInput) {
@@ -44,6 +96,7 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
       if (!current) {
         return Promise.reject(new Error("not found"));
       }
+      const titleChanged = current.title !== input.title;
       const updated: Note = {
         ...current,
         title: input.title,
@@ -51,6 +104,10 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
         updated_at: new Date().toISOString(),
       };
       notes = notes.map((item) => (item.id === input.id ? updated : item));
+      syncLinksFromBody(input.id, input.body_markdown);
+      if (titleChanged) {
+        rewriteIncoming(input.id, current.title, input.title);
+      }
       return Promise.resolve(updated);
     },
     setPinned(id: string, pinned: boolean) {
@@ -65,11 +122,19 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
     },
     deleteNote(id) {
       const before = notes.length;
-      notes = notes.filter((item) => item.id !== id);
+      notes = notes.filter((note) => note.id !== id);
+      links = links.filter(
+        (link) => link.source_note_id !== id && link.target_note_id !== id,
+      );
       if (notes.length === before) {
         return Promise.reject(new Error("not found"));
       }
       return Promise.resolve();
+    },
+    listLinksFrom(sourceNoteId: string) {
+      return Promise.resolve(
+        links.filter((link) => link.source_note_id === sourceNoteId),
+      );
     },
   };
 }

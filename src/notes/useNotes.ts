@@ -145,6 +145,7 @@ export function useNotes(options: UseNotesOptions = {}) {
     );
 
     try {
+      const titleChanged = title !== existing.title;
       const saved = await apiRef.current.updateNote({
         id,
         title,
@@ -153,11 +154,23 @@ export function useNotes(options: UseNotesOptions = {}) {
       if (!mountedRef.current || generation !== saveGeneration.current) {
         return;
       }
-      setNotes((prev) =>
-        [...prev.map((note) => (note.id === id ? saved : note))].sort(
+      if (titleChanged) {
+        // Renames rewrite `[[old]]` in other notes' bodies (ENG-56).
+        const listed = [...(await apiRef.current.listNotes())].sort(
           byUpdatedAtDesc,
-        ),
-      );
+        );
+        // Drop the result if a newer edit superseded this save.
+        if (generation !== saveGeneration.current) {
+          return;
+        }
+        setNotes(listed);
+      } else {
+        setNotes((prev) =>
+          [...prev.map((note) => (note.id === id ? saved : note))].sort(
+            byUpdatedAtDesc,
+          ),
+        );
+      }
       setStatus("saved");
     } catch (err) {
       // A stale generation must still surface the failure and reconcile with
