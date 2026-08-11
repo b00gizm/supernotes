@@ -1,9 +1,7 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
-import { useState } from "react";
 import { noteEditorExtensions } from "./extensions";
 import { openExternalUrl, saveNoteImage } from "./media";
-import { TableMenu } from "./TableMenu";
 
 export type NoteEditorProps = {
   /** Initial markdown; remount (via `key`) when switching notes. */
@@ -42,8 +40,6 @@ function insertImageAt(
 }
 
 export function NoteEditor({ markdown, onChange }: NoteEditorProps) {
-  const [, setTick] = useState(0);
-
   const editor = useEditor({
     extensions: noteEditorExtensions(),
     content: markdown,
@@ -110,14 +106,10 @@ export function NoteEditor({ markdown, onChange }: NoteEditorProps) {
       };
       onChange(storage.markdown?.getMarkdown() ?? current.getText());
     },
-    onSelectionUpdate: () => {
-      setTick((n) => n + 1);
-    },
   });
 
   return (
     <div className="body-input note-editor">
-      {editor ? <TableMenu editor={editor} /> : null}
       <EditorContent editor={editor} />
     </div>
   );

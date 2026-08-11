@@ -855,30 +855,11 @@ button {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.table-menu {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin-bottom: var(--space-2);
-}
-
-.table-menu button {
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-chip);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  border-radius: var(--radius-sm);
-  padding: 0.2rem 0.45rem;
-  cursor: pointer;
-}
-
-.table-menu button:hover {
-  color: var(--text);
-}
-
-.table-menu button.danger {
-  color: var(--danger);
+/* Whole-table NodeSelection (Backspace on the line after the table). */
+.note-editor .tiptap .tableWrapper.ProseMirror-selectednode,
+.note-editor .tiptap table.ProseMirror-selectednode {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
 }
 
 .note-editor .note-image,

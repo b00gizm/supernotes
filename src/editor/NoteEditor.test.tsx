@@ -166,16 +166,21 @@ describe("note editor input rules", () => {
     expect(markdownOf(editor)).toContain("| 1 | 2 |");
   });
 
-  it("inserts tables via command and keeps cell text", () => {
+  it("keeps cell text editable inside a markdown table", () => {
     editor = createEditor();
-    editor
-      .chain()
-      .focus()
-      .insertTable({ rows: 2, cols: 2, withHeaderRow: true })
-      .run();
+    editor.commands.setContent("| A | B |\n| --- | --- |\n| 1 | 2 |");
     expect(editor.getHTML()).toContain("<table");
+    let cellPos = -1;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isTextblock && node.textContent === "1") {
+        cellPos = pos + 1;
+        return false;
+      }
+    });
+    expect(cellPos).toBeGreaterThan(0);
+    editor.commands.setTextSelection(cellPos);
     editor.commands.insertContent("Hi");
-    expect(markdownOf(editor)).toContain("Hi");
+    expect(markdownOf(editor)).toMatch(/Hi1|1Hi/);
   });
 
   it("round-trips markdown links", () => {

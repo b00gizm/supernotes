@@ -19,6 +19,7 @@ import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
 import { markdownTableFixupPlugin } from "./markdownTable";
+import { StaticMarkdownTable } from "./staticTable";
 
 const lowlight = createLowlight(common);
 
@@ -328,8 +329,13 @@ export function noteEditorExtensions(): Extensions {
     TaskList,
     NoteTaskItem,
     TableKit.configure({
-      table: { resizable: false },
+      table: {
+        resizable: false,
+        // Needed so Backspace after a table can NodeSelection-highlight it.
+        allowTableNodeSelection: true,
+      },
     }),
+    StaticMarkdownTable,
     MarkdownTableFixup,
     NoteImage,
     Placeholder.configure({ placeholder: "Start writing…" }),

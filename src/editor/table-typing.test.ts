@@ -89,14 +89,4 @@ describe("markdown table fixup", () => {
     expect(editor.getHTML()).not.toMatch(/\| A \| B \|/);
     expect(md(editor)).toContain("| 1 | 2 |");
   });
-
-  it("inserts a table via command", () => {
-    editor = create();
-    editor
-      .chain()
-      .focus()
-      .insertTable({ rows: 2, cols: 2, withHeaderRow: true })
-      .run();
-    expect(editor.getHTML()).toContain("<table");
-  });
 });
