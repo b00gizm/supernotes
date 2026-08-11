@@ -13,7 +13,8 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:search-kpi": "vitest run src/notes/searchKpi.test.ts && cargo test --manifest-path src-tauri/Cargo.toml search_notes_by_title_stays_fast_for_1k -- --nocapture"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

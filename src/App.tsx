@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { SearchPalette } from "./SearchPalette";
 import { notesApi } from "./notes/api";
 import {
@@ -6,6 +6,13 @@ import {
   formatRelativeUpdated,
   noteSnippet,
 } from "./notes/format";
+import {
+  isSearchKpiMode,
+  runSearchKpi,
+  SEARCH_KPI_MAX_MS,
+  SEARCH_KPI_NOTE_COUNT,
+  type SearchKpiResult,
+} from "./notes/searchKpi";
 import type { Note } from "./notes/types";
 import { useNotes } from "./notes/useNotes";
 import "./App.css";
@@ -225,11 +232,29 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [recentOpen, setRecentOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [kpiMode] = useState(() => isSearchKpiMode());
+  const [kpiResult, setKpiResult] = useState<SearchKpiResult | null>(null);
+  const [lastSearchMs, setLastSearchMs] = useState<number | null>(null);
   const dailyOpening = useRef(false);
   const notesRef = useRef(notes);
   const selectedIdRef = useRef(selectedId);
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
+
+  useEffect(() => {
+    if (!kpiMode || loading) {
+      return;
+    }
+    let cancelled = false;
+    void runSearchKpi(notesApi).then((result) => {
+      if (!cancelled) {
+        setKpiResult(result);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [kpiMode, loading]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -249,7 +274,18 @@ function App() {
     };
   }, []);
 
-  const recentNotes = notes.filter((note) => note.note_type !== "daily");
+  // Recent is a glance list, not the full corpus (search owns findability).
+  const nonDailyNotes = notes.filter((note) => note.note_type !== "daily");
+  const recentNotes = nonDailyNotes.slice(0, 12);
+
+  const timedSearchNotes = useCallback(async (query: string) => {
+    const started = performance.now();
+    const hits = await notesApi.searchNotes(query);
+    if (kpiMode) {
+      setLastSearchMs(performance.now() - started);
+    }
+    return hits;
+  }, [kpiMode]);
 
   const ensureDaily = async () => {
     if (dailyOpening.current) {
@@ -467,7 +503,7 @@ function App() {
                 + New note
               </button>
             </div>
-            <p className="muted">{String(recentNotes.length)} notes</p>
+            <p className="muted">{String(nonDailyNotes.length)} notes</p>
             <p className="muted">
               Browse view groups arrive next; open a note from Recent for now.
             </p>
@@ -536,6 +572,34 @@ function App() {
             {error}
           </p>
         ) : null}
+
+        {kpiMode ? (
+          <aside className="kpi-banner" aria-label="Search KPI">
+            <strong>Search KPI</strong>
+            <span>
+              corpus {String(notes.length)} / target {String(SEARCH_KPI_NOTE_COUNT)}
+            </span>
+            {kpiResult ? (
+              <span
+                data-testid="search-kpi-result"
+                data-passed={kpiResult.passed ? "true" : "false"}
+                data-ms={kpiResult.elapsedMs.toFixed(2)}
+              >
+                baseline {kpiResult.elapsedMs.toFixed(2)}ms
+                {kpiResult.passed ? " · pass" : " · FAIL"}
+                {" · budget "}
+                {String(SEARCH_KPI_MAX_MS)}ms
+              </span>
+            ) : (
+              <span>running…</span>
+            )}
+            {lastSearchMs !== null ? (
+              <span data-testid="search-kpi-live">
+                last palette search {lastSearchMs.toFixed(2)}ms
+              </span>
+            ) : null}
+          </aside>
+        ) : null}
       </main>
 
       <SearchPalette
@@ -543,7 +607,7 @@ function App() {
         onClose={() => {
           setSearchOpen(false);
         }}
-        searchNotes={notesApi.searchNotes}
+        searchNotes={timedSearchNotes}
         onOpenNote={openFromSearch}
         onCreateNote={createFromSearch}
       />

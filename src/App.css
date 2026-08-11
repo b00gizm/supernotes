@@ -480,6 +480,36 @@ button {
   font-size: var(--text-sm);
 }
 
+.kpi-banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-main) 92%, var(--accent));
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.kpi-banner strong {
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+}
+
+.kpi-banner [data-passed="false"] {
+  color: var(--danger);
+  font-weight: var(--weight-semibold);
+}
+
+.kpi-banner [data-passed="true"] {
+  color: var(--text);
+}
+
 .search-overlay {
   position: fixed;
   inset: 0;

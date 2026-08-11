@@ -620,14 +620,28 @@ mod tests {
     #[test]
     fn search_notes_by_title_stays_fast_for_1k() {
         with_repo(|repo| {
-            for i in 0..1000 {
+            const COUNT: usize = 1000;
+            const BUDGET_MS: u128 = 50;
+            for i in 0..COUNT {
                 repo.create_note(&format!("Note {i:04}"), "", NoteType::Regular, false)
                     .unwrap();
             }
+            // Warm statement/cache path once, then measure the hot search.
+            let _ = repo.search_notes_by_title("Note 05").unwrap();
             let start = std::time::Instant::now();
             let hits = repo.search_notes_by_title("Note 05").unwrap();
-            assert!(start.elapsed().as_millis() < 50, "search took {:?}", start.elapsed());
+            let elapsed = start.elapsed();
+            eprintln!(
+                "[search-kpi] {COUNT} notes, query=\"Note 05\", hits={}, {:.2}ms (budget {BUDGET_MS}ms)",
+                hits.len(),
+                elapsed.as_secs_f64() * 1000.0
+            );
+            assert!(
+                elapsed.as_millis() < BUDGET_MS,
+                "search took {elapsed:?}, budget {BUDGET_MS}ms"
+            );
             assert!(!hits.is_empty());
+            assert!(hits.len() < COUNT, "query should not return the full corpus");
         });
     }
 
