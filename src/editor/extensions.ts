@@ -6,6 +6,8 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TableKit } from "@tiptap/extension-table";
 import { nodeInputRule, type Extensions } from "@tiptap/core";
+import type { MarkType } from "@tiptap/pm/model";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { common, createLowlight } from "lowlight";
@@ -17,6 +19,113 @@ const lowlight = createLowlight(common);
 /** Allow empty src so `![chart]()` becomes a drop slot (TipTap default needs \\S+). */
 const imageInputRegex =
   /(?:^|\s)(!\[([^\]]*)\]\(([^)\s]*)(?:(?:\s+)["']([^"']+)["'])?\))$/;
+
+/**
+ * Complete markdown links only (needs closing `)` + a real host). Stricter than
+ * TipTap's isAllowedUri so we don't convert `[label](https://g)` mid-typing.
+ */
+const markdownLinkFixupRegex =
+  /\[([^[\]]+)\]\((https?:\/\/(?:[^)\s/]+\.[^)\s]*|localhost(?:[:/][^)\s]*)?)|mailto:[^)\s]+)(?:\s+"[^"]*")?\)/g;
+
+const markdownLinkFixupKey = new PluginKey("markdownLinkFixup");
+
+/**
+ * Convert `[label](url)` even when built out of order (type `()` first, then
+ * fill/paste the URL). TipTap's input rule only fires as you type the final `)`.
+ */
+function markdownLinkFixupPlugin(markType: MarkType): Plugin {
+  return new Plugin({
+    key: markdownLinkFixupKey,
+    appendTransaction(transactions, oldState, newState) {
+      const docChanged = transactions.some(
+        (transaction) => transaction.docChanged,
+      );
+      const selectionChanged = !oldState.selection.eq(newState.selection);
+      if (!docChanged && !selectionChanged) {
+        return null;
+      }
+      if (
+        transactions.some((transaction) =>
+          transaction.getMeta(markdownLinkFixupKey),
+        )
+      ) {
+        return null;
+      }
+
+      type Replacement = {
+        from: number;
+        to: number;
+        label: string;
+        href: string;
+      };
+      const replacements: Replacement[] = [];
+      const sel = newState.selection;
+      const isPaste = transactions.some(
+        (transaction) => transaction.getMeta("paste") === true,
+      );
+
+      newState.doc.descendants((node, pos) => {
+        if (!node.isTextblock) {
+          return;
+        }
+        const text = node.textContent;
+        markdownLinkFixupRegex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = markdownLinkFixupRegex.exec(text)) !== null) {
+          // Don't turn images `![alt](url)` into links.
+          if (match.index > 0 && text[match.index - 1] === "!") {
+            continue;
+          }
+          const from = pos + 1 + match.index;
+          const to = from + match[0].length;
+          // Letter-by-letter fill inside `()`: wait until caret leaves the
+          // syntax (or a paste inserts the whole URL at once).
+          if (!isPaste && sel.from > from && sel.from < to) {
+            continue;
+          }
+          const $from = newState.doc.resolve(from);
+          if (
+            newState.schema.marks.code &&
+            newState.schema.marks.code.isInSet($from.marks())
+          ) {
+            continue;
+          }
+          replacements.push({
+            from,
+            to,
+            label: match[1],
+            href: match[2],
+          });
+        }
+      });
+
+      if (replacements.length === 0) {
+        return null;
+      }
+
+      const { tr } = newState;
+      for (const { from, to, label, href } of replacements.reverse()) {
+        const between = tr.doc.textBetween(from, to);
+        // Exact `[label](href)` or titled `[label](href "…")`.
+        if (
+          between !== `[${label}](${href})` &&
+          !(between.startsWith(`[${label}](${href}`) && between.endsWith(")"))
+        ) {
+          continue;
+        }
+        const mark = markType.create({ href });
+        tr.replaceWith(from, to, newState.schema.text(label, [mark]));
+      }
+
+      if (!tr.docChanged) {
+        return null;
+      }
+      tr.setMeta(markdownLinkFixupKey, true);
+      tr.setMeta("preventAutolink", true);
+      return tr;
+    },
+  });
+}
 
 type MarkdownItLike = {
   inline: {
@@ -116,6 +225,9 @@ const NoteLink = Link.extend({
           .run();
       },
     };
+  },
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), markdownLinkFixupPlugin(this.type)];
   },
 }).configure({
   openOnClick: false,
