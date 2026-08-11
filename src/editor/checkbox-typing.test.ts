@@ -23,8 +23,9 @@ function typeText(editor: Editor, text: string) {
 
 function md(editor: Editor) {
   return (
-    (editor.storage as { markdown?: { getMarkdown: () => string } }).markdown
-      ?.getMarkdown() ?? ""
+    (
+      editor.storage as { markdown?: { getMarkdown: () => string } }
+    ).markdown?.getMarkdown() ?? ""
   );
 }
 
