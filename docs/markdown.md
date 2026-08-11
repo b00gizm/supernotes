@@ -37,7 +37,7 @@ we split them into a bullet list + task list so TipTap does not invent an empty
 checkbox. The first save after an external edit is the canonical form (golden
 fixtures already use that form).
 
-## Wikilinks (ENG-56 UI; serialize/parse here)
+## Wikilinks (ENG-56)
 
 ```text
 [[Note Title]]
@@ -47,8 +47,11 @@ fixtures already use that form).
 - No aliases in MVP (`[[title\|alias]]` is not defined yet).
 - Titles must not contain `]`.
 - Editor node attrs may hold a resolved `noteId`; markdown always stores the
-  **title**. Renames update bodies / display in ENG-56; the `links` table is the
-  ID index (see `docs/data-model.md`).
+  **title**. Renaming a note rewrites `[[old]]` → `[[new]]` in notes that link
+  to it (without bumping those notes' `updated_at`). The `links` table is the
+  ID index (see `docs/data-model.md`), synced from `[[…]]` on every note save.
+- Typing `[[` opens an inline title autocomplete; click navigates, creating the
+  target note on first click when missing.
 
 ## Tags / mentions (ENG-57 UI; literal markdown)
 

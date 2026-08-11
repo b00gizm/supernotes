@@ -752,6 +752,56 @@ button {
   cursor: pointer;
 }
 
+.note-editor {
+  position: relative;
+}
+
+.wiki-link-suggest {
+  position: fixed;
+  z-index: 30;
+  min-width: 12rem;
+  max-width: min(22rem, calc(100vw - 1.5rem));
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 14%, transparent);
+}
+
+.wiki-link-suggest-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.wiki-link-suggest-item {
+  width: 100%;
+  display: block;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm, 0.35rem);
+  text-align: left;
+  color: var(--text);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-link-suggest-item.is-active,
+.wiki-link-suggest-item:hover {
+  background: var(--bg-sidebar-active);
+}
+
+.wiki-link-suggest-item.is-create {
+  font-weight: var(--weight-medium);
+  border-top: 1px solid var(--border-subtle);
+  margin-top: var(--space-1);
+  border-radius: 0;
+  padding-top: 0.55rem;
+}
+
 .note-editor .tiptap a.note-link,
 .note-editor .tiptap a,
 .note-editor-content a.note-link,

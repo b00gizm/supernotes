@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createMemoryNotesApi } from "./memoryApi";
 import { isSearchKpiMode, makeSearchKpiSeed } from "./searchKpi";
-import type { CreateNoteInput, Note, UpdateNoteInput } from "./types";
+import type { CreateNoteInput, Link, Note, UpdateNoteInput } from "./types";
 
 export type NotesApi = {
   listNotes: () => Promise<Note[]>;
@@ -11,6 +11,7 @@ export type NotesApi = {
   /** Metadata toggle; does not touch updated_at. */
   setPinned: (id: string, pinned: boolean) => Promise<Note>;
   deleteNote: (id: string) => Promise<void>;
+  listLinksFrom: (sourceNoteId: string) => Promise<Link[]>;
 };
 
 const tauriNotesApi: NotesApi = {
@@ -22,6 +23,8 @@ const tauriNotesApi: NotesApi = {
   deleteNote: async (id) => {
     await invoke("delete_note", { id });
   },
+  listLinksFrom: (sourceNoteId) =>
+    invoke<Link[]>("list_links_from", { source_note_id: sourceNoteId }),
 };
 
 function isTauriRuntime(): boolean {

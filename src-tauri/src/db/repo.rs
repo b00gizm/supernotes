@@ -6,6 +6,7 @@ use super::models::{
     CalendarEvent, Link, Meeting, Note, NoteType, Task, TaskPriority, TaskState,
 };
 use super::time::utc_now;
+use super::wikilinks::{extract_wikilink_titles, rewrite_wikilink_title};
 
 pub struct Repository<'a> {
     conn: &'a Connection,
@@ -49,6 +50,7 @@ impl<'a> Repository<'a> {
                 note.updated_at,
             ],
         )?;
+        self.sync_links_from_body(&note.id, body_markdown)?;
         Ok(note)
     }
 
@@ -75,6 +77,7 @@ impl<'a> Repository<'a> {
     }
 
     pub fn update_note(&self, id: &str, title: &str, body_markdown: &str) -> DbResult<Note> {
+        let previous = self.get_note(id)?;
         let updated_at = utc_now(self.conn)?;
         let changed = self.conn.execute(
             "UPDATE notes
@@ -85,7 +88,41 @@ impl<'a> Repository<'a> {
         if changed == 0 {
             return Err(DbError::NotFound);
         }
+        self.sync_links_from_body(id, body_markdown)?;
+        if previous.title != title {
+            // Linking notes store the display title in markdown; keep them in sync.
+            // Deliberately does not bump their updated_at (recency stays theirs).
+            self.rewrite_incoming_wikilink_titles(id, &previous.title, title)?;
+        }
         self.get_note(id)
+    }
+
+    /// Case-insensitive title match; prefers exact case, then newest `updated_at`.
+    pub fn find_note_by_title(&self, title: &str) -> DbResult<Option<Note>> {
+        let needle = title.trim();
+        if needle.is_empty() {
+            return Ok(None);
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, body_markdown, note_type, pinned, created_at, updated_at
+             FROM notes
+             WHERE LOWER(title) = LOWER(?1)
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map([needle], map_note)?;
+        let mut exact: Option<Note> = None;
+        let mut first: Option<Note> = None;
+        for row in rows {
+            let note = row?;
+            if first.is_none() {
+                first = Some(note.clone());
+            }
+            if note.title == needle {
+                exact = Some(note);
+                break;
+            }
+        }
+        Ok(exact.or(first))
     }
 
     /// Metadata toggle: deliberately leaves `updated_at` untouched.
@@ -162,6 +199,16 @@ impl<'a> Repository<'a> {
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
+    pub fn list_links_to(&self, target_note_id: &str) -> DbResult<Vec<Link>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source_note_id, target_note_id, created_at
+             FROM links WHERE target_note_id = ?1
+             ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([target_note_id], map_link)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
     pub fn delete_link(&self, source_note_id: &str, target_note_id: &str) -> DbResult<()> {
         let changed = self.conn.execute(
             "DELETE FROM links WHERE source_note_id = ?1 AND target_note_id = ?2",
@@ -169,6 +216,57 @@ impl<'a> Repository<'a> {
         )?;
         if changed == 0 {
             return Err(DbError::NotFound);
+        }
+        Ok(())
+    }
+
+    /// Replace the outbound link set for a note (derived from `[[…]]` in the body).
+    pub fn replace_links_for_source(
+        &self,
+        source_note_id: &str,
+        target_note_ids: &[String],
+    ) -> DbResult<()> {
+        self.conn.execute(
+            "DELETE FROM links WHERE source_note_id = ?1",
+            [source_note_id],
+        )?;
+        let mut seen = std::collections::HashSet::new();
+        for target in target_note_ids {
+            if target == source_note_id || !seen.insert(target.as_str()) {
+                continue;
+            }
+            let _ = self.create_link(source_note_id, target)?;
+        }
+        Ok(())
+    }
+
+    fn sync_links_from_body(&self, source_note_id: &str, body_markdown: &str) -> DbResult<()> {
+        let mut targets = Vec::new();
+        for title in extract_wikilink_titles(body_markdown) {
+            if let Some(note) = self.find_note_by_title(&title)? {
+                targets.push(note.id);
+            }
+        }
+        self.replace_links_for_source(source_note_id, &targets)
+    }
+
+    fn rewrite_incoming_wikilink_titles(
+        &self,
+        target_note_id: &str,
+        old_title: &str,
+        new_title: &str,
+    ) -> DbResult<()> {
+        let incoming = self.list_links_to(target_note_id)?;
+        for link in incoming {
+            let source = self.get_note(&link.source_note_id)?;
+            let rewritten = rewrite_wikilink_title(&source.body_markdown, old_title, new_title);
+            if rewritten == source.body_markdown {
+                continue;
+            }
+            self.conn.execute(
+                "UPDATE notes SET body_markdown = ?1 WHERE id = ?2",
+                params![rewritten, source.id],
+            )?;
         }
         Ok(())
     }
@@ -685,6 +783,63 @@ mod tests {
                 repo.get_link(&link.source_note_id, &link.target_note_id),
                 Err(DbError::NotFound)
             ));
+        });
+    }
+
+    #[test]
+    fn update_note_syncs_wikilinks_and_rename_rewrites_sources() {
+        with_repo(|repo| {
+            let target = repo
+                .create_note("Foo", "", NoteType::Regular, false)
+                .unwrap();
+            let other = repo
+                .create_note("Bar", "", NoteType::Regular, false)
+                .unwrap();
+            let source = repo
+                .create_note(
+                    "Source",
+                    "See [[Foo]] and [[Missing]].",
+                    NoteType::Regular,
+                    false,
+                )
+                .unwrap();
+
+            let links = repo.list_links_from(&source.id).unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].target_note_id, target.id);
+
+            // Drop Foo, keep Bar — Missing still unresolved.
+            repo.update_note(&source.id, "Source", "See [[Bar]] only.")
+                .unwrap();
+            let links = repo.list_links_from(&source.id).unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].target_note_id, other.id);
+
+            repo.update_note(&other.id, "Baz", "").unwrap();
+            let source_after = repo.get_note(&source.id).unwrap();
+            assert_eq!(source_after.body_markdown, "See [[Baz]] only.");
+            // Linking note's updated_at must not bump on target rename.
+            assert_eq!(source_after.updated_at, source.updated_at);
+        });
+    }
+
+    #[test]
+    fn deleting_wikilink_from_body_removes_link_row() {
+        with_repo(|repo| {
+            let target = repo
+                .create_note("Foo", "", NoteType::Regular, false)
+                .unwrap();
+            let source = repo
+                .create_note("Source", "[[Foo]]", NoteType::Regular, false)
+                .unwrap();
+            assert_eq!(repo.list_links_from(&source.id).unwrap().len(), 1);
+            assert_eq!(
+                repo.list_links_from(&source.id).unwrap()[0].target_note_id,
+                target.id
+            );
+
+            repo.update_note(&source.id, "Source", "no links").unwrap();
+            assert!(repo.list_links_from(&source.id).unwrap().is_empty());
         });
     }
 

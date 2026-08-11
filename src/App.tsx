@@ -28,6 +28,7 @@ import {
 } from "./notes/searchKpi";
 import type { Note } from "./notes/types";
 import { useNotes } from "./notes/useNotes";
+import { findNoteByTitle } from "./notes/wikilinks";
 import "./App.css";
 
 type NavId = "daily" | "notes" | "tasks" | "calendar";
@@ -519,6 +520,23 @@ function App() {
     });
   };
 
+  const openWikiLink = (link: { title: string; noteId: string | null }) => {
+    const byId = link.noteId
+      ? notesRef.current.find((note) => note.id === link.noteId)
+      : null;
+    const existing = byId ?? findNoteByTitle(notesRef.current, link.title);
+    if (existing) {
+      openFromSearch(existing);
+      return;
+    }
+    // Create-on-click: title = link text, empty body (ENG-56).
+    void createNote(link.title).then((created) => {
+      if (created) {
+        openFromSearch(created);
+      }
+    });
+  };
+
   const activeNav: NavId | null =
     surface.kind === "note"
       ? "notes"
@@ -812,6 +830,9 @@ function App() {
                 key={selectedId}
                 markdown={bodyDraft}
                 onChange={setBodyDraft}
+                notes={notes}
+                currentNoteId={selectedId}
+                onOpenWikiLink={openWikiLink}
               />
             ) : null}
           </section>
