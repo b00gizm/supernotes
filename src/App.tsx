@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { SearchPalette } from "./SearchPalette";
 import { notesApi } from "./notes/api";
 import {
@@ -278,14 +284,17 @@ function App() {
   const nonDailyNotes = notes.filter((note) => note.note_type !== "daily");
   const recentNotes = nonDailyNotes.slice(0, 12);
 
-  const timedSearchNotes = useCallback(async (query: string) => {
-    const started = performance.now();
-    const hits = await notesApi.searchNotes(query);
-    if (kpiMode) {
-      setLastSearchMs(performance.now() - started);
-    }
-    return hits;
-  }, [kpiMode]);
+  const timedSearchNotes = useCallback(
+    async (query: string) => {
+      const started = performance.now();
+      const hits = await notesApi.searchNotes(query);
+      if (kpiMode) {
+        setLastSearchMs(performance.now() - started);
+      }
+      return hits;
+    },
+    [kpiMode],
+  );
 
   const ensureDaily = async () => {
     if (dailyOpening.current) {
@@ -577,7 +586,8 @@ function App() {
           <aside className="kpi-banner" aria-label="Search KPI">
             <strong>Search KPI</strong>
             <span>
-              corpus {String(notes.length)} / target {String(SEARCH_KPI_NOTE_COUNT)}
+              corpus {String(notes.length)} / target{" "}
+              {String(SEARCH_KPI_NOTE_COUNT)}
             </span>
             {kpiResult ? (
               <span
