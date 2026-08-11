@@ -120,4 +120,96 @@ describe("note editor input rules", () => {
     expect(editor.getHTML()).toMatch(/<mark[^>]*>glow<\/mark>/);
     expect(editor.getText().trim()).toBe("glow");
   });
+
+  it("turns [ ] into a task item (square checkbox)", () => {
+    editor = createEditor();
+    // TipTap task input rule: `[ ]␠` at line start (not `- [ ]`).
+    typeText(editor, "[ ] buy milk");
+    expect(editor.isActive("taskItem")).toBe(true);
+    expect(editor.getHTML()).toContain('data-type="taskItem"');
+    expect(markdownOf(editor)).toMatch(/- \[ \] buy milk/);
+  });
+
+  it("round-trips nested lists and checkboxes", () => {
+    editor = createEditor();
+    const input = "- parent\n  - child\n- [ ] todo\n- [x] done";
+    editor.commands.setContent(input);
+    const md = markdownOf(editor);
+    expect(md).toContain("- parent");
+    expect(md).toContain("child");
+    expect(md).toMatch(/- \[ \] todo/);
+    expect(md).toMatch(/- \[x\] done/);
+
+    editor.destroy();
+    editor = createEditor();
+    editor.commands.setContent(md);
+    expect(editor.getHTML()).toContain("<ul");
+    expect(editor.getHTML()).toContain('data-type="taskList"');
+    expect(markdownOf(editor)).toMatch(/- \[ \] todo/);
+  });
+
+  it("round-trips GFM tables", () => {
+    editor = createEditor();
+    const input = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    editor.commands.setContent(input);
+    expect(editor.getHTML()).toContain("<table");
+    const md = markdownOf(editor);
+    expect(md).toContain("| A | B |");
+    expect(md).toContain("| 1 | 2 |");
+
+    editor.destroy();
+    editor = createEditor();
+    editor.commands.setContent(md);
+    expect(editor.isActive("table") || editor.getHTML().includes("<table")).toBe(
+      true,
+    );
+    expect(markdownOf(editor)).toContain("| 1 | 2 |");
+  });
+
+  it("inserts tables via command and keeps cell text", () => {
+    editor = createEditor();
+    editor
+      .chain()
+      .focus()
+      .insertTable({ rows: 2, cols: 2, withHeaderRow: true })
+      .run();
+    expect(editor.getHTML()).toContain("<table");
+    editor.commands.insertContent("Hi");
+    expect(markdownOf(editor)).toContain("Hi");
+  });
+
+  it("round-trips markdown links", () => {
+    editor = createEditor();
+    editor.commands.setContent("[docs](https://example.com/path)");
+    expect(editor.getHTML()).toMatch(/<a[^>]+href="https:\/\/example.com\/path"/);
+    const md = markdownOf(editor);
+    expect(md).toContain("[docs](https://example.com/path)");
+
+    editor.destroy();
+    editor = createEditor();
+    editor.commands.setContent(md);
+    expect(markdownOf(editor)).toContain("[docs](https://example.com/path)");
+  });
+
+  it("sets a link on selection via setLink (Cmd+K path)", () => {
+    editor = createEditor();
+    typeText(editor, "hello");
+    editor.commands.setTextSelection({ from: 1, to: 6 });
+    editor.commands.setLink({ href: "https://example.com" });
+    expect(markdownOf(editor)).toContain("[hello](https://example.com)");
+  });
+
+  it("round-trips filled images and empty drop slots", () => {
+    editor = createEditor();
+    editor.commands.setContent("![chart]()\n\n![alt](images/x.png)");
+    const md = markdownOf(editor);
+    expect(md).toContain("![chart]()");
+    expect(md).toContain("![alt](images/x.png)");
+
+    editor.destroy();
+    editor = createEditor();
+    editor.commands.setContent(md);
+    expect(markdownOf(editor)).toContain("![chart]()");
+    expect(markdownOf(editor)).toContain("![alt](images/x.png)");
+  });
 });

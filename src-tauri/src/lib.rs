@@ -1,7 +1,9 @@
 pub mod db;
+mod media;
 mod notes;
 
 use db::Db;
+use media::{resolve_note_image_path, save_note_image};
 use notes::{
     create_note, delete_note, get_note, list_notes, search_notes, set_note_pinned, update_note,
 };
@@ -27,7 +29,9 @@ pub fn run() {
             search_notes,
             update_note,
             set_note_pinned,
-            delete_note
+            delete_note,
+            save_note_image,
+            resolve_note_image_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

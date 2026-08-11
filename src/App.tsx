@@ -363,6 +363,17 @@ function App() {
       if (key !== "k" && key !== "o") {
         return;
       }
+      // ENG-54: Mod-k on a text selection inside the editor sets a link.
+      if (key === "k") {
+        const target = event.target;
+        const inEditor =
+          target instanceof Element &&
+          Boolean(target.closest(".note-editor, .ProseMirror"));
+        const selection = window.getSelection();
+        if (inEditor && selection && !selection.isCollapsed) {
+          return;
+        }
+      }
       event.preventDefault();
       setSearchOpen(true);
     };

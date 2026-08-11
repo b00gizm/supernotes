@@ -746,6 +746,197 @@ button {
   color: var(--text-secondary);
 }
 
+.note-editor .tiptap a.note-link,
+.note-editor .tiptap a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.note-editor .tiptap ul,
+.note-editor .tiptap ol {
+  padding-left: 1.35em;
+  margin: 0;
+}
+
+.note-editor .tiptap li + li {
+  margin-top: 0.2em;
+}
+
+.note-editor .tiptap li p {
+  margin: 0;
+}
+
+.note-editor .tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.note-editor .tiptap ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.note-editor .tiptap ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin-top: 0.2em;
+  user-select: none;
+}
+
+/* Square checkboxes (ENG-54) — distinct from M4 circular task pills. */
+.note-editor .tiptap ul[data-type="taskList"] li > label input[type="checkbox"] {
+  appearance: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0;
+  border: 1.5px solid var(--text-secondary);
+  border-radius: 0.2rem;
+  background: var(--bg-main);
+  cursor: pointer;
+}
+
+.note-editor
+  .tiptap
+  ul[data-type="taskList"]
+  li[data-checked="true"]
+  > label
+  input[type="checkbox"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+  background-size: 0.75rem 0.75rem;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.note-editor .tiptap ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.note-editor .tiptap table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+  overflow: hidden;
+}
+
+.note-editor .tiptap .tableWrapper {
+  margin: 0.4em 0;
+  overflow-x: auto;
+}
+
+.note-editor .tiptap th,
+.note-editor .tiptap td {
+  border: 1px solid var(--border-subtle);
+  padding: 0.4em 0.55em;
+  vertical-align: top;
+  min-width: 4rem;
+}
+
+.note-editor .tiptap th {
+  background: color-mix(in srgb, var(--bg-chip) 65%, transparent);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+}
+
+.note-editor .tiptap .selectedCell {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.table-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.table-menu button {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-chip);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+
+.table-menu button:hover {
+  color: var(--text);
+}
+
+.table-menu button.danger {
+  color: var(--danger);
+}
+
+.note-editor .note-image,
+.note-editor .note-image-slot {
+  margin: 0.5em 0;
+}
+
+.note-editor .note-image.is-selected .note-image-img,
+.note-editor .note-image-slot.is-selected .note-image-slot-inner {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.note-editor .note-image-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+.note-editor .note-image-loading {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.note-editor .note-image-slot-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 7.5rem;
+  padding: var(--space-5);
+  border: 1.5px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-chip) 35%, transparent);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.note-editor .note-image-slot-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.note-editor .note-image-slot-browse {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.note-editor .note-image-slot-error {
+  margin: var(--space-1) 0 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
 /* lowlight / highlight.js token colors — light + dark via currentColor mix */
 .note-editor .tiptap .hljs-comment,
 .note-editor .tiptap .hljs-quote {
