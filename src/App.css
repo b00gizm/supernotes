@@ -406,11 +406,13 @@ button {
   padding: var(--space-6) var(--space-10) var(--space-8);
 }
 
-/* Constrain readable line length; mirrors Bear/Apple Notes aesthetic */
+/* Constrain readable line length, centred; mirrors Bear/Apple Notes aesthetic */
 .editor-pane > *,
 .overview-pane > * {
   width: 100%;
   max-width: 42rem;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .placeholder-header,
