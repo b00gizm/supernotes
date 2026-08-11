@@ -825,17 +825,16 @@ button {
   min-width: 0;
 }
 
-/* Mockup 1c: hairline rows only — no grid, no header fill. */
+/* Mockup 1c: internal hairlines only — no outer frame, no header fill. */
 .note-editor .tiptap table {
   border-collapse: collapse;
   width: 100%;
   table-layout: fixed;
   overflow: hidden;
-  border-top: 1px solid var(--border-subtle);
 }
 
 .note-editor .tiptap .tableWrapper {
-  margin: 0.75em 0;
+  margin: 0.5em 0;
   overflow-x: auto;
 }
 
@@ -843,11 +842,16 @@ button {
 .note-editor .tiptap td {
   border: none;
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0.7em 0.9em;
+  padding: 0.4em 0.75em;
   vertical-align: middle;
   min-width: 4rem;
   text-align: left;
   font-weight: var(--weight-regular);
+}
+
+.note-editor .tiptap tr:last-child th,
+.note-editor .tiptap tr:last-child td {
+  border-bottom: none;
 }
 
 .note-editor .tiptap th:first-child,
