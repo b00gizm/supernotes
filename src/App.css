@@ -825,30 +825,48 @@ button {
   min-width: 0;
 }
 
+/* Mockup 1c: hairline rows only — no grid, no header fill. */
 .note-editor .tiptap table {
   border-collapse: collapse;
   width: 100%;
   table-layout: fixed;
   overflow: hidden;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .note-editor .tiptap .tableWrapper {
-  margin: 0.4em 0;
+  margin: 0.75em 0;
   overflow-x: auto;
 }
 
 .note-editor .tiptap th,
 .note-editor .tiptap td {
-  border: 1px solid var(--border-subtle);
-  padding: 0.4em 0.55em;
-  vertical-align: top;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.7em 0.9em;
+  vertical-align: middle;
   min-width: 4rem;
+  text-align: left;
+  font-weight: var(--weight-regular);
+}
+
+.note-editor .tiptap th:first-child,
+.note-editor .tiptap td:first-child {
+  padding-left: 0;
+}
+
+.note-editor .tiptap th:last-child,
+.note-editor .tiptap td:last-child {
+  padding-right: 0;
 }
 
 .note-editor .tiptap th {
-  background: color-mix(in srgb, var(--bg-chip) 65%, transparent);
-  font-weight: var(--weight-semibold);
-  text-align: left;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.note-editor .tiptap td {
+  color: var(--text);
 }
 
 .note-editor .tiptap .selectedCell {
