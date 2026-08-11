@@ -3,14 +3,18 @@ import {
   useEffect,
   useRef,
   useState,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import { SearchPalette } from "./SearchPalette";
 import { notesApi } from "./notes/api";
 import {
   formatDailyTitle,
+  formatOverviewWhen,
   formatRelativeUpdated,
+  groupNotesForOverview,
   noteSnippet,
+  parseSnippetParts,
 } from "./notes/format";
 import {
   isSearchKpiMode,
@@ -26,6 +30,8 @@ import "./App.css";
 type NavId = "daily" | "notes" | "tasks" | "calendar";
 
 type Surface = { kind: NavId } | { kind: "note"; id: string };
+
+type PinMenu = { noteId: string; pinned: boolean; x: number; y: number };
 
 function saveLabel(status: ReturnType<typeof useNotes>["status"]): string {
   switch (status) {
@@ -203,6 +209,49 @@ function IconChevron({ expanded }: { expanded: boolean }) {
   );
 }
 
+function IconPin() {
+  // Lucide "pin" icon (top-down thumbtack).
+  return (
+    <svg
+      className="pin-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </svg>
+  );
+}
+
+function SnippetWithChips({ body }: { body: string }) {
+  return (
+    <span className="overview-snippet">
+      {parseSnippetParts(body).map((part, index) => {
+        if (part.type === "tag") {
+          return (
+            <span key={`t-${String(index)}`} className="note-chip is-tag">
+              {part.value}
+            </span>
+          );
+        }
+        if (part.type === "mention") {
+          return (
+            <span key={`m-${String(index)}`} className="note-chip is-mention">
+              {part.value}
+            </span>
+          );
+        }
+        return <span key={`x-${String(index)}`}>{part.value}</span>;
+      })}
+    </span>
+  );
+}
+
 const NAV_ITEMS: {
   id: NavId;
   label: string;
@@ -232,12 +281,14 @@ function App() {
     setBodyDraft,
     createNote,
     deleteSelected,
+    setPinned,
   } = useNotes({ autoSelect: false });
 
   const [surface, setSurface] = useState<Surface>({ kind: "daily" });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [recentOpen, setRecentOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
   const [kpiMode] = useState(() => isSearchKpiMode());
   const [kpiResult, setKpiResult] = useState<SearchKpiResult | null>(null);
   const [lastSearchMs, setLastSearchMs] = useState<number | null>(null);
@@ -246,6 +297,23 @@ function App() {
   const selectedIdRef = useRef(selectedId);
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
+
+  useEffect(() => {
+    if (!pinMenu) {
+      return;
+    }
+    const close = () => {
+      setPinMenu(null);
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", close);
+    };
+  }, [pinMenu]);
 
   useEffect(() => {
     if (!kpiMode || loading) {
@@ -283,6 +351,24 @@ function App() {
   // Recent is a glance list, not the full corpus (search owns findability).
   const nonDailyNotes = notes.filter((note) => note.note_type !== "daily");
   const recentNotes = nonDailyNotes.slice(0, 12);
+  const overviewGroups = groupNotesForOverview(notes);
+
+  const openOverviewNote = (note: Note) => {
+    setSurface({ kind: "note", id: note.id });
+    selectNote(note.id);
+    setPinMenu(null);
+  };
+
+  const openPinMenu = (event: MouseEvent, note: Note) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setPinMenu({
+      noteId: note.id,
+      pinned: note.pinned,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
 
   const timedSearchNotes = useCallback(
     async (query: string) => {
@@ -361,7 +447,7 @@ function App() {
 
   const activeNav: NavId | null =
     surface.kind === "note"
-      ? null
+      ? "notes"
       : surface.kind === "daily"
         ? "daily"
         : surface.kind;
@@ -495,12 +581,17 @@ function App() {
 
       <main className="main-pane">
         {surface.kind === "notes" ? (
-          <section className="placeholder-pane" aria-label="Notes overview">
-            <div className="placeholder-header">
-              <h1 className="pane-title">Notes</h1>
+          <section className="overview-pane" aria-label="Notes overview">
+            <div className="overview-header">
+              <div className="overview-title-row">
+                <h1 className="pane-title">Notes</h1>
+                <span className="overview-count">
+                  {String(nonDailyNotes.length)}
+                </span>
+              </div>
               <button
                 type="button"
-                className="text-button"
+                className="new-note-button"
                 onClick={() => {
                   void createNote().then((created) => {
                     if (created) {
@@ -512,10 +603,69 @@ function App() {
                 + New note
               </button>
             </div>
-            <p className="muted">{String(nonDailyNotes.length)} notes</p>
-            <p className="muted">
-              Browse view groups arrive next; open a note from Recent for now.
-            </p>
+
+            {loading ? (
+              <p className="muted">Loading…</p>
+            ) : overviewGroups.length === 0 ? (
+              <p className="muted">No notes yet.</p>
+            ) : (
+              <div className="overview-groups">
+                {overviewGroups.map((group) => (
+                  <section
+                    key={group.id}
+                    className="overview-group"
+                    aria-label={group.label}
+                  >
+                    <h2 className="overview-group-label">
+                      {group.id === "pinned" ? <IconPin /> : null}
+                      <span>{group.label}</span>
+                    </h2>
+                    <ul className="overview-list">
+                      {group.notes.map((note) => {
+                        const title =
+                          note.id === selectedId ? titleDraft : note.title;
+                        const body =
+                          note.id === selectedId
+                            ? bodyDraft
+                            : note.body_markdown;
+                        return (
+                          <li key={note.id}>
+                            <button
+                              type="button"
+                              className="overview-item"
+                              onClick={() => {
+                                openOverviewNote(note);
+                              }}
+                              onContextMenu={(event) => {
+                                openPinMenu(event, note);
+                              }}
+                            >
+                              <span className="overview-item-top">
+                                <span className="overview-item-title-row">
+                                  {note.note_type === "meeting" ? (
+                                    <IconWaveform />
+                                  ) : null}
+                                  <span className="overview-item-title">
+                                    {title || "Untitled"}
+                                  </span>
+                                </span>
+                                <span className="overview-when">
+                                  {formatOverviewWhen(
+                                    note.updated_at,
+                                    group.id,
+                                  )}
+                                </span>
+                              </span>
+                              <SnippetWithChips body={body} />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            )}
           </section>
         ) : null}
 
@@ -536,22 +686,39 @@ function App() {
         {showEditor ? (
           <section className="editor-pane" aria-label="Note editor">
             <div className="editor-toolbar">
-              <span className="save-status" aria-live="polite">
-                {saveLabel(status)}
-              </span>
               {surface.kind === "note" ? (
                 <button
                   type="button"
-                  className="text-button danger"
+                  className="breadcrumb"
+                  aria-label="Back to Notes"
                   onClick={() => {
-                    void deleteSelected().then(() => {
-                      setSurface({ kind: "notes" });
-                    });
+                    setSurface({ kind: "notes" });
+                    selectNote(null);
                   }}
                 >
-                  Delete
+                  Notes <span aria-hidden="true">›</span>
                 </button>
-              ) : null}
+              ) : (
+                <span />
+              )}
+              <div className="editor-toolbar-actions">
+                <span className="save-status" aria-live="polite">
+                  {saveLabel(status)}
+                </span>
+                {surface.kind === "note" ? (
+                  <button
+                    type="button"
+                    className="text-button danger"
+                    onClick={() => {
+                      void deleteSelected().then(() => {
+                        setSurface({ kind: "notes" });
+                      });
+                    }}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </div>
             </div>
             <input
               className="title-input"
@@ -621,6 +788,29 @@ function App() {
         onOpenNote={openFromSearch}
         onCreateNote={createFromSearch}
       />
+
+      {pinMenu ? (
+        <div
+          className="context-menu"
+          role="menu"
+          style={{ left: pinMenu.x, top: pinMenu.y }}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="context-menu-item"
+            onClick={() => {
+              void setPinned(pinMenu.noteId, !pinMenu.pinned);
+              setPinMenu(null);
+            }}
+          >
+            {pinMenu.pinned ? "Unpin" : "Pin"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

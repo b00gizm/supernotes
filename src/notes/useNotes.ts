@@ -243,6 +243,54 @@ export function useNotes(options: UseNotesOptions = {}) {
     }
   };
 
+  const setPinned = async (id: string, pinned: boolean) => {
+    const existing = notesRef.current.find((note) => note.id === id);
+    if (!existing || existing.pinned === pinned) {
+      return;
+    }
+    setError(null);
+    const title =
+      selectedIdRef.current === id ? titleDraftRef.current : existing.title;
+    const body =
+      selectedIdRef.current === id
+        ? bodyDraftRef.current
+        : existing.body_markdown;
+    const optimistic: Note = {
+      ...existing,
+      title,
+      body_markdown: body,
+      pinned,
+      updated_at: new Date().toISOString(),
+    };
+    setNotes((prev) =>
+      [...prev.map((note) => (note.id === id ? optimistic : note))].sort(
+        byUpdatedAtDesc,
+      ),
+    );
+    try {
+      const saved = await apiRef.current.updateNote({
+        id,
+        title,
+        body_markdown: body,
+        pinned,
+      });
+      if (!mountedRef.current) {
+        return;
+      }
+      setNotes((prev) =>
+        [...prev.map((note) => (note.id === id ? saved : note))].sort(
+          byUpdatedAtDesc,
+        ),
+      );
+    } catch (err) {
+      if (!mountedRef.current) {
+        return;
+      }
+      setError(err instanceof Error ? err.message : String(err));
+      await refresh();
+    }
+  };
+
   return {
     notes,
     selectedId,
@@ -257,6 +305,7 @@ export function useNotes(options: UseNotesOptions = {}) {
     setBodyDraft: setBodyDraftState,
     createNote,
     deleteSelected,
+    setPinned,
     refresh,
   };
 }

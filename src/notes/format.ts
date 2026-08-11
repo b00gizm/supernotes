@@ -1,3 +1,5 @@
+import type { Note } from "./types";
+
 /** Relative updated label for Recent rows (mockup 1b: `2h`, `1d`, `Fri`). */
 export function formatRelativeUpdated(
   iso: string,
@@ -53,4 +55,131 @@ export function formatDailyTitle(date: Date = new Date()): string {
     month: "short",
     day: "numeric",
   });
+}
+
+export type OverviewGroupId = "pinned" | "today" | "yesterday" | "earlier";
+
+export type OverviewGroup = {
+  id: OverviewGroupId;
+  label: string;
+  notes: Note[];
+};
+
+export type SnippetPart =
+  | { type: "text"; value: string }
+  | { type: "tag"; value: string }
+  | { type: "mention"; value: string };
+
+function startOfLocalDay(ms: number): number {
+  const date = new Date(ms);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function byUpdatedAtDesc(a: Note, b: Note): number {
+  return b.updated_at.localeCompare(a.updated_at);
+}
+
+/** Mockup 2a groups: Pinned first, then calendar-day buckets for the rest. */
+export function groupNotesForOverview(
+  notes: Note[],
+  nowMs: number = Date.now(),
+): OverviewGroup[] {
+  const browseable = notes.filter((note) => note.note_type !== "daily");
+  const pinned = browseable.filter((note) => note.pinned).sort(byUpdatedAtDesc);
+  const todayStart = startOfLocalDay(nowMs);
+  const yesterdayStart = todayStart - 86_400_000;
+  const today: Note[] = [];
+  const yesterday: Note[] = [];
+  const earlier: Note[] = [];
+
+  for (const note of browseable) {
+    if (note.pinned) {
+      continue;
+    }
+    const updated = Date.parse(note.updated_at);
+    if (Number.isNaN(updated)) {
+      earlier.push(note);
+      continue;
+    }
+    const day = startOfLocalDay(updated);
+    if (day === todayStart) {
+      today.push(note);
+    } else if (day === yesterdayStart) {
+      yesterday.push(note);
+    } else {
+      earlier.push(note);
+    }
+  }
+
+  today.sort(byUpdatedAtDesc);
+  yesterday.sort(byUpdatedAtDesc);
+  earlier.sort(byUpdatedAtDesc);
+
+  return (
+    [
+      { id: "pinned", label: "Pinned", notes: pinned },
+      { id: "today", label: "Today", notes: today },
+      { id: "yesterday", label: "Yesterday", notes: yesterday },
+      { id: "earlier", label: "Earlier", notes: earlier },
+    ] satisfies OverviewGroup[]
+  ).filter((group) => group.notes.length > 0);
+}
+
+/** Overview timestamps: relative in Pinned, clock time for day groups, month-day for Earlier. */
+export function formatOverviewWhen(
+  iso: string,
+  group: OverviewGroupId,
+  nowMs: number = Date.now(),
+): string {
+  if (group === "pinned") {
+    return formatRelativeUpdated(iso, nowMs);
+  }
+
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) {
+    return "";
+  }
+
+  const date = new Date(then);
+  if (group === "today" || group === "yesterday") {
+    return date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/**
+ * Split the first body line so `#tags` / `@mentions` render as chips (mockup 2a).
+ * ponytail: naive token scan until real tag nodes exist in M2.
+ */
+export function parseSnippetParts(body: string): SnippetPart[] {
+  const line = noteSnippet(body);
+  if (line === "Empty note") {
+    return [{ type: "text", value: line }];
+  }
+
+  const parts: SnippetPart[] = [];
+  const pattern = /#([\w-]+)|@([\w]+(?:\s+[\w]+)*)/g;
+  let last = 0;
+  for (const match of line.matchAll(pattern)) {
+    const index = match.index;
+    if (index > last) {
+      parts.push({ type: "text", value: line.slice(last, index) });
+    }
+    if (match[1] !== undefined) {
+      parts.push({ type: "tag", value: `#${match[1]}` });
+    } else if (match[2] !== undefined) {
+      parts.push({ type: "mention", value: `@${match[2]}` });
+    }
+    last = index + match[0].length;
+  }
+  if (last < line.length) {
+    parts.push({ type: "text", value: line.slice(last) });
+  }
+  return parts.length > 0 ? parts : [{ type: "text", value: line }];
 }

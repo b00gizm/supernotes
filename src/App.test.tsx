@@ -49,9 +49,29 @@ describe("App shell", () => {
     expect(await screen.findByLabelText("Note title")).toHaveValue(title);
   });
 
-  it("opens Notes overview instead of the last note", async () => {
+  it("opens Notes overview with Pinned/Today groups and pin action", async () => {
     const user = userEvent.setup();
+    const now = new Date();
+    const todayIso = now.toISOString();
     apiRef.current = createMemoryNotesApi([
+      {
+        id: "p1",
+        title: "Meridian Q3 roadmap",
+        body_markdown: "Draft outline for #meridian",
+        note_type: "regular",
+        pinned: true,
+        created_at: todayIso,
+        updated_at: todayIso,
+      },
+      {
+        id: "t1",
+        title: "Interview — Priya Sharma",
+        body_markdown: "Notes with @Priya Sharma",
+        note_type: "regular",
+        pinned: false,
+        created_at: todayIso,
+        updated_at: todayIso,
+      },
       {
         id: "m1",
         title: "Pricing sync",
@@ -68,13 +88,58 @@ describe("App shell", () => {
 
     const nav = screen.getByRole("navigation", { name: "Primary" });
     await user.click(within(nav).getByRole("button", { name: "Notes" }));
+    const overview = await screen.findByRole("region", {
+      name: "Notes overview",
+    });
+    expect(
+      within(overview).getByRole("button", { name: "+ New note" }),
+    ).toBeInTheDocument();
+    expect(within(overview).getByText("3")).toBeInTheDocument();
+    expect(
+      within(overview).getByRole("region", { name: "Pinned" }),
+    ).toBeInTheDocument();
+    expect(
+      within(overview).getByRole("region", { name: "Today" }),
+    ).toBeInTheDocument();
+    expect(within(overview).getByText("#meridian")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Note title")).not.toBeInTheDocument();
+
+    const pinnedRow = within(overview).getByRole("button", {
+      name: /Meridian Q3 roadmap/,
+    });
+    await user.pointer({ keys: "[MouseRight>]", target: pinnedRow });
+    await user.click(await screen.findByRole("menuitem", { name: "Unpin" }));
+    expect(
+      within(overview).queryByRole("region", { name: "Pinned" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Notes breadcrumb on regular notes, not daily notes", async () => {
+    const user = userEvent.setup();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "m1",
+        title: "Pricing sync",
+        body_markdown: "Decided to keep the free tier",
+        note_type: "meeting",
+        pinned: false,
+        created_at: "2026-08-09T10:00:00.000Z",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      },
+    ]);
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+    expect(
+      screen.queryByRole("button", { name: "Back to Notes" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Pricing sync/ }));
+    const crumb = await screen.findByRole("button", { name: "Back to Notes" });
+    await user.click(crumb);
     expect(
       await screen.findByRole("region", { name: "Notes overview" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "+ New note" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Note title")).not.toBeInTheDocument();
   });
 
   it("lists recent notes with meeting waveform and supports edit/delete", async () => {
