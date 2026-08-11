@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState } from "react";
-import type { Note } from "./notes/types";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { formatRelativeUpdated } from "./notes/format";
+import type { Note, NoteType } from "./notes/types";
 
 export type SearchPaletteProps = {
   open: boolean;
@@ -8,6 +9,98 @@ export type SearchPaletteProps = {
   onOpenNote: (note: Note) => void;
   onCreateNote: (title: string) => void;
 };
+
+function noteTypeLabel(type: NoteType): string {
+  switch (type) {
+    case "meeting":
+      return "Meeting";
+    case "daily":
+      return "Daily";
+    default:
+      return "Note";
+  }
+}
+
+/** Bold the first case-insensitive substring match (mockup 1j). */
+function highlightMatch(title: string, query: string): ReactNode {
+  const needle = query.trim();
+  if (!needle) {
+    return title;
+  }
+  const index = title.toLowerCase().indexOf(needle.toLowerCase());
+  if (index < 0) {
+    return title;
+  }
+  const end = index + needle.length;
+  return (
+    <>
+      {title.slice(0, index)}
+      <strong>{title.slice(index, end)}</strong>
+      {title.slice(end)}
+    </>
+  );
+}
+
+function IconSearchGlyph() {
+  return (
+    <svg className="search-glyph" viewBox="0 0 16 16" aria-hidden="true">
+      <circle
+        cx="7"
+        cy="7"
+        r="4.25"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+      <path
+        d="M10.2 10.2 13.5 13.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconNoteDoc() {
+  return (
+    <svg className="search-type-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M4.5 2.75h5.2L12.5 5.6v7.65a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-9.5a1 1 0 0 1 1-1z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.5 2.85V5.5H12.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconMeetingBars() {
+  return (
+    <svg className="search-type-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M4 5.5v5M8 3.5v9M12 6v4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function TypeIcon({ type }: { type: NoteType }) {
+  return type === "meeting" ? <IconMeetingBars /> : <IconNoteDoc />;
+}
 
 export function SearchPalette({
   open,
@@ -24,11 +117,26 @@ export function SearchPalette({
   const [activeIndex, setActiveIndex] = useState(0);
   const [searching, setSearching] = useState(false);
 
-  const createLabel = query.trim()
-    ? `Create note '${query.trim()}'`
-    : "Create note 'Untitled'";
+  const createTitle = query.trim() || "Untitled";
+  const createLabel = `+ Create note '${createTitle}'`;
   const itemCount = results.length + 1;
   const createIndex = results.length;
+
+  const queryRef = useRef(query);
+  const resultsRef = useRef(results);
+  const activeIndexRef = useRef(activeIndex);
+  const createIndexRef = useRef(createIndex);
+  const itemCountRef = useRef(itemCount);
+  queryRef.current = query;
+  resultsRef.current = results;
+  activeIndexRef.current = activeIndex;
+  createIndexRef.current = createIndex;
+  itemCountRef.current = itemCount;
+
+  const createAndClose = () => {
+    onCreateNote(queryRef.current.trim() || "Untitled");
+    onClose();
+  };
 
   useEffect(() => {
     if (!open) {
@@ -74,44 +182,52 @@ export function SearchPalette({
         onClose();
         return;
       }
+
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        onCreateNote(queryRef.current.trim() || "Untitled");
+        onClose();
+        return;
+      }
+      if (mod && event.key === "Enter") {
+        event.preventDefault();
+        onCreateNote(queryRef.current.trim() || "Untitled");
+        onClose();
+        return;
+      }
+
+      const count = itemCountRef.current;
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setActiveIndex((index) => (index + 1) % itemCount);
+        setActiveIndex((index) => (index + 1) % count);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setActiveIndex((index) => (index - 1 + itemCount) % itemCount);
+        setActiveIndex((index) => (index - 1 + count) % count);
         return;
       }
       if (event.key === "Enter") {
         event.preventDefault();
-        if (activeIndex === createIndex) {
-          onCreateNote(query.trim() || "Untitled");
-        } else {
-          const note = results[activeIndex];
-          if (note) {
-            onOpenNote(note);
-          }
+        const index = activeIndexRef.current;
+        if (index === createIndexRef.current) {
+          onCreateNote(queryRef.current.trim() || "Untitled");
+          onClose();
+          return;
         }
-        onClose();
+        const note = resultsRef.current[index];
+        if (note) {
+          onOpenNote(note);
+          onClose();
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [
-    open,
-    onClose,
-    onCreateNote,
-    onOpenNote,
-    activeIndex,
-    createIndex,
-    itemCount,
-    query,
-    results,
-  ]);
+  }, [open, onClose, onCreateNote, onOpenNote]);
 
   if (!open) {
     return null;
@@ -133,23 +249,32 @@ export function SearchPalette({
         aria-modal="true"
         aria-labelledby={inputId}
       >
-        <input
-          ref={inputRef}
-          id={inputId}
-          className="search-input"
-          aria-label="Search notes"
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={`${listId}-item-${String(activeIndex)}`}
-          placeholder="Search notes…"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-          }}
-        />
+        <div className="search-input-row">
+          <IconSearchGlyph />
+          <input
+            ref={inputRef}
+            id={inputId}
+            className="search-input"
+            aria-label="Search notes"
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={`${listId}-item-${String(activeIndex)}`}
+            placeholder="Search notes…"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+          />
+          <kbd className="search-esc-chip">esc</kbd>
+        </div>
+
         <ul id={listId} className="search-results" role="listbox">
           {results.map((note, index) => {
             const active = index === activeIndex;
+            const when = formatRelativeUpdated(note.updated_at);
+            const meta = when
+              ? `${noteTypeLabel(note.note_type)} · ${when}`
+              : noteTypeLabel(note.note_type);
             return (
               <li key={note.id} role="presentation">
                 <button
@@ -168,9 +293,16 @@ export function SearchPalette({
                     onClose();
                   }}
                 >
+                  <TypeIcon type={note.note_type} />
                   <span className="search-result-title">
-                    {note.title || "Untitled"}
+                    {highlightMatch(note.title || "Untitled", query)}
                   </span>
+                  <span className="search-result-meta">{meta}</span>
+                  {active ? (
+                    <span className="search-result-return" aria-hidden="true">
+                      ⏎
+                    </span>
+                  ) : null}
                 </button>
               </li>
             );
@@ -180,7 +312,7 @@ export function SearchPalette({
               No matching notes
             </li>
           ) : null}
-          <li role="presentation">
+          <li className="search-create-row" role="presentation">
             <button
               type="button"
               id={`${listId}-item-${String(createIndex)}`}
@@ -194,15 +326,19 @@ export function SearchPalette({
               onMouseEnter={() => {
                 setActiveIndex(createIndex);
               }}
-              onClick={() => {
-                onCreateNote(query.trim() || "Untitled");
-                onClose();
-              }}
+              onClick={createAndClose}
             >
-              {createLabel}
+              <span className="search-create-label">{createLabel}</span>
+              <kbd className="search-shortcut">⌘+⏎</kbd>
             </button>
           </li>
         </ul>
+
+        <div className="search-legend" aria-hidden="true">
+          <span>↑↓ Navigate</span>
+          <span>⏎ Open</span>
+          <span>⌘N New note</span>
+        </div>
       </div>
     </div>
   );

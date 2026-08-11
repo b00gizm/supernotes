@@ -158,20 +158,25 @@ describe("App shell", () => {
 
     await user.keyboard("{Control>}k{/Control}");
     const search = await screen.findByLabelText("Search notes");
+    expect(screen.getByText("esc")).toBeInTheDocument();
+    expect(screen.getByText("↑↓ Navigate")).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "Create note 'Untitled'" }),
+      screen.getByRole("option", { name: /\+ Create note 'Untitled'/ }),
     ).toBeInTheDocument();
 
     await user.type(search, "pricing");
+    const pricing = await screen.findByRole("option", {
+      name: /Pricing sync/,
+    });
+    expect(pricing).toBeInTheDocument();
+    expect(within(pricing).getByText("Pricing").tagName).toBe("STRONG");
     expect(
-      await screen.findByRole("option", { name: "Pricing sync" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("option", { name: "Weekly review" }),
+      screen.queryByRole("option", { name: /Weekly review/ }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "Create note 'pricing'" }),
+      screen.getByRole("option", { name: /\+ Create note 'pricing'/ }),
     ).toBeInTheDocument();
+    expect(screen.getByText("⌘+⏎")).toBeInTheDocument();
 
     await user.keyboard("{ArrowDown}{Enter}");
     expect(await screen.findByLabelText("Note title")).toHaveValue("pricing");
