@@ -75,3 +75,16 @@ npm run build
 cd src-tauri && cargo test
 npm run tauri dev   # needs display + Tauri OS deps
 ```
+
+## Lessons from code reviews (avoid repeating these bug classes)
+
+### M1: Persistence & optimistic state
+- Every optimistic update needs a visible failure path. Never let a staleness/
+  generation guard skip the error branch — a swallowed failed save plus optimistic
+  UI equals silent data loss (the user sees content that was never persisted).
+- Trailing debounce alone is not autosave: continuous typing defers the write
+  forever. Pair debounce with a max-wait AND flush on blur/visibilitychange/close.
+- Separate commands by semantics: metadata toggles (pin) must not ride the
+  full-row content update. Full-row last-write-wins updates race each other,
+  and metadata changes must not bump `updated_at` (it corrupts recency ordering
+  that other features depend on).
