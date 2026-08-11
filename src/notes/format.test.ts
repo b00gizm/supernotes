@@ -44,6 +44,21 @@ describe("noteSnippet", () => {
     expect(noteSnippet("\n\n  Ship pricing v2\nmore")).toBe("Ship pricing v2");
     expect(noteSnippet("   ")).toBe("Empty note");
   });
+
+  it("strips markdown markers so previews stay plain text", () => {
+    expect(noteSnippet("Hello **world**.")).toBe("Hello world.");
+    expect(noteSnippet("# Title with *emphasis*")).toBe("Title with emphasis");
+    expect(noteSnippet("> quoted ~~old~~ and ==glow==")).toBe(
+      "quoted old and glow",
+    );
+    expect(noteSnippet("See [docs](https://example.com) and `code`")).toBe(
+      "See docs and code",
+    );
+    // Tags / mentions stay intact for overview chips.
+    expect(noteSnippet("Draft for #meridian with @Priya")).toBe(
+      "Draft for #meridian with @Priya",
+    );
+  });
 });
 
 describe("formatDailyTitle", () => {
