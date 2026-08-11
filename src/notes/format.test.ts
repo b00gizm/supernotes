@@ -144,4 +144,18 @@ describe("parseSnippetParts", () => {
       ],
     );
   });
+
+  it("keeps mentions bounded instead of swallowing the rest of the line", () => {
+    expect(parseSnippetParts("Met @john today about pricing v2")).toEqual([
+      { type: "text", value: "Met " },
+      { type: "mention", value: "@john" },
+      { type: "text", value: " today about pricing v2" },
+    ]);
+  });
+
+  it("leaves email addresses alone", () => {
+    expect(parseSnippetParts("ping john@example.com now")).toEqual([
+      { type: "text", value: "ping john@example.com now" },
+    ]);
+  });
 });

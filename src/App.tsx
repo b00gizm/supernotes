@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent,
@@ -15,6 +16,7 @@ import {
   groupNotesForOverview,
   noteSnippet,
   parseSnippetParts,
+  startOfLocalDay,
 } from "./notes/format";
 import {
   isSearchKpiMode,
@@ -32,6 +34,10 @@ type NavId = "daily" | "notes" | "tasks" | "calendar";
 type Surface = { kind: NavId } | { kind: "note"; id: string };
 
 type PinMenu = { noteId: string; pinned: boolean; x: number; y: number };
+
+// Rough menu footprint used to keep it inside the viewport.
+const PIN_MENU_SAFE_WIDTH = 160;
+const PIN_MENU_SAFE_HEIGHT = 48;
 
 function saveLabel(status: ReturnType<typeof useNotes>["status"]): string {
   switch (status) {
@@ -298,20 +304,37 @@ function App() {
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
 
+  const pinMenuItemRef = useRef<HTMLButtonElement | null>(null);
+
   useEffect(() => {
     if (!pinMenu) {
       return;
     }
+    // Keyboard users need to operate the menu, so only Escape closes it,
+    // not any key (ENG-83).
+    pinMenuItemRef.current?.focus();
     const close = () => {
       setPinMenu(null);
     };
-    window.addEventListener("click", close);
+    const onClick = (event: globalThis.MouseEvent) => {
+      // Firefox/macOS fires click alongside contextmenu on Ctrl+click.
+      if (event.ctrlKey) {
+        return;
+      }
+      close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    };
+    window.addEventListener("click", onClick);
     window.addEventListener("scroll", close, true);
-    window.addEventListener("keydown", close);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("click", close);
+      window.removeEventListener("click", onClick);
       window.removeEventListener("scroll", close, true);
-      window.removeEventListener("keydown", close);
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, [pinMenu]);
 
@@ -351,7 +374,26 @@ function App() {
   // Recent is a glance list, not the full corpus (search owns findability).
   const nonDailyNotes = notes.filter((note) => note.note_type !== "daily");
   const recentNotes = nonDailyNotes.slice(0, 12);
-  const overviewGroups = groupNotesForOverview(notes);
+
+  // Local-day stamp so the Today/Yesterday buckets roll over at midnight
+  // without a reload (ENG-84).
+  const [dayStamp, setDayStamp] = useState(() => startOfLocalDay(Date.now()));
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      setDayStamp((prev) => {
+        const next = startOfLocalDay(Date.now());
+        return next === prev ? prev : next;
+      });
+    }, 60_000);
+    return () => {
+      window.clearInterval(handle);
+    };
+  }, []);
+  const overviewGroups = useMemo(
+    () =>
+      surface.kind === "notes" ? groupNotesForOverview(notes, dayStamp) : [],
+    [surface.kind, notes, dayStamp],
+  );
 
   const openOverviewNote = (note: Note) => {
     setSurface({ kind: "note", id: note.id });
@@ -362,11 +404,19 @@ function App() {
   const openPinMenu = (event: MouseEvent, note: Note) => {
     event.preventDefault();
     event.stopPropagation();
+    // Keyboard/OS-invoked contextmenu carries (0,0); anchor to the row.
+    let x = event.clientX;
+    let y = event.clientY;
+    if (x === 0 && y === 0) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      x = rect.left + 12;
+      y = rect.bottom - 4;
+    }
     setPinMenu({
       noteId: note.id,
       pinned: note.pinned,
-      x: event.clientX,
-      y: event.clientY,
+      x: Math.max(8, Math.min(x, window.innerWidth - PIN_MENU_SAFE_WIDTH)),
+      y: Math.max(8, Math.min(y, window.innerHeight - PIN_MENU_SAFE_HEIGHT)),
     });
   };
 
@@ -429,7 +479,9 @@ function App() {
   };
 
   const openFromSearch = (note: Note) => {
-    if (note.note_type === "daily") {
+    // Only today's daily belongs on the daily surface — anything else there
+    // would make ensureDaily jump back to (or create) today (ENG-80).
+    if (note.note_type === "daily" && note.title === formatDailyTitle()) {
       setSurface({ kind: "daily" });
     } else {
       setSurface({ kind: "note", id: note.id });
@@ -633,7 +685,12 @@ function App() {
                             <button
                               type="button"
                               className="overview-item"
-                              onClick={() => {
+                              onClick={(event) => {
+                                // macOS Ctrl+click is a context-menu gesture,
+                                // not navigation (Firefox sends both).
+                                if (event.ctrlKey) {
+                                  return;
+                                }
                                 openOverviewNote(note);
                               }}
                               onContextMenu={(event) => {
@@ -797,8 +854,14 @@ function App() {
           onClick={(event) => {
             event.stopPropagation();
           }}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              setPinMenu(null);
+            }
+          }}
         >
           <button
+            ref={pinMenuItemRef}
             type="button"
             role="menuitem"
             className="context-menu-item"

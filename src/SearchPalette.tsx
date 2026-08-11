@@ -159,14 +159,26 @@ export function SearchPalette({
     }
     let cancelled = false;
     setSearching(true);
-    void searchNotes(query).then((notes) => {
-      if (cancelled) {
-        return;
-      }
-      setResults(notes);
-      setActiveIndex(0);
-      setSearching(false);
-    });
+    void searchNotes(query).then(
+      (notes) => {
+        if (cancelled) {
+          return;
+        }
+        setResults(notes);
+        setActiveIndex(0);
+        setSearching(false);
+      },
+      () => {
+        // Failed search: drop stale results so the create row stands alone
+        // instead of leaving "searching" stuck (ENG-81).
+        if (cancelled) {
+          return;
+        }
+        setResults([]);
+        setActiveIndex(0);
+        setSearching(false);
+      },
+    );
     return () => {
       cancelled = true;
     };

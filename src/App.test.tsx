@@ -22,6 +22,8 @@ vi.mock("./notes/api", async () => {
         apiRef.current.createNote(input),
       updateNote: (input: Parameters<NotesApi["updateNote"]>[0]) =>
         apiRef.current.updateNote(input),
+      setPinned: (id: string, pinned: boolean) =>
+        apiRef.current.setPinned(id, pinned),
       deleteNote: (id: string) => apiRef.current.deleteNote(id),
     },
   };

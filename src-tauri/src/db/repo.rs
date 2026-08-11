@@ -74,19 +74,25 @@ impl<'a> Repository<'a> {
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
-    pub fn update_note(
-        &self,
-        id: &str,
-        title: &str,
-        body_markdown: &str,
-        pinned: bool,
-    ) -> DbResult<Note> {
+    pub fn update_note(&self, id: &str, title: &str, body_markdown: &str) -> DbResult<Note> {
         let updated_at = utc_now(self.conn)?;
         let changed = self.conn.execute(
             "UPDATE notes
-             SET title = ?1, body_markdown = ?2, pinned = ?3, updated_at = ?4
-             WHERE id = ?5",
-            params![title, body_markdown, pinned as i64, updated_at, id],
+             SET title = ?1, body_markdown = ?2, updated_at = ?3
+             WHERE id = ?4",
+            params![title, body_markdown, updated_at, id],
+        )?;
+        if changed == 0 {
+            return Err(DbError::NotFound);
+        }
+        self.get_note(id)
+    }
+
+    /// Metadata toggle: deliberately leaves `updated_at` untouched.
+    pub fn set_pinned(&self, id: &str, pinned: bool) -> DbResult<Note> {
+        let changed = self.conn.execute(
+            "UPDATE notes SET pinned = ?1 WHERE id = ?2",
+            params![pinned as i64, id],
         )?;
         if changed == 0 {
             return Err(DbError::NotFound);
@@ -575,11 +581,16 @@ mod tests {
             let fetched = repo.get_note(&created.id).unwrap();
             assert_eq!(fetched.title, "Hello");
 
-            let updated = repo
-                .update_note(&created.id, "Hello 2", "body 2", false)
-                .unwrap();
+            let updated = repo.update_note(&created.id, "Hello 2", "body 2").unwrap();
             assert_eq!(updated.title, "Hello 2");
-            assert!(!updated.pinned);
+            assert!(updated.pinned, "content update must not touch pinned");
+
+            let unpinned = repo.set_pinned(&created.id, false).unwrap();
+            assert!(!unpinned.pinned);
+            assert_eq!(
+                unpinned.updated_at, updated.updated_at,
+                "pin toggle must not touch updated_at"
+            );
 
             let listed = repo.list_notes().unwrap();
             assert_eq!(listed.len(), 1);

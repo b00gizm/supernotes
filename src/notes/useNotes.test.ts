@@ -76,10 +76,66 @@ describe("useNotes", () => {
       id: "n1",
       title: "Alpha edited",
       body_markdown: "hello world",
-      pinned: false,
     });
     expect(result.current.status).toBe("saved");
     expect(result.current.notes[0]?.title).toBe("Alpha edited");
+  });
+
+  it("force-saves within the max wait while typing continuously", async () => {
+    vi.useFakeTimers();
+    const api = createMemoryNotesApi([seedNote()]);
+    const updateNote = vi.spyOn(api, "updateNote");
+
+    const { result } = renderHook(() => useNotes({ api }));
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+
+    // Keystrokes every 300ms keep resetting the 500ms debounce; the 2s
+    // max wait must still push a save through.
+    for (let i = 0; i < 8; i += 1) {
+      act(() => {
+        result.current.setBodyDraft(`draft ${String(i)}`);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+    }
+
+    expect(updateNote).toHaveBeenCalled();
+  });
+
+  it("surfaces a failed flush when switching notes", async () => {
+    const api = createMemoryNotesApi([
+      seedNote({ id: "a", title: "A" }),
+      seedNote({
+        id: "b",
+        title: "B",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      }),
+    ]);
+    vi.spyOn(api, "updateNote").mockRejectedValue(new Error("db locked"));
+
+    const { result } = renderHook(() => useNotes({ api }));
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(result.current.selectedId).toBe("a");
+
+    act(() => {
+      result.current.setBodyDraft("unsaved edit");
+    });
+    act(() => {
+      result.current.selectNote("b");
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toContain("db locked");
+    });
+    // The optimistic edit must not survive the failed flush.
+    expect(
+      result.current.notes.find((note) => note.id === "a")?.body_markdown,
+    ).toBe("hello");
   });
 
   it("creates a note and deletes the selected note from the list", async () => {
@@ -121,8 +177,9 @@ describe("useNotes", () => {
     await act(async () => {
       await result.current.setPinned("b", true);
     });
-    expect(result.current.notes.find((note) => note.id === "b")?.pinned).toBe(
-      true,
-    );
+    const pinned = result.current.notes.find((note) => note.id === "b");
+    expect(pinned?.pinned).toBe(true);
+    // Pinning is metadata-only and must not masquerade as an edit.
+    expect(pinned?.updated_at).toBe("2026-08-09T10:00:00.000Z");
   });
 });

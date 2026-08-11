@@ -4,3 +4,4 @@ src-tauri/target
 node_modules
 package-lock.json
 *.local
+src-tauri/gen

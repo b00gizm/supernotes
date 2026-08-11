@@ -79,6 +79,7 @@ npm run tauri dev   # needs display + Tauri OS deps
 ## Lessons from code reviews (avoid repeating these bug classes)
 
 ### M1: Persistence & optimistic state
+
 - Every optimistic update needs a visible failure path. Never let a staleness/
   generation guard skip the error branch — a swallowed failed save plus optimistic
   UI equals silent data loss (the user sees content that was never persisted).

@@ -21,5 +21,4 @@ export type UpdateNoteInput = {
   id: string;
   title: string;
   body_markdown: string;
-  pinned: boolean;
 };

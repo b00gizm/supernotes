@@ -70,13 +70,13 @@ export type SnippetPart =
   | { type: "tag"; value: string }
   | { type: "mention"; value: string };
 
-function startOfLocalDay(ms: number): number {
+export function startOfLocalDay(ms: number): number {
   const date = new Date(ms);
   date.setHours(0, 0, 0, 0);
   return date.getTime();
 }
 
-function byUpdatedAtDesc(a: Note, b: Note): number {
+export function byUpdatedAtDesc(a: Note, b: Note): number {
   return b.updated_at.localeCompare(a.updated_at);
 }
 
@@ -88,7 +88,10 @@ export function groupNotesForOverview(
   const browseable = notes.filter((note) => note.note_type !== "daily");
   const pinned = browseable.filter((note) => note.pinned).sort(byUpdatedAtDesc);
   const todayStart = startOfLocalDay(nowMs);
-  const yesterdayStart = todayStart - 86_400_000;
+  // setDate handles DST days (23h/25h); a fixed 86_400_000 offset does not.
+  const yesterdayDate = new Date(todayStart);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayStart = yesterdayDate.getTime();
   const today: Note[] = [];
   const yesterday: Note[] = [];
   const earlier: Note[] = [];
@@ -164,7 +167,10 @@ export function parseSnippetParts(body: string): SnippetPart[] {
   }
 
   const parts: SnippetPart[] = [];
-  const pattern = /#([\w-]+)|@([\w]+(?:\s+[\w]+)*)/g;
+  // Left boundary keeps emails intact; mentions take one optional
+  // capitalized surname ("@Priya Sharma") instead of swallowing the line.
+  const pattern =
+    /(?<![\w@])(?:#([\w-]+)|@([A-Za-z][\w-]*(?:\s+[A-Z][\w-]*)?))/g;
   let last = 0;
   for (const match of line.matchAll(pattern)) {
     const index = match.index;
