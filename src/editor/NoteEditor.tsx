@@ -1,6 +1,6 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { noteEditorExtensions } from "./extensions";
 import { openExternalUrl, saveNoteImage } from "./media";
 import { TableMenu } from "./TableMenu";
@@ -114,34 +114,6 @@ export function NoteEditor({ markdown, onChange }: NoteEditorProps) {
       setTick((n) => n + 1);
     },
   });
-
-  useEffect(() => {
-    if (!editor) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) {
-        return;
-      }
-      if (event.key.toLowerCase() !== "t") {
-        return;
-      }
-      // Don't steal when typing in a prompt / non-editor field.
-      if (!editor.isFocused) {
-        return;
-      }
-      event.preventDefault();
-      editor
-        .chain()
-        .focus()
-        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-        .run();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [editor]);
 
   return (
     <div className="body-input note-editor">

@@ -5,7 +5,12 @@ import { Link } from "@tiptap/extension-link";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TableKit } from "@tiptap/extension-table";
-import { InputRule, nodeInputRule, type Extensions } from "@tiptap/core";
+import {
+  Extension,
+  InputRule,
+  nodeInputRule,
+  type Extensions,
+} from "@tiptap/core";
 import type { MarkType } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
@@ -13,6 +18,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
+import { markdownTableFixupPlugin } from "./markdownTable";
 
 const lowlight = createLowlight(common);
 
@@ -96,8 +102,8 @@ function markdownLinkFixupPlugin(markType: MarkType): Plugin {
           replacements.push({
             from,
             to,
-            label: match[1],
-            href: match[2],
+            label: match[1] ?? "",
+            href: match[2] ?? "",
           });
         }
       });
@@ -299,6 +305,14 @@ const NoteTaskItem = TaskItem.extend({
   },
 }).configure({ nested: true });
 
+/** Paste + typing fixup for GFM pipe tables (clipboard HTML otherwise wins). */
+const MarkdownTableFixup = Extension.create({
+  name: "markdownTableFixup",
+  addProseMirrorPlugins() {
+    return [markdownTableFixupPlugin(this.editor)];
+  },
+});
+
 /** Shared TipTap extensions for the note body editor (ENG-53 + ENG-54). */
 export function noteEditorExtensions(): Extensions {
   return [
@@ -316,6 +330,7 @@ export function noteEditorExtensions(): Extensions {
     TableKit.configure({
       table: { resizable: false },
     }),
+    MarkdownTableFixup,
     NoteImage,
     Placeholder.configure({ placeholder: "Start writing…" }),
     // ponytail: ENG-55 owns golden-file round-trip + wikilinks / tags / task pills.

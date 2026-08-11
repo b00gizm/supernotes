@@ -1,9 +1,27 @@
 import type { Editor } from "@tiptap/react";
 
-/** Minimal table controls — shown only while the caret is inside a table. */
+/** Table controls — insert when outside a table; edit when inside. */
 export function TableMenu({ editor }: { editor: Editor }) {
   if (!editor.isActive("table")) {
-    return null;
+    return (
+      <div className="table-menu" role="toolbar" aria-label="Table">
+        <button
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+          onClick={() => {
+            editor
+              .chain()
+              .focus()
+              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+              .run();
+          }}
+        >
+          Insert table
+        </button>
+      </div>
+    );
   }
 
   return (
