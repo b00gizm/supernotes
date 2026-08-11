@@ -305,6 +305,7 @@ function App() {
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
 
+  const pinMenuRef = useRef<HTMLDivElement | null>(null);
   const pinMenuItemRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -317,9 +318,18 @@ function App() {
     const close = () => {
       setPinMenu(null);
     };
-    const onClick = (event: globalThis.MouseEvent) => {
-      // Firefox/macOS fires click alongside contextmenu on Ctrl+click.
-      if (event.ctrlKey) {
+    // WebKit/Tauri can deliver a leftover mouse event from the opening
+    // right-click after the menu mounts; ignore dismiss briefly.
+    const openedAt = performance.now();
+    const onMouseDown = (event: globalThis.MouseEvent) => {
+      if (event.ctrlKey || event.button !== 0) {
+        return;
+      }
+      if (performance.now() - openedAt < 100) {
+        return;
+      }
+      const menu = pinMenuRef.current;
+      if (menu && event.target instanceof Node && menu.contains(event.target)) {
         return;
       }
       close();
@@ -329,11 +339,11 @@ function App() {
         close();
       }
     };
-    window.addEventListener("click", onClick);
+    window.addEventListener("mousedown", onMouseDown, true);
     window.addEventListener("scroll", close, true);
     window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("click", onClick);
+      window.removeEventListener("mousedown", onMouseDown, true);
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("keydown", onKeyDown);
     };
@@ -362,6 +372,17 @@ function App() {
       const key = event.key.toLowerCase();
       if (key !== "k" && key !== "o") {
         return;
+      }
+      // ENG-54: Mod-k on a text selection inside the editor sets a link.
+      if (key === "k") {
+        const target = event.target;
+        const inEditor =
+          target instanceof Element &&
+          Boolean(target.closest(".note-editor, .ProseMirror"));
+        const selection = window.getSelection();
+        if (inEditor && selection && !selection.isCollapsed) {
+          return;
+        }
       }
       event.preventDefault();
       setSearchOpen(true);
@@ -848,24 +869,24 @@ function App() {
 
       {pinMenu ? (
         <div
+          ref={pinMenuRef}
           className="context-menu"
           role="menu"
           style={{ left: pinMenu.x, top: pinMenu.y }}
-          onClick={(event) => {
-            event.stopPropagation();
-          }}
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) {
-              setPinMenu(null);
-            }
-          }}
         >
           <button
             ref={pinMenuItemRef}
             type="button"
             role="menuitem"
             className="context-menu-item"
-            onClick={() => {
+            onMouseDown={(event) => {
+              if (event.button !== 0) {
+                return;
+              }
+              // Act on mousedown so WebKit blur/click-outside can't unmount
+              // the item before a click handler runs (Tauri webview).
+              event.preventDefault();
+              event.stopPropagation();
               void setPinned(pinMenu.noteId, !pinMenu.pinned);
               setPinMenu(null);
             }}

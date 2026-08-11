@@ -110,10 +110,46 @@ describe("App shell", () => {
       name: /Meridian Q3 roadmap/,
     });
     await user.pointer({ keys: "[MouseRight>]", target: pinnedRow });
-    await user.click(await screen.findByRole("menuitem", { name: "Unpin" }));
+    // Leftover mouse event from the opening gesture must not dismiss the menu.
+    window.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+    );
+    const unpin = await screen.findByRole("menuitem", { name: "Unpin" });
+    await user.click(unpin);
     expect(
       within(overview).queryByRole("region", { name: "Pinned" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("pins a note from the overview context menu", async () => {
+    const user = userEvent.setup();
+    const todayIso = new Date().toISOString();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "t1",
+        title: "Interview — Priya Sharma",
+        body_markdown: "Notes",
+        note_type: "regular",
+        pinned: false,
+        created_at: todayIso,
+        updated_at: todayIso,
+      },
+    ]);
+
+    render(<App />);
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    await user.click(within(nav).getByRole("button", { name: "Notes" }));
+    const overview = await screen.findByRole("region", {
+      name: "Notes overview",
+    });
+    const row = within(overview).getByRole("button", {
+      name: /Interview/,
+    });
+    await user.pointer({ keys: "[MouseRight>]", target: row });
+    await user.click(await screen.findByRole("menuitem", { name: "Pin" }));
+    expect(
+      within(overview).getByRole("region", { name: "Pinned" }),
+    ).toBeInTheDocument();
   });
 
   it("shows Notes breadcrumb on regular notes, not daily notes", async () => {
