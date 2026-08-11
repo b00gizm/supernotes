@@ -18,9 +18,9 @@ describe("editor media helpers", () => {
     expect(
       extensionForFile(new File([], "chart.PNG", { type: "image/png" })),
     ).toBe("png");
-    expect(
-      extensionForFile(new File([], "x", { type: "image/jpeg" })),
-    ).toBe("jpg");
+    expect(extensionForFile(new File([], "x", { type: "image/jpeg" }))).toBe(
+      "jpg",
+    );
   });
 
   it("stores browser images as data URLs", async () => {

@@ -160,9 +160,9 @@ describe("note editor input rules", () => {
     editor.destroy();
     editor = createEditor();
     editor.commands.setContent(md);
-    expect(editor.isActive("table") || editor.getHTML().includes("<table")).toBe(
-      true,
-    );
+    expect(
+      editor.isActive("table") || editor.getHTML().includes("<table"),
+    ).toBe(true);
     expect(markdownOf(editor)).toContain("| 1 | 2 |");
   });
 
@@ -181,7 +181,9 @@ describe("note editor input rules", () => {
   it("round-trips markdown links", () => {
     editor = createEditor();
     editor.commands.setContent("[docs](https://example.com/path)");
-    expect(editor.getHTML()).toMatch(/<a[^>]+href="https:\/\/example.com\/path"/);
+    expect(editor.getHTML()).toMatch(
+      /<a[^>]+href="https:\/\/example.com\/path"/,
+    );
     const md = markdownOf(editor);
     expect(md).toContain("[docs](https://example.com/path)");
 

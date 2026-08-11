@@ -96,8 +96,7 @@ const NoteLink = Link.extend({
           return false;
         }
         const prev = this.editor.getAttributes("link").href as
-          | string
-          | undefined;
+          string | undefined;
         const url = window.prompt("Link URL", prev ?? "https://");
         if (url === null) {
           return true;

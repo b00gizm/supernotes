@@ -1,10 +1,6 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { useEffect, useRef, useState } from "react";
-import {
-  isImageDropSlot,
-  resolveImageSrc,
-  saveNoteImage,
-} from "./media";
+import { isImageDropSlot, resolveImageSrc, saveNoteImage } from "./media";
 
 export function ImageView({ node, updateAttributes, selected }: NodeViewProps) {
   const src = String(node.attrs.src ?? "");

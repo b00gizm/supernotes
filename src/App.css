@@ -788,7 +788,12 @@ button {
 }
 
 /* Square checkboxes (ENG-54) — distinct from M4 circular task pills. */
-.note-editor .tiptap ul[data-type="taskList"] li > label input[type="checkbox"] {
+.note-editor
+  .tiptap
+  ul[data-type="taskList"]
+  li
+  > label
+  input[type="checkbox"] {
   appearance: none;
   width: 0.95rem;
   height: 0.95rem;
