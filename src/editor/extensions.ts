@@ -5,7 +5,7 @@ import { Link } from "@tiptap/extension-link";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TableKit } from "@tiptap/extension-table";
-import { nodeInputRule, type Extensions } from "@tiptap/core";
+import { InputRule, nodeInputRule, type Extensions } from "@tiptap/core";
 import type { MarkType } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
@@ -15,6 +15,9 @@ import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
 
 const lowlight = createLowlight(common);
+
+/** Same pattern TipTap uses: `[ ]` / `[]` / `[x]` + trailing space. */
+const taskCheckboxInputRegex = /^\s*(\[([( |x])?\])\s$/;
 
 /** Allow empty src so `![chart]()` becomes a drop slot (TipTap default needs \\S+). */
 const imageInputRegex =
@@ -268,6 +271,34 @@ const NoteImage = Image.extend({
   allowBase64: true,
 });
 
+/**
+ * Checkbox input that works after `- ` has already become a bullet list.
+ * TipTap's default wrappingInputRule cannot wrap taskItem inside listItem.
+ */
+const NoteTaskItem = TaskItem.extend({
+  addInputRules() {
+    return [
+      new InputRule({
+        find: taskCheckboxInputRegex,
+        handler: ({ range, match, chain }) => {
+          const checked = match[2] === "x";
+          chain()
+            .deleteRange(range)
+            .command(({ editor, commands }) => {
+              if (editor.isActive("taskItem")) {
+                return true;
+              }
+              // Converts bullet/ordered lists, or wraps a plain paragraph.
+              return commands.toggleList("taskList", "taskItem");
+            })
+            .updateAttributes("taskItem", { checked })
+            .run();
+        },
+      }),
+    ];
+  },
+}).configure({ nested: true });
+
 /** Shared TipTap extensions for the note body editor (ENG-53 + ENG-54). */
 export function noteEditorExtensions(): Extensions {
   return [
@@ -281,7 +312,7 @@ export function noteEditorExtensions(): Extensions {
     CodeBlockLowlight.configure({ lowlight }),
     // Square checklist items (`- [ ]`); M4 task pills are a separate node.
     TaskList,
-    TaskItem.configure({ nested: true }),
+    NoteTaskItem,
     TableKit.configure({
       table: { resizable: false },
     }),
