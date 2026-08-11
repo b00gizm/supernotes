@@ -809,7 +809,8 @@ mod tests {
             assert_eq!(links[0].target_note_id, target.id);
 
             // Drop Foo, keep Bar — Missing still unresolved.
-            repo.update_note(&source.id, "Source", "See [[Bar]] only.")
+            let source = repo
+                .update_note(&source.id, "Source", "See [[Bar]] only.")
                 .unwrap();
             let links = repo.list_links_from(&source.id).unwrap();
             assert_eq!(links.len(), 1);
