@@ -23,7 +23,6 @@ pub struct UpdateNoteInput {
     pub id: String,
     pub title: String,
     pub body_markdown: String,
-    pub pinned: bool,
 }
 
 #[tauri::command]
@@ -58,13 +57,15 @@ pub fn list_notes(state: State<'_, Db>) -> Result<Vec<Note>, String> {
 pub fn update_note(state: State<'_, Db>, input: UpdateNoteInput) -> Result<Note, String> {
     state
         .with_conn(|conn| {
-            Repository::new(conn).update_note(
-                &input.id,
-                &input.title,
-                &input.body_markdown,
-                input.pinned,
-            )
+            Repository::new(conn).update_note(&input.id, &input.title, &input.body_markdown)
         })
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn set_note_pinned(state: State<'_, Db>, id: String, pinned: bool) -> Result<Note, String> {
+    state
+        .with_conn(|conn| Repository::new(conn).set_pinned(&id, pinned))
         .map_err(|err| err.to_string())
 }
 
@@ -97,12 +98,13 @@ mod tests {
             })
             .unwrap();
         let updated = db
-            .with_conn(|conn| {
-                Repository::new(conn).update_note(&created.id, "Hello!", "edited", true)
-            })
+            .with_conn(|conn| Repository::new(conn).update_note(&created.id, "Hello!", "edited"))
             .unwrap();
         assert_eq!(updated.title, "Hello!");
-        assert!(updated.pinned);
+        let pinned = db
+            .with_conn(|conn| Repository::new(conn).set_pinned(&created.id, true))
+            .unwrap();
+        assert!(pinned.pinned);
         db.with_conn(|conn| Repository::new(conn).delete_note(&created.id))
             .unwrap();
         assert!(db

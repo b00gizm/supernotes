@@ -1,26 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import type { NotesApi } from "./api";
 import { notesApi as defaultNotesApi } from "./api";
+import { byUpdatedAtDesc } from "./format";
 import type { CreateNoteInput, Note } from "./types";
 
 export const AUTOSAVE_DEBOUNCE_MS = 500;
+/** Continuous typing must still hit disk this often (ENG-78). */
+export const AUTOSAVE_MAX_WAIT_MS = 2000;
 
 export type NotesSaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 
 export type UseNotesOptions = {
   api?: NotesApi;
   debounceMs?: number;
+  maxWaitMs?: number;
   /** When false, load without selecting a note (shell picks Daily / overview). */
   autoSelect?: boolean;
 };
 
-function byUpdatedAtDesc(a: Note, b: Note): number {
-  return b.updated_at.localeCompare(a.updated_at);
-}
-
 export function useNotes(options: UseNotesOptions = {}) {
   const api = options.api ?? defaultNotesApi;
   const debounceMs = options.debounceMs ?? AUTOSAVE_DEBOUNCE_MS;
+  const maxWaitMs = options.maxWaitMs ?? AUTOSAVE_MAX_WAIT_MS;
   const autoSelect = options.autoSelect ?? true;
   const apiRef = useRef(api);
   const autoSelectRef = useRef(autoSelect);
@@ -42,6 +43,7 @@ export function useNotes(options: UseNotesOptions = {}) {
   const saveGeneration = useRef(0);
   const mountedRef = useRef(true);
   const statusRef = useRef<NotesSaveStatus>("idle");
+  const dirtySinceRef = useRef<number | null>(null);
 
   selectedIdRef.current = selectedId;
   titleDraftRef.current = titleDraft;
@@ -117,10 +119,12 @@ export function useNotes(options: UseNotesOptions = {}) {
     const title = titleDraftRef.current;
     const body = bodyDraftRef.current;
     if (title === existing.title && body === existing.body_markdown) {
+      dirtySinceRef.current = null;
       setStatus("idle");
       return;
     }
 
+    dirtySinceRef.current = null;
     const generation = ++saveGeneration.current;
     setStatus("saving");
     setError(null);
@@ -145,7 +149,6 @@ export function useNotes(options: UseNotesOptions = {}) {
         id,
         title,
         body_markdown: body,
-        pinned: existing.pinned,
       });
       if (!mountedRef.current || generation !== saveGeneration.current) {
         return;
@@ -157,12 +160,17 @@ export function useNotes(options: UseNotesOptions = {}) {
       );
       setStatus("saved");
     } catch (err) {
-      if (!mountedRef.current || generation !== saveGeneration.current) {
+      // A stale generation must still surface the failure and reconcile with
+      // the DB; only the status flag belongs to the current selection (ENG-78).
+      if (mountedRef.current && generation === saveGeneration.current) {
+        setStatus("error");
+      }
+      // Reconcile first — refresh() clears the error state.
+      await refresh();
+      if (!mountedRef.current) {
         return;
       }
-      setStatus("error");
       setError(err instanceof Error ? err.message : String(err));
-      await refresh();
     }
   };
   const persistDraftRef = useRef(persistDraft);
@@ -177,17 +185,47 @@ export function useNotes(options: UseNotesOptions = {}) {
       return;
     }
     if (titleDraft === existing.title && bodyDraft === existing.body_markdown) {
+      dirtySinceRef.current = null;
       return;
     }
 
     setStatus("dirty");
+    // Trailing debounce, but never later than maxWaitMs after the first
+    // unsaved keystroke — continuous typing must still persist (ENG-78).
+    const now = Date.now();
+    dirtySinceRef.current ??= now;
+    const deadline = dirtySinceRef.current + maxWaitMs;
+    const delay = Math.min(debounceMs, Math.max(0, deadline - now));
     const handle = window.setTimeout(() => {
       void persistDraftRef.current();
-    }, debounceMs);
+    }, delay);
     return () => {
       window.clearTimeout(handle);
     };
-  }, [selectedId, titleDraft, bodyDraft, debounceMs]);
+  }, [selectedId, titleDraft, bodyDraft, debounceMs, maxWaitMs]);
+
+  // The debounce dies with the process; flush dirty edits when the window
+  // goes away or loses focus (ENG-78).
+  useEffect(() => {
+    const flushIfDirty = () => {
+      if (statusRef.current === "dirty") {
+        void persistDraftRef.current();
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushIfDirty();
+      }
+    };
+    window.addEventListener("beforeunload", flushIfDirty);
+    window.addEventListener("blur", flushIfDirty);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("beforeunload", flushIfDirty);
+      window.removeEventListener("blur", flushIfDirty);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   const selectNote = (id: string | null) => {
     if (selectedIdRef.current && statusRef.current === "dirty") {
@@ -249,45 +287,28 @@ export function useNotes(options: UseNotesOptions = {}) {
       return;
     }
     setError(null);
-    const title =
-      selectedIdRef.current === id ? titleDraftRef.current : existing.title;
-    const body =
-      selectedIdRef.current === id
-        ? bodyDraftRef.current
-        : existing.body_markdown;
-    const optimistic: Note = {
-      ...existing,
-      title,
-      body_markdown: body,
-      pinned,
-      updated_at: new Date().toISOString(),
-    };
+    // Metadata-only toggle: content and updated_at stay untouched, so this
+    // can't race the autosave and doesn't reorder the lists (ENG-79).
     setNotes((prev) =>
-      [...prev.map((note) => (note.id === id ? optimistic : note))].sort(
-        byUpdatedAtDesc,
-      ),
+      prev.map((note) => (note.id === id ? { ...note, pinned } : note)),
     );
     try {
-      const saved = await apiRef.current.updateNote({
-        id,
-        title,
-        body_markdown: body,
-        pinned,
-      });
+      const saved = await apiRef.current.setPinned(id, pinned);
       if (!mountedRef.current) {
         return;
       }
       setNotes((prev) =>
-        [...prev.map((note) => (note.id === id ? saved : note))].sort(
-          byUpdatedAtDesc,
+        prev.map((note) =>
+          note.id === id ? { ...note, pinned: saved.pinned } : note,
         ),
       );
     } catch (err) {
+      // Reconcile first — refresh() clears the error state.
+      await refresh();
       if (!mountedRef.current) {
         return;
       }
       setError(err instanceof Error ? err.message : String(err));
-      await refresh();
     }
   };
 

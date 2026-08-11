@@ -8,6 +8,8 @@ export type NotesApi = {
   searchNotes: (query: string) => Promise<Note[]>;
   createNote: (input: CreateNoteInput) => Promise<Note>;
   updateNote: (input: UpdateNoteInput) => Promise<Note>;
+  /** Metadata toggle; does not touch updated_at. */
+  setPinned: (id: string, pinned: boolean) => Promise<Note>;
   deleteNote: (id: string) => Promise<void>;
 };
 
@@ -16,6 +18,7 @@ const tauriNotesApi: NotesApi = {
   searchNotes: (query) => invoke<Note[]>("search_notes", { query }),
   createNote: (input) => invoke<Note>("create_note", { input }),
   updateNote: (input) => invoke<Note>("update_note", { input }),
+  setPinned: (id, pinned) => invoke<Note>("set_note_pinned", { id, pinned }),
   deleteNote: async (id) => {
     await invoke("delete_note", { id });
   },

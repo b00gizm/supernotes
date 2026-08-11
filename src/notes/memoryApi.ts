@@ -48,10 +48,19 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
         ...current,
         title: input.title,
         body_markdown: input.body_markdown,
-        pinned: input.pinned,
         updated_at: new Date().toISOString(),
       };
       notes = notes.map((item) => (item.id === input.id ? updated : item));
+      return Promise.resolve(updated);
+    },
+    setPinned(id: string, pinned: boolean) {
+      const current = notes.find((item) => item.id === id);
+      if (!current) {
+        return Promise.reject(new Error("not found"));
+      }
+      // Metadata toggle; updated_at deliberately unchanged.
+      const updated: Note = { ...current, pinned };
+      notes = notes.map((item) => (item.id === id ? updated : item));
       return Promise.resolve(updated);
     },
     deleteNote(id) {
