@@ -18,6 +18,7 @@ import {
   parseSnippetParts,
   startOfLocalDay,
 } from "./notes/format";
+import { NoteEditor } from "./editor/NoteEditor";
 import {
   isSearchKpiMode,
   runSearchKpi,
@@ -785,14 +786,13 @@ function App() {
                 setTitleDraft(event.target.value);
               }}
             />
-            <textarea
-              className="body-input"
-              aria-label="Note body"
-              value={bodyDraft}
-              onChange={(event) => {
-                setBodyDraft(event.target.value);
-              }}
-            />
+            {selectedId ? (
+              <NoteEditor
+                key={selectedId}
+                markdown={bodyDraft}
+                onChange={setBodyDraft}
+              />
+            ) : null}
           </section>
         ) : null}
 

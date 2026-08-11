@@ -37,10 +37,35 @@ export function formatRelativeUpdated(
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-/** First non-empty body line; computed, not stored. */
+/** Strip inline/block markdown markers for preview text (keep #tags / @mentions). */
+function stripMarkdownMarkers(line: string): string {
+  return (
+    line
+      // ATX headings / blockquotes / list markers at line start only.
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/^>\s+/, "")
+      .replace(/^[-*+]\s+/, "")
+      .replace(/^\d+\.\s+/, "")
+      // Skip bare fence openers.
+      .replace(/^```\w*$/, "")
+      // Images / links → alt/label text.
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      // Inline marks; longer delimiters first so `**` wins over `*`.
+      .replace(/(`+)(.*?)\1/g, "$2")
+      .replace(/(\*\*|__)(.*?)\1/g, "$2")
+      .replace(/(?<!\w)(\*|_)(?!\s)(.+?)(?<!\s)\1(?!\w)/g, "$2")
+      .replace(/~~(.*?)~~/g, "$1")
+      .replace(/==(.*?)==/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+/** First non-empty body line as plain text; computed, not stored. */
 export function noteSnippet(body: string): string {
   for (const line of body.split(/\r?\n/)) {
-    const trimmed = line.trim();
+    const trimmed = stripMarkdownMarkers(line.trim());
     if (trimmed) {
       return trimmed;
     }

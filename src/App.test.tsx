@@ -169,10 +169,11 @@ describe("App shell", () => {
       "Pricing sync",
     );
 
-    const body = screen.getByLabelText("Note body");
-    await user.clear(body);
-    await user.type(body, "Updated decision");
-    expect(body).toHaveValue("Updated decision");
+    const body = await screen.findByLabelText("Note body");
+    // Contenteditable: select-all + replace (user.clear is textarea-oriented).
+    await user.click(body);
+    await user.keyboard("{Control>}a{/Control}Updated decision");
+    expect(body).toHaveTextContent("Updated decision");
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
     expect(
