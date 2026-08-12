@@ -2,7 +2,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { noteEditorExtensions } from "./extensions";
 import { getEditorMarkdown } from "./markdown";
-import { findActiveWikiLinkQuery } from "./wikiLink";
+import { findActiveWikiLinkQuery, sameWikiLinkQuery } from "./wikiLink";
 
 function typeText(editor: Editor, text: string) {
   for (const char of text) {
@@ -153,5 +153,17 @@ describe("wikilink input", () => {
     expect(getEditorMarkdown(editor)).toBe(
       "See [[project]] and #project with @Priya Sharma",
     );
+  });
+});
+
+describe("sameWikiLinkQuery (ENG-87)", () => {
+  const base = { from: 1, to: 5, query: "ab", kind: "wiki" as const };
+
+  it("treats nulls and identical field sets as equal", () => {
+    expect(sameWikiLinkQuery(null, null)).toBe(true);
+    expect(sameWikiLinkQuery(base, { ...base })).toBe(true);
+    expect(sameWikiLinkQuery(base, null)).toBe(false);
+    expect(sameWikiLinkQuery(base, { ...base, query: "ac" })).toBe(false);
+    expect(sameWikiLinkQuery(base, { ...base, kind: "tag" })).toBe(false);
   });
 });

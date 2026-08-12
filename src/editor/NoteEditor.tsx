@@ -9,6 +9,7 @@ import { getEditorMarkdown } from "./markdown";
 import { openExternalUrl, saveNoteImage } from "./media";
 import {
   insertWikiLink,
+  sameWikiLinkQuery,
   wikiLinkQueryRect,
   type WikiLinkQuery,
 } from "./wikiLink";
@@ -88,7 +89,8 @@ export function NoteEditor({
       return;
     }
     dismissedFromRef.current = null;
-    setQuery(next);
+    // Fresh object every plugin update — skip setState when fields match (ENG-87).
+    setQuery((prev) => (sameWikiLinkQuery(prev, next) ? prev : next));
   };
 
   const suggestions = query
