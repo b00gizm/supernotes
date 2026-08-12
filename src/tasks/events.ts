@@ -7,10 +7,12 @@ export function emitTasksChanged(noteId?: string): void {
   if (typeof window === "undefined") {
     return;
   }
+  const detail: TasksChangedDetail = {};
+  if (noteId !== undefined) {
+    detail.noteId = noteId;
+  }
   window.dispatchEvent(
-    new CustomEvent<TasksChangedDetail>(TASKS_CHANGED_EVENT, {
-      detail: { noteId },
-    }),
+    new CustomEvent<TasksChangedDetail>(TASKS_CHANGED_EVENT, { detail }),
   );
 }
 

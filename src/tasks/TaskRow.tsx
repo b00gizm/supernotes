@@ -29,6 +29,29 @@ function SourceLink({ label }: { label: string }) {
   );
 }
 
+function toggleLabel(state: Task["state"]): string {
+  if (state === "done") {
+    return "Mark task open";
+  }
+  if (state === "waiting") {
+    return "Mark waiting task done";
+  }
+  if (state === "cancelled") {
+    return "Mark cancelled task done";
+  }
+  return "Mark task done";
+}
+
+function priorityName(dot: string): string {
+  if (dot === "is-p1") {
+    return "Priority P1";
+  }
+  if (dot === "is-p2") {
+    return "Priority P2";
+  }
+  return "Priority P3";
+}
+
 export function TaskRow({
   task,
   note,
@@ -49,13 +72,14 @@ export function TaskRow({
   const overdue = isTaskOverdue(task, today);
   const dot = priorityDotClass(task.priority);
   const terminal = task.state === "done" || task.state === "cancelled";
+  const missingNote = !note;
 
   return (
     <div className={`tasks-row${terminal ? " is-terminal" : ""}`}>
       <button
         type="button"
         className="tasks-row-toggle"
-        aria-label={task.state === "done" ? "Mark task open" : "Mark task done"}
+        aria-label={toggleLabel(task.state)}
         onClick={onToggle}
       >
         <TaskStateIcon state={task.state} />
@@ -63,6 +87,7 @@ export function TaskRow({
       <button
         type="button"
         className="tasks-row-main"
+        disabled={missingNote}
         onClick={onOpen}
         onContextMenu={onMeta}
       >
@@ -75,7 +100,11 @@ export function TaskRow({
           </span>
         ) : null}
         {dot ? (
-          <span className={`task-priority-dot ${dot}`} aria-hidden="true" />
+          <span
+            className={`task-priority-dot ${dot}`}
+            title={priorityName(dot)}
+            aria-label={priorityName(dot)}
+          />
         ) : null}
         <SourceLink label={note ? noteLabel(note) : "Missing note"} />
       </button>

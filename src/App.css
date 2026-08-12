@@ -617,6 +617,12 @@ button {
   flex-wrap: wrap;
 }
 
+.tasks-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .tasks-filter {
   display: inline-flex;
   align-items: center;
@@ -770,6 +776,10 @@ button {
   color: inherit;
   text-align: left;
   font: inherit;
+}
+
+.tasks-row-main:disabled {
+  cursor: default;
 }
 
 .tasks-row-title {
@@ -2216,6 +2226,13 @@ button {
 }
 
 .search-type-icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.search-result .task-pill-icon {
   width: 1rem;
   height: 1rem;
   flex: 0 0 auto;

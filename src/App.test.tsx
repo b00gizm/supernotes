@@ -459,7 +459,7 @@ describe("App shell", () => {
     await screen.findByLabelText("Note title");
 
     await user.keyboard("{Control>}k{/Control}");
-    const search = await screen.findByLabelText("Search notes");
+    const search = await screen.findByLabelText("Search notes and tasks");
     expect(screen.getByText("esc")).toBeInTheDocument();
     expect(screen.getByText("↑↓ Navigate")).toBeInTheDocument();
     expect(
@@ -482,7 +482,9 @@ describe("App shell", () => {
 
     await user.keyboard("{ArrowDown}{Enter}");
     expect(await screen.findByLabelText("Note title")).toHaveValue("pricing");
-    expect(screen.queryByLabelText("Search notes")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Search notes and tasks"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows backlinks from the links index and hides when empty", async () => {
@@ -908,5 +910,113 @@ describe("App shell", () => {
       "aria-current",
       "page",
     );
+  });
+
+  it("drops a Due row when the task is completed without window focus (ENG-120)", async () => {
+    const today = formatDailyTitle();
+    const stamp = "2026-08-10T10:00:00.000Z";
+    tasksApiRef.current = createMemoryTasksApi([
+      {
+        id: "t-live",
+        note_id: "src",
+        title: "Live due item",
+        state: "open",
+        due_date: today,
+        priority: null,
+        created_at: stamp,
+        updated_at: stamp,
+        completed_at: null,
+      },
+    ]);
+
+    render(<App />);
+    const due = await screen.findByRole("region", { name: "Due" });
+    expect(within(due).getByText("Live due item")).toBeInTheDocument();
+
+    await tasksApiRef.current.updateTask({
+      id: "t-live",
+      title: "Live due item",
+      state: "done",
+      due_date: today,
+      priority: null,
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: "Due" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("creates a task on today's daily from Tasks + New task (ENG-121)", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    await user.click(within(nav).getByRole("button", { name: "Tasks" }));
+    const pane = await screen.findByRole("region", { name: "Tasks" });
+    expect(
+      within(pane).getByText(
+        "Inbox is empty. Type [] at the start of a line in a note.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(within(pane).getByRole("button", { name: "+ New task" }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
+    expect(await screen.findByPlaceholderText("Task")).toBeInTheDocument();
+  });
+
+  it("finds tasks in ⌘K and opens the source note (ENG-122)", async () => {
+    const user = userEvent.setup();
+    const stamp = "2026-08-09T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "src",
+        title: "Project plan",
+        body_markdown: "[[task:t-qk]] Xylophone stand QK",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    tasksApiRef.current = createMemoryTasksApi([
+      {
+        id: "t-qk",
+        note_id: "src",
+        title: "Xylophone stand QK",
+        state: "open",
+        due_date: null,
+        priority: null,
+        created_at: stamp,
+        updated_at: stamp,
+        completed_at: null,
+      },
+    ]);
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    await user.keyboard("{Control>}k{/Control}");
+    const search = await screen.findByLabelText("Search notes and tasks");
+    expect(
+      screen.queryByRole("option", { name: /Task ·/ }),
+    ).not.toBeInTheDocument();
+
+    await user.type(search, "Xylophone stand QK");
+    const option = await screen.findByRole("option", {
+      name: /Task · Project plan/,
+    });
+    expect(option).toHaveTextContent("Xylophone stand QK");
+
+    await user.keyboard("{Enter}");
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Project plan",
+    );
+    expect(
+      screen.queryByLabelText("Search notes and tasks"),
+    ).not.toBeInTheDocument();
   });
 });

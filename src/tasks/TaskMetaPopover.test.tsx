@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { todayYmd } from "./due";
@@ -57,5 +57,29 @@ describe("TaskMetaPopover (ENG-62)", () => {
     );
     await user.click(screen.getByRole("button", { name: "Clear" }));
     expect(onUpdate).toHaveBeenCalledWith({ due_date: null });
+  });
+
+  it("traps Tab in the dialog and moves calendar days with arrows", async () => {
+    const user = userEvent.setup();
+    render(
+      <TaskMetaPopover
+        task={{ ...task, due_date: "2026-08-14" }}
+        anchor={{ x: 40, y: 40 }}
+        onClose={() => {}}
+        onUpdate={() => {}}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog");
+    const buttons = within(dialog).getAllByRole("button");
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    first?.focus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(last).toHaveFocus();
+
+    screen.getByRole("gridcell", { name: "14" }).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("gridcell", { name: "15" })).toHaveFocus();
   });
 });

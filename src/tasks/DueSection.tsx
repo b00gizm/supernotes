@@ -7,6 +7,7 @@ import {
 } from "react";
 import type { Note } from "../notes/types";
 import { tasksApi } from "./api";
+import { subscribeTasksChanged } from "./events";
 import { isTaskOverdue, tasksDueOnOrBefore } from "./query";
 import { TaskMetaPopover, type TaskMetaPatch } from "./TaskMetaPopover";
 import { TaskRow } from "./TaskRow";
@@ -57,6 +58,8 @@ export function DueSection({ date, notes, onOpenTask }: DueSectionProps) {
       window.removeEventListener("focus", onFocus);
     };
   }, [load]);
+
+  useEffect(() => subscribeTasksChanged(() => void load()), [load]);
 
   const noteById = useMemo(
     () => new Map(notes.map((note) => [note.id, note])),
