@@ -506,16 +506,25 @@ button {
 /*
  * Daily note has no breadcrumb — collapse the toolbar out of flow so the
  * title sits on the same row as the sidebar collapse control (ENG-115).
+ * Keep horizontal auto margins so the toolbar stays aligned with the
+ * max-width content column (otherwise daily-nav drifts left on wide panes).
  */
 .has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) {
   height: 0;
   min-height: 0;
-  margin: 0;
+  margin: 0 auto;
   padding: 0;
   overflow: visible;
-  justify-content: flex-end;
+  justify-content: flex-start;
   position: relative;
   z-index: 1;
+}
+
+/* Prev/next need real layout height above the title; don't collapse them. */
+.has-mac-overlay-chrome .editor-toolbar:has(.daily-nav) {
+  height: auto;
+  min-height: 1.75rem;
+  margin-bottom: var(--space-2);
 }
 
 .has-mac-overlay-chrome
