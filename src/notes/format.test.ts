@@ -6,6 +6,7 @@ import {
   formatRelativeUpdated,
   groupNotesForOverview,
   noteSnippet,
+  parseBacklinkSnippetParts,
   parseSnippetParts,
 } from "./format";
 import type { Note } from "./types";
@@ -77,6 +78,28 @@ describe("backlinkSnippet", () => {
 
   it("falls back to the first body line when no link line matches", () => {
     expect(backlinkSnippet("Just a note\nmore", "Missing")).toBe("Just a note");
+  });
+});
+
+describe("parseBacklinkSnippetParts", () => {
+  it("highlights the matching wiki / tag / mention form", () => {
+    expect(parseBacklinkSnippetParts("See [[Foo]] tomorrow.", "Foo")).toEqual([
+      { type: "text", value: "See " },
+      { type: "match", value: "[[Foo]]" },
+      { type: "text", value: " tomorrow." },
+    ]);
+    expect(parseBacklinkSnippetParts("Ask @Sam later", "Sam")).toEqual([
+      { type: "text", value: "Ask " },
+      { type: "match", value: "@Sam" },
+      { type: "text", value: " later" },
+    ]);
+    expect(parseBacklinkSnippetParts("Track #project next", "project")).toEqual(
+      [
+        { type: "text", value: "Track " },
+        { type: "match", value: "#project" },
+        { type: "text", value: " next" },
+      ],
+    );
   });
 });
 

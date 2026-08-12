@@ -329,9 +329,10 @@ describe("App shell", () => {
     expect(
       within(backlinks).getByRole("button", { name: /Source note/ }),
     ).toBeInTheDocument();
-    expect(
-      within(backlinks).getByText(/See \[\[Foo\]\] tomorrow/),
-    ).toBeInTheDocument();
+    const match = within(backlinks).getByText("[[Foo]]");
+    expect(match.tagName).toBe("MARK");
+    expect(match).toHaveClass("backlink-match");
+    expect(match.parentElement).toHaveTextContent("See [[Foo]] tomorrow.");
 
     await user.click(
       within(backlinks).getByRole("button", { name: /Source note/ }),

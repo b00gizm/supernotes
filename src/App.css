@@ -721,6 +721,14 @@ button {
   overflow: hidden;
 }
 
+.backlink-match {
+  padding: 0.05em 0.2em;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
+  font-weight: var(--weight-medium);
+}
+
 .note-editor .tiptap,
 .note-editor-content {
   flex: 1;

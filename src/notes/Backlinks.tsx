@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { notesApi } from "./api";
-import { backlinkSnippet } from "./format";
+import { parseBacklinkSnippetParts, type BacklinkSnippetPart } from "./format";
 import type { Note } from "./types";
 
 export type BacklinkItem = {
   note: Note;
-  snippet: string;
+  parts: BacklinkSnippetPart[];
 };
 
 type BacklinksProps = {
@@ -36,7 +36,7 @@ export function Backlinks({
         }
         next.push({
           note: source,
-          snippet: backlinkSnippet(source.body_markdown, noteTitle),
+          parts: parseBacklinkSnippetParts(source.body_markdown, noteTitle),
         });
       }
       setItems(next);
@@ -67,7 +67,7 @@ export function Backlinks({
     <section className="backlinks" aria-label="Backlinks">
       <h2 className="backlinks-heading">Backlinks</h2>
       <ul className="backlinks-list">
-        {items.map(({ note, snippet }) => (
+        {items.map(({ note, parts }) => (
           <li key={note.id}>
             <button
               type="button"
@@ -77,7 +77,17 @@ export function Backlinks({
               }}
             >
               <span className="backlink-title">{note.title}</span>
-              <span className="backlink-snippet">{snippet}</span>
+              <span className="backlink-snippet">
+                {parts.map((part, index) =>
+                  part.type === "match" ? (
+                    <mark key={`m-${String(index)}`} className="backlink-match">
+                      {part.value}
+                    </mark>
+                  ) : (
+                    <span key={`t-${String(index)}`}>{part.value}</span>
+                  ),
+                )}
+              </span>
             </button>
           </li>
         ))}

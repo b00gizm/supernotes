@@ -92,6 +92,86 @@ export function backlinkSnippet(body: string, targetTitle: string): string {
   return noteSnippet(body);
 }
 
+export type BacklinkSnippetPart =
+  { type: "text"; value: string } | { type: "match"; value: string };
+
+function isWordyBefore(body: string, index: number): boolean {
+  if (index <= 0) {
+    return false;
+  }
+  return /[\w@]/.test(body.charAt(index - 1));
+}
+
+/** Split a backlink snippet so the matching `[[…]]` / `#` / `@` can be highlighted. */
+export function parseBacklinkSnippetParts(
+  body: string,
+  targetTitle: string,
+): BacklinkSnippetPart[] {
+  const snippet = backlinkSnippet(body, targetTitle);
+  const needle = targetTitle.trim().toLowerCase();
+  if (!needle || snippet === "Empty note") {
+    return [{ type: "text", value: snippet }];
+  }
+
+  const ranges: Array<{ start: number; end: number }> = [];
+  let i = 0;
+  while (i < snippet.length) {
+    if (snippet.startsWith("[[", i)) {
+      const innerStart = i + 2;
+      const close = snippet.indexOf("]]", innerStart);
+      if (close < 0) {
+        break;
+      }
+      const title = snippet.slice(innerStart, close).trim();
+      if (title.toLowerCase() === needle) {
+        ranges.push({ start: i, end: close + 2 });
+      }
+      i = close + 2;
+      continue;
+    }
+
+    if (snippet.charAt(i) === "#" && !isWordyBefore(snippet, i)) {
+      const match = snippet.slice(i + 1).match(/^([\w-]+)/);
+      if (match?.[1] && match[1].toLowerCase() === needle) {
+        ranges.push({ start: i, end: i + 1 + match[1].length });
+        i += 1 + match[1].length;
+        continue;
+      }
+    }
+
+    if (snippet.charAt(i) === "@" && !isWordyBefore(snippet, i)) {
+      const match = snippet
+        .slice(i + 1)
+        .match(/^([A-Za-z][\w-]*(?:\s+[A-Z][\w-]*)?)/);
+      if (match?.[1] && match[1].toLowerCase() === needle) {
+        ranges.push({ start: i, end: i + 1 + match[1].length });
+        i += 1 + match[1].length;
+        continue;
+      }
+    }
+
+    i += 1;
+  }
+
+  if (ranges.length === 0) {
+    return [{ type: "text", value: snippet }];
+  }
+
+  const parts: BacklinkSnippetPart[] = [];
+  let last = 0;
+  for (const range of ranges) {
+    if (range.start > last) {
+      parts.push({ type: "text", value: snippet.slice(last, range.start) });
+    }
+    parts.push({ type: "match", value: snippet.slice(range.start, range.end) });
+    last = range.end;
+  }
+  if (last < snippet.length) {
+    parts.push({ type: "text", value: snippet.slice(last) });
+  }
+  return parts;
+}
+
 /** Daily note title matching mockup (`Monday, Aug 10`). */
 export function formatDailyTitle(date: Date = new Date()): string {
   return date.toLocaleDateString("en-US", {
