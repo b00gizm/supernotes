@@ -88,6 +88,11 @@ Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
 - Rust: `src-tauri/src/db/` — open/migrate, models, `Repository` CRUD.
 - Tauri commands: `create_note`, `get_or_create_daily_note`, `get_note`,
   `list_notes`, `search_notes`, `update_note`, `set_note_pinned`, `delete_note`,
-  `list_links_from` (`src-tauri/src/notes.rs`). Saving a note syncs its outbound
-  `links` rows from `[[…]]` / `#tag` / `@mention` in `body_markdown`.
-- Frontend: `src/notes/` wraps those commands (`notesApi` + `useNotes` with ~500ms debounced autosave).
+  `list_links_from`, `list_links_to` (`src-tauri/src/notes.rs`); `create_task`,
+  `get_task`, `list_tasks_for_note`, `update_task`, `delete_task`
+  (`src-tauri/src/tasks.rs`). Saving a note syncs its outbound `links` rows from
+  `[[…]]` / `#tag` / `@mention` in `body_markdown` (skips `[[task:…]]`).
+- Frontend: `src/notes/` wraps note/link commands (`notesApi` + `useNotes` with
+  ~500ms debounced autosave). `src/tasks/` wraps task commands (`tasksApi`).
+  Editor task pills create/update/delete rows immediately; note markdown still
+  autosaves the `[[task:id]]` reference.

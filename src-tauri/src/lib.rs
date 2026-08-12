@@ -2,6 +2,7 @@ pub mod db;
 mod media;
 mod menu_nav;
 mod notes;
+mod tasks;
 
 use db::Db;
 use media::{resolve_note_image_path, save_note_image};
@@ -9,6 +10,7 @@ use notes::{
     create_note, delete_note, get_note, get_or_create_daily_note, list_links_from, list_links_to,
     list_notes, search_notes, set_note_pinned, update_note,
 };
+use tasks::{create_task, delete_task, get_task, list_tasks_for_note, update_task};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -36,6 +38,11 @@ pub fn run() {
             delete_note,
             list_links_from,
             list_links_to,
+            create_task,
+            get_task,
+            list_tasks_for_note,
+            update_task,
+            delete_task,
             save_note_image,
             resolve_note_image_path
         ])

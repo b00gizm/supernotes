@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { Note } from "../notes/types";
 import { highlightMatch } from "../ui/highlightMatch";
 import { rankNotesForWikiLink } from "../notes/wikilinks";
+import { tasksApi } from "../tasks/api";
 import { noteEditorExtensions } from "./extensions";
 import { getEditorMarkdown } from "./markdown";
 import { openExternalUrl, saveNoteImage } from "./media";
@@ -202,11 +203,20 @@ export function NoteEditor({
   }, [query?.query, query?.from]);
 
   const editor = useEditor({
-    extensions: noteEditorExtensions({
-      getNotes: () => notesRef.current,
-      getExcludeNoteId: () => currentNoteIdRef.current,
-      onQueryChange,
-    }),
+    extensions: noteEditorExtensions(
+      {
+        getNotes: () => notesRef.current,
+        getExcludeNoteId: () => currentNoteIdRef.current,
+        onQueryChange,
+      },
+      {
+        getNoteId: () => currentNoteIdRef.current,
+        createTask: (input) => tasksApi.createTask(input),
+        updateTask: (input) => tasksApi.updateTask(input),
+        deleteTask: (id) => tasksApi.deleteTask(id),
+        listTasksForNote: (noteId) => tasksApi.listTasksForNote(noteId),
+      },
+    ),
     content: markdown,
     immediatelyRender: false,
     editorProps: {

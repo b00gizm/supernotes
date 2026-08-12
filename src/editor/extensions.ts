@@ -21,6 +21,7 @@ import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
 import { markdownTableFixupPlugin, TablePipeSafeText } from "./markdownTable";
 import { StaticMarkdownTable } from "./staticTable";
+import { TaskPill, type TaskPillOptions } from "./taskPill";
 import { WikiLink, type WikiLinkOptions } from "./wikiLink";
 
 const lowlight = createLowlight(common);
@@ -414,6 +415,7 @@ const NoteTaskList = TaskList.extend({
 /**
  * Checkbox input that works after `- ` has already become a bullet list.
  * TipTap's default wrappingInputRule cannot wrap taskItem inside listItem.
+ * Bare `[]` at paragraph start is a task pill (ENG-61); only claim it inside lists.
  */
 const NoteTaskItem = TaskItem.extend({
   addInputRules() {
@@ -421,10 +423,21 @@ const NoteTaskItem = TaskItem.extend({
       new InputRule({
         find: taskCheckboxInputRegex,
         handler: ({ range, match, chain }) => {
-          const checked = match[2] === "x";
+          const editor = this.editor;
+          const inner = match[2];
+          // `[]` (no space/x) → task pill unless we're already in a list.
+          if (
+            inner !== " " &&
+            inner !== "x" &&
+            !editor.isActive("listItem") &&
+            !editor.isActive("taskItem")
+          ) {
+            return;
+          }
+          const checked = inner === "x";
           chain()
             .deleteRange(range)
-            .command(({ editor, commands }) => {
+            .command(({ commands }) => {
               if (editor.isActive("taskItem")) {
                 return true;
               }
@@ -447,9 +460,10 @@ const MarkdownTableFixup = Extension.create({
   },
 });
 
-/** Shared TipTap extensions for the note body editor (ENG-53 … ENG-57). */
+/** Shared TipTap extensions for the note body editor (ENG-53 … ENG-61). */
 export function noteEditorExtensions(
   wikiLink: WikiLinkOptions = {},
+  taskPill: TaskPillOptions = {},
 ): Extensions {
   return [
     StarterKit.configure({
@@ -476,10 +490,11 @@ export function noteEditorExtensions(
     StaticMarkdownTable,
     MarkdownTableFixup,
     NoteImage,
+    // First-class task entities (ENG-61); before WikiLink so `[[task:` isn't a note link.
+    TaskPill.configure(taskPill),
     // WikiLink also owns `#tag` / `@mention` shorthand (ENG-57).
     WikiLink.configure(wikiLink),
     Placeholder.configure({ placeholder: "Start writing…" }),
-    // Task pills are ENG-61.
     Markdown.configure({
       // html:true so hardBreak in table cells serializes as <br> (tiptap-markdown
       // falls back to "[hardBreak]" when html is off — ENG-88).

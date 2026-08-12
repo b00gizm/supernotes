@@ -1171,6 +1171,9 @@ button {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
+  /* Match task-pill horizontal inset so mixed lists share a column. */
+  padding: 0.1em 0.6rem;
+  border-radius: var(--radius-md);
 }
 
 .note-editor .tiptap ul[data-type="taskList"] li > label {
@@ -1215,6 +1218,99 @@ button {
 .note-editor .tiptap ul[data-type="taskList"] li > div {
   flex: 1;
   min-width: 0;
+}
+
+/* Borderless task pills (ENG-61 / component sheet 1a): circle + title.
+ * Soft rounded hover wash; checkbox rows share the same horizontal inset. */
+.note-editor .tiptap .task-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0.1em 0.6rem;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  line-height: var(--leading-body);
+  transition: background-color 120ms ease;
+}
+
+/* Blocks default to 0.65em gaps; keep task↔task / task↔checkbox tighter. */
+.note-editor .tiptap > .task-pill + .task-pill,
+.note-editor .tiptap > .task-pill + ul[data-type="taskList"],
+.note-editor .tiptap > ul[data-type="taskList"] + .task-pill {
+  margin-top: 0.05em;
+}
+
+.note-editor .tiptap .task-pill:hover,
+.note-editor .tiptap .task-pill.is-selected,
+.note-editor .tiptap .task-pill:focus-within {
+  background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
+}
+
+.note-editor .tiptap .task-pill-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.note-editor .tiptap .task-pill-toggle:hover {
+  color: var(--accent);
+}
+
+.note-editor .tiptap .task-pill-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  display: block;
+}
+
+.note-editor .tiptap .task-pill.is-done .task-pill-toggle,
+.note-editor .tiptap .task-pill.is-done .task-pill-icon {
+  color: var(--accent);
+}
+
+.note-editor .tiptap .task-pill.is-cancelled .task-pill-toggle,
+.note-editor .tiptap .task-pill.is-cancelled .task-pill-icon {
+  color: var(--text-tertiary);
+}
+
+.note-editor .tiptap .task-pill.is-waiting .task-pill-toggle {
+  color: var(--text-secondary);
+}
+
+.note-editor .tiptap .task-pill-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  outline: none;
+}
+
+.note-editor .tiptap .task-pill.is-done .task-pill-title,
+.note-editor .tiptap .task-pill.is-cancelled .task-pill-title {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.note-editor .tiptap .task-pill.is-done .task-pill-title {
+  transition:
+    color 160ms ease,
+    text-decoration-color 160ms ease;
 }
 
 /* Mockup 1c: internal hairlines only — no outer frame, no header fill. */

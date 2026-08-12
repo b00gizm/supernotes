@@ -74,7 +74,7 @@ fixtures already use that form).
   compact chips (tags vs mentions styled apart from wikilinks). Click /
   create-on-miss / `links` sync match wikilinks.
 
-## Task pills (ENG-61; convention only)
+## Task pills (ENG-61)
 
 Square checklists (`- [ ]`) stay GFM task items. First-class tasks use a
 distinct pill node:
@@ -85,10 +85,14 @@ distinct pill node:
 
 - `<uuid>` is the `tasks.id` row.
 - Text after the closing `]]` is the display title (DB is source of truth;
-  ENG-61 syncs edits).
+  editor edits update the row).
 - One pill per line in MVP.
 - Does **not** use `- [ ]` syntax (that remains the lightweight checklist).
-
-ENG-61 owns the TipTap node, `[]` input rule, and click-to-Done behavior.
-Until then, `[[task:…]]` may parse as a wikilink title; golden fixtures for
-pills land with that issue.
+- Typing `[]` + space at the start of a paragraph creates a DB task + pill.
+  `- [ ]` / `[ ]` / `- []` (inside a list) still create square checkboxes.
+- Clicking the circle sets state to `done` (click again reopens). Waiting /
+  cancelled are set from elsewhere (Tasks view / metadata popover later).
+- Deleting the pill in the editor **deletes** the task row (not orphaned).
+- State lives in SQLite (`open` \| `waiting` \| `done` \| `cancelled`); it is
+  not encoded in the markdown. On load, pills hydrate state from the `tasks`
+  table.
