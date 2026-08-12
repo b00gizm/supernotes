@@ -1,17 +1,15 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
-import {
-  formatDailyDisplayTitle,
-  formatDailyTitle,
-  parseDailyTitle,
-} from "../notes/format";
+import { formatDailyTitle, parseDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { tasksApi } from "./api";
-import { isTaskOverdue } from "./query";
+import { groupUpcomingTasks, isTaskOverdue } from "./query";
 import { TaskMetaPopover } from "./TaskMetaPopover";
 import { priorityDotClass } from "./priority";
 import { TaskStateIcon } from "./TaskStateIcon";
@@ -33,28 +31,20 @@ function noteLabel(note: Note): string {
   if (note.note_type === "daily") {
     const parsed = parseDailyTitle(note.title);
     if (parsed) {
-      return formatDailyDisplayTitle(parsed);
+      const month = parsed.toLocaleDateString("en-US", { month: "short" });
+      return `${month} ${String(parsed.getDate())}`;
     }
   }
   return note.title.trim() || "Untitled";
 }
 
-function formatDueChip(due: string, today: string): string {
-  if (due === today) {
-    return "Today";
+function formatOverdueDue(due: string): string {
+  const date = parseDailyTitle(due);
+  if (!date) {
+    return due;
   }
-  const tomorrow = formatDailyTitle(
-    new Date(
-      Number(today.slice(0, 4)),
-      Number(today.slice(5, 7)) - 1,
-      Number(today.slice(8, 10)) + 1,
-    ),
-  );
-  if (due === tomorrow) {
-    return "Tomorrow";
-  }
-  const date = new Date(`${due}T12:00:00`);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  return `${month} ${String(date.getDate())}`;
 }
 
 type PopoverState = {
@@ -63,8 +53,84 @@ type PopoverState = {
   y: number;
 };
 
+function SourceLink({ label }: { label: string }) {
+  return (
+    <span className="tasks-source">
+      <span className="tasks-source-arrow" aria-hidden="true">
+        ↗
+      </span>
+      <span className="tasks-source-label">{label}</span>
+    </span>
+  );
+}
+
+function TaskRow({
+  task,
+  note,
+  today,
+  showDue,
+  onToggle,
+  onOpen,
+  onMeta,
+}: {
+  task: Task;
+  note: Note | undefined;
+  today: string;
+  showDue: boolean;
+  onToggle: () => void;
+  onOpen: () => void;
+  onMeta: (event: ReactMouseEvent) => void;
+}) {
+  const overdue = isTaskOverdue(task, today);
+  const dot = priorityDotClass(task.priority);
+  const terminal = task.state === "done" || task.state === "cancelled";
+
+  return (
+    <div
+      className={`tasks-row${terminal ? " is-terminal" : ""}${overdue && showDue ? " is-overdue-due" : ""}`}
+    >
+      <button
+        type="button"
+        className="tasks-row-toggle"
+        aria-label={task.state === "done" ? "Mark task open" : "Mark task done"}
+        onClick={onToggle}
+      >
+        <TaskStateIcon state={task.state} />
+      </button>
+      <button
+        type="button"
+        className="tasks-row-main"
+        onClick={onOpen}
+        onContextMenu={onMeta}
+      >
+        <span className="tasks-row-title">
+          {task.title.trim() || "Untitled task"}
+        </span>
+        {showDue && task.due_date ? (
+          <span className={`tasks-due-chip${overdue ? " is-overdue" : ""}`}>
+            {formatOverdueDue(task.due_date)}
+          </span>
+        ) : null}
+        {dot ? (
+          <span className={`task-priority-dot ${dot}`} aria-hidden="true" />
+        ) : null}
+        <SourceLink label={note ? noteLabel(note) : "Missing note"} />
+      </button>
+      <button
+        type="button"
+        className="tasks-row-more"
+        aria-label="Task details"
+        onClick={onMeta}
+      >
+        ···
+      </button>
+    </div>
+  );
+}
+
 /**
  * Global Tasks overview: Inbox / Upcoming / Complete (ENG-63).
+ * Upcoming layout follows the design mockup (date-grouped sections).
  */
 export function TasksView({
   notes,
@@ -95,7 +161,14 @@ export function TasksView({
     void reload();
   }, [reload]);
 
-  const noteById = new Map(notes.map((note) => [note.id, note]));
+  const noteById = useMemo(
+    () => new Map(notes.map((note) => [note.id, note])),
+    [notes],
+  );
+  const upcomingGroups = useMemo(
+    () => (filter === "upcoming" ? groupUpcomingTasks(tasks, today) : []),
+    [filter, tasks, today],
+  );
   const popoverTask = popover
     ? (tasks.find((task) => task.id === popover.taskId) ?? null)
     : null;
@@ -116,7 +189,6 @@ export function TasksView({
         due_date: patch.due_date === undefined ? task.due_date : patch.due_date,
         priority: patch.priority === undefined ? task.priority : patch.priority,
       });
-      // Drop from the current filter if it no longer matches.
       setTasks((prev) => {
         const next = prev.map((item) =>
           item.id === updated.id ? updated : item,
@@ -157,12 +229,84 @@ export function TasksView({
     });
   };
 
+  const renderRow = (task: Task, showDue: boolean): ReactNode => {
+    const note = noteById.get(task.note_id);
+    return (
+      <li key={task.id}>
+        <TaskRow
+          task={task}
+          note={note}
+          today={today}
+          showDue={showDue}
+          onToggle={() => {
+            toggleDone(task);
+          }}
+          onOpen={() => {
+            if (!note) {
+              return;
+            }
+            onOpenTask(task, note);
+          }}
+          onMeta={(event) => {
+            openMeta(event, task);
+          }}
+        />
+      </li>
+    );
+  };
+
+  let body: ReactNode;
+  if (loading) {
+    body = <p className="muted">Loading…</p>;
+  } else if (tasks.length === 0) {
+    body = (
+      <p className="muted">
+        {filter === "inbox"
+          ? "Inbox is empty."
+          : filter === "upcoming"
+            ? "No upcoming tasks."
+            : "No completed tasks in the last 14 days."}
+      </p>
+    );
+  } else if (filter === "upcoming") {
+    body = (
+      <div className="tasks-groups">
+        {upcomingGroups.map((group) => (
+          <section
+            key={group.id}
+            className={`tasks-group is-${group.tone}`}
+            aria-label={group.label}
+          >
+            <h2 className="tasks-group-label">
+              <span>{group.label}</span>
+              {group.showCount ? (
+                <span className="tasks-group-count">
+                  {String(group.tasks.length)}
+                </span>
+              ) : null}
+            </h2>
+            <ul className="tasks-list">
+              {group.tasks.map((task) =>
+                renderRow(task, group.tone === "overdue"),
+              )}
+            </ul>
+          </section>
+        ))}
+      </div>
+    );
+  } else {
+    body = (
+      <ul className="tasks-list">
+        {tasks.map((task) => renderRow(task, filter === "complete"))}
+      </ul>
+    );
+  }
+
   return (
     <section className="overview-pane tasks-pane" aria-label="Tasks">
       <div className="overview-header">
         <div className="overview-title-row">
           <h1 className="pane-title">Tasks</h1>
-          <span className="overview-count">{String(tasks.length)}</span>
         </div>
         <div className="tasks-filter" role="tablist" aria-label="Task views">
           {FILTERS.map((item) => (
@@ -189,95 +333,7 @@ export function TasksView({
         </p>
       ) : null}
 
-      {loading ? (
-        <p className="muted">Loading…</p>
-      ) : tasks.length === 0 ? (
-        <p className="muted">
-          {filter === "inbox"
-            ? "Inbox is empty."
-            : filter === "upcoming"
-              ? "No upcoming tasks."
-              : "No completed tasks in the last 14 days."}
-        </p>
-      ) : (
-        <ul className="tasks-list">
-          {tasks.map((task) => {
-            const note = noteById.get(task.note_id);
-            const overdue = isTaskOverdue(task, today);
-            const dot = priorityDotClass(task.priority);
-            return (
-              <li key={task.id}>
-                <div
-                  className={`tasks-row${overdue ? " is-overdue" : ""}${task.state === "done" || task.state === "cancelled" ? " is-terminal" : ""}`}
-                >
-                  <button
-                    type="button"
-                    className="tasks-row-toggle"
-                    aria-label={
-                      task.state === "done"
-                        ? "Mark task open"
-                        : "Mark task done"
-                    }
-                    onClick={() => {
-                      toggleDone(task);
-                    }}
-                  >
-                    <TaskStateIcon state={task.state} />
-                  </button>
-                  <button
-                    type="button"
-                    className="tasks-row-main"
-                    onClick={() => {
-                      if (!note) {
-                        return;
-                      }
-                      onOpenTask(task, note);
-                    }}
-                    onContextMenu={(event) => {
-                      openMeta(event, task);
-                    }}
-                  >
-                    {dot ? (
-                      <span
-                        className={`task-priority-dot ${dot}`}
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <span
-                        className="task-priority-dot is-empty"
-                        aria-hidden="true"
-                      />
-                    )}
-                    <span className="tasks-row-title">
-                      {task.title.trim() || "Untitled task"}
-                    </span>
-                    {task.due_date ? (
-                      <span
-                        className={`tasks-due-chip${overdue ? " is-overdue" : task.due_date === today ? " is-today" : ""}`}
-                      >
-                        {formatDueChip(task.due_date, today)}
-                      </span>
-                    ) : null}
-                    <span className="tasks-source">
-                      {note ? noteLabel(note) : "Missing note"}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="tasks-row-more"
-                    aria-label="Task details"
-                    onClick={(event) => {
-                      openMeta(event, task);
-                    }}
-                  >
-                    ···
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {body}
 
       {popover && popoverTask ? (
         <TaskMetaPopover
@@ -288,7 +344,6 @@ export function TasksView({
           }}
           onUpdate={(patch) => {
             void applyUpdate(popoverTask, patch).then(() => {
-              // Reload so Complete 14-day window / cross-filter moves stay correct.
               void reload();
             });
           }}

@@ -33,7 +33,7 @@ function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** Browser preview seed so Tasks overview is demonstrable without Tauri. */
+/** Browser preview seed so Tasks overview matches the design mockup. */
 const DEMO_TASKS: Task[] = [
   {
     id: "demo-task-inbox",
@@ -62,10 +62,32 @@ const DEMO_TASKS: Task[] = [
     note_id: "demo-roadmap",
     title: "Land design review",
     state: "open",
-    due_date: "2026-08-10",
+    due_date: "2026-08-08",
     priority: "urgent",
-    created_at: "2026-08-08T10:00:00.000Z",
-    updated_at: "2026-08-08T10:00:00.000Z",
+    created_at: "2026-08-05T10:00:00.000Z",
+    updated_at: "2026-08-05T10:00:00.000Z",
+    completed_at: null,
+  },
+  {
+    id: "demo-task-overdue-2",
+    note_id: "demo-pricing",
+    title: "Legal review of annual terms",
+    state: "waiting",
+    due_date: "2026-08-10",
+    priority: "medium",
+    created_at: "2026-08-06T10:00:00.000Z",
+    updated_at: "2026-08-06T10:00:00.000Z",
+    completed_at: null,
+  },
+  {
+    id: "demo-task-today",
+    note_id: "demo-daily",
+    title: "Prep standup notes",
+    state: "open",
+    due_date: "2026-08-12",
+    priority: "high",
+    created_at: "2026-08-12T07:00:00.000Z",
+    updated_at: "2026-08-12T07:00:00.000Z",
     completed_at: null,
   },
   {
@@ -77,6 +99,28 @@ const DEMO_TASKS: Task[] = [
     priority: "medium",
     created_at: "2026-08-12T08:30:00.000Z",
     updated_at: "2026-08-12T08:30:00.000Z",
+    completed_at: null,
+  },
+  {
+    id: "demo-task-friday",
+    note_id: "demo-interview",
+    title: "Send Priya take-home",
+    state: "open",
+    due_date: "2026-08-14",
+    priority: "low",
+    created_at: "2026-08-11T12:00:00.000Z",
+    updated_at: "2026-08-11T12:00:00.000Z",
+    completed_at: null,
+  },
+  {
+    id: "demo-task-next-week",
+    note_id: "demo-roadmap",
+    title: "Ship pricing v2",
+    state: "open",
+    due_date: "2026-08-19",
+    priority: "urgent",
+    created_at: "2026-08-09T12:00:00.000Z",
+    updated_at: "2026-08-09T12:00:00.000Z",
     completed_at: null,
   },
   {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { filterTasks, isTaskOverdue, priorityRank } from "./query";
+import {
+  filterTasks,
+  groupUpcomingTasks,
+  isTaskOverdue,
+  priorityRank,
+} from "./query";
 import type { Task } from "./types";
 
 function task(partial: Partial<Task> & Pick<Task, "id" | "title">): Task {
@@ -103,5 +108,36 @@ describe("task query helpers (ENG-63)", () => {
     expect(
       filterTasks(tasks, "complete", "2026-08-12").map((t) => t.id),
     ).toEqual(["done"]);
+  });
+
+  it("groups upcoming into overdue / today / tomorrow / week buckets", () => {
+    // Wed 2026-08-12 → this week ends Sun 16; next week Mon 17 – Sun 23.
+    const tasks = [
+      task({ id: "o1", title: "Late", due_date: "2026-08-08" }),
+      task({ id: "o2", title: "Also late", due_date: "2026-08-10" }),
+      task({ id: "td", title: "Due today", due_date: "2026-08-12" }),
+      task({ id: "tm", title: "Due tomorrow", due_date: "2026-08-13" }),
+      task({ id: "fri", title: "Friday", due_date: "2026-08-14" }),
+      task({ id: "nw", title: "Next week item", due_date: "2026-08-19" }),
+      task({ id: "later", title: "Later", due_date: "2026-08-26" }),
+    ];
+
+    const groups = groupUpcomingTasks(tasks, "2026-08-12");
+    expect(groups.map((g) => g.id)).toEqual([
+      "overdue",
+      "day-2026-08-12",
+      "day-2026-08-13",
+      "day-2026-08-14",
+      "week-2026-08-17",
+      "week-2026-08-24",
+    ]);
+    expect(groups[0]?.label).toBe("Overdue");
+    expect(groups[0]?.tone).toBe("overdue");
+    expect(groups[0]?.tasks.map((t) => t.id)).toEqual(["o1", "o2"]);
+    expect(groups[1]?.label).toMatch(/^Today /);
+    expect(groups[1]?.tone).toBe("today");
+    expect(groups[2]?.label).toMatch(/^Tomorrow /);
+    expect(groups[4]?.label).toMatch(/^Next week /);
+    expect(groups[5]?.label).toBe("Aug 24 – 30");
   });
 });

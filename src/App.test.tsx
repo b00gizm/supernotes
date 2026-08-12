@@ -154,8 +154,10 @@ describe("App shell", () => {
 
     await user.click(within(pane).getByRole("tab", { name: "Upcoming" }));
     expect(await within(pane).findByText("Ship it")).toBeInTheDocument();
-    const overdueRow = within(pane).getByText("Ship it").closest(".tasks-row");
-    expect(overdueRow).toHaveClass("is-overdue");
+    expect(
+      within(pane).getByRole("region", { name: "Overdue" }),
+    ).toBeInTheDocument();
+    expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
 
     await user.click(within(pane).getByText("Ship it"));
     expect(await screen.findByLabelText("Note title")).toHaveValue(
