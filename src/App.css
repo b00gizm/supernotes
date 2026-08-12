@@ -10,6 +10,8 @@
   --text-secondary: #6e6e73;
   --text-tertiary: #8e8e93;
   --accent: #0071e3;
+  /* Soft accent wash for ⌘K / [[ suggest row selection (ENG-116). */
+  --bg-suggest-active: color-mix(in srgb, var(--accent) 12%, var(--bg-main));
   --danger: #c41e3a;
   --border-subtle: #d8d8dc;
 
@@ -1097,7 +1099,7 @@ button {
 
 .wiki-link-suggest-item.is-active,
 .wiki-link-suggest-item:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-main));
+  background: var(--bg-suggest-active);
 }
 
 .wiki-link-suggest-icon {
@@ -1567,7 +1569,7 @@ button {
 
 .search-result.is-active,
 .search-result:hover {
-  background: var(--bg-sidebar-active);
+  background: var(--bg-suggest-active);
 }
 
 .search-type-icon {
