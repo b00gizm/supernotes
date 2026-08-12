@@ -190,4 +190,65 @@ describe("task pill (ENG-61)", () => {
       expect(listed).toHaveLength(0);
     });
   });
+
+  it("metadata popover updates persist state/due/priority", async () => {
+    const seed: Task[] = [
+      {
+        id: "t-meta",
+        note_id: "note-1",
+        title: "Ship onboarding fix",
+        state: "open",
+        due_date: null,
+        priority: null,
+        created_at: "2026-08-12T00:00:00.000Z",
+        updated_at: "2026-08-12T00:00:00.000Z",
+        completed_at: null,
+      },
+    ];
+    const { editor: ed, tasksApi } = create({ seed });
+    ed.commands.setContent("[[task:t-meta]] Ship onboarding fix");
+
+    let pos = -1;
+    ed.state.doc.descendants((node, nodePos) => {
+      if (node.type.name === "taskPill" && node.attrs.taskId === "t-meta") {
+        pos = nodePos;
+      }
+    });
+    const node = ed.state.doc.nodeAt(pos);
+    expect(node).toBeTruthy();
+    if (!node) {
+      return;
+    }
+
+    ed.view.dispatch(
+      ed.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        state: "waiting",
+        dueDate: "2026-08-12",
+        priority: "high",
+      }),
+    );
+
+    const onMeta = taskPillHandlers(ed).onMetaUpdate;
+    expect(onMeta).toBeTypeOf("function");
+    onMeta?.("t-meta", {
+      state: "waiting",
+      due_date: "2026-08-12",
+      priority: "high",
+    });
+
+    await vi.waitFor(async () => {
+      const task = await tasksApi.getTask("t-meta");
+      expect(task.state).toBe("waiting");
+      expect(task.due_date).toBe("2026-08-12");
+      expect(task.priority).toBe("high");
+    });
+
+    onMeta?.("t-meta", { due_date: null, priority: null });
+    await vi.waitFor(async () => {
+      const task = await tasksApi.getTask("t-meta");
+      expect(task.due_date).toBeNull();
+      expect(task.priority).toBeNull();
+    });
+  });
 });
