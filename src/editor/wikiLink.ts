@@ -46,6 +46,8 @@ type InlineState = {
   };
 };
 
+export type NoteLinkKind = "wiki" | "tag" | "mention";
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -54,8 +56,59 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
+function isWordyBefore(src: string, pos: number): boolean {
+  if (pos <= 0) {
+    return false;
+  }
+  return /[\w@]/.test(src.charAt(pos - 1));
+}
+
+/** Partial mention text after `@` while the caret is still in the token. */
+function isMentionQuery(after: string): boolean {
+  return /^(?:|[A-Za-z][\w-]*|[A-Za-z][\w-]* |[A-Za-z][\w-]* [A-Z][\w-]*)$/.test(
+    after,
+  );
+}
+
+function linkClass(kind: NoteLinkKind): string {
+  if (kind === "tag") {
+    return "wiki-link is-tag";
+  }
+  if (kind === "mention") {
+    return "wiki-link is-mention";
+  }
+  return "wiki-link";
+}
+
+function displayText(kind: NoteLinkKind, title: string): string {
+  if (kind === "tag") {
+    return `#${title}`;
+  }
+  if (kind === "mention") {
+    return `@${title}`;
+  }
+  return title;
+}
+
+function serializeLink(kind: NoteLinkKind, title: string): string {
+  if (kind === "tag") {
+    return `#${title}`;
+  }
+  if (kind === "mention") {
+    return `@${title}`;
+  }
+  return `[[${title}]]`;
+}
+
+function parseKind(value: string | null): NoteLinkKind {
+  if (value === "tag" || value === "mention") {
+    return value;
+  }
+  return "wiki";
+}
+
 /**
- * markdown-it: `[[Title]]` → `<span data-type="wiki-link" …>`.
+ * markdown-it: `[[Title]]` / `#tag` / `@Name` → `<span data-type="wiki-link" …>`.
  * Reserved `[[task:…]]` still matches so round-trip stays stable until ENG-61.
  */
 function markdownItWikiLink(md: MarkdownItLike): void {
@@ -77,6 +130,7 @@ function markdownItWikiLink(md: MarkdownItLike): void {
       token.content = title;
       token.attrs = [
         ["data-type", "wiki-link"],
+        ["data-kind", "wiki"],
         ["data-title", title],
         ["class", "wiki-link"],
       ];
@@ -85,10 +139,63 @@ function markdownItWikiLink(md: MarkdownItLike): void {
     return true;
   });
 
+  md.inline.ruler.before("link", "note_tag", (state, silent) => {
+    const start = state.pos;
+    if (state.src.charAt(start) !== "#" || isWordyBefore(state.src, start)) {
+      return false;
+    }
+    const rest = state.src.slice(start + 1, state.posMax);
+    const match = rest.match(/^([\w-]+)/);
+    if (!match?.[1]) {
+      return false;
+    }
+    const title = match[1];
+    if (!silent) {
+      const token = state.push("wiki_link", "span", 0);
+      token.content = title;
+      token.attrs = [
+        ["data-type", "wiki-link"],
+        ["data-kind", "tag"],
+        ["data-title", title],
+        ["class", "wiki-link is-tag"],
+      ];
+    }
+    state.pos = start + 1 + title.length;
+    return true;
+  });
+
+  md.inline.ruler.before("link", "note_mention", (state, silent) => {
+    const start = state.pos;
+    if (state.src.charAt(start) !== "@" || isWordyBefore(state.src, start)) {
+      return false;
+    }
+    const rest = state.src.slice(start + 1, state.posMax);
+    const match = rest.match(/^([A-Za-z][\w-]*(?: [A-Z][\w-]*)?)/);
+    if (!match?.[1]) {
+      return false;
+    }
+    const title = match[1];
+    if (!silent) {
+      const token = state.push("wiki_link", "span", 0);
+      token.content = title;
+      token.attrs = [
+        ["data-type", "wiki-link"],
+        ["data-kind", "mention"],
+        ["data-title", title],
+        ["class", "wiki-link is-mention"],
+      ];
+    }
+    state.pos = start + 1 + title.length;
+    return true;
+  });
+
   md.renderer.rules.wiki_link = (tokens, idx) => {
     const token = tokens[idx];
     const title = token?.content ?? "";
-    return `<span data-type="wiki-link" data-title="${escapeHtml(title)}" class="wiki-link">${escapeHtml(title)}</span>`;
+    const kind = parseKind(
+      token?.attrs?.find((attr) => attr[0] === "data-kind")?.[1] ?? null,
+    );
+    return `<span data-type="wiki-link" data-kind="${kind}" data-title="${escapeHtml(title)}" class="${linkClass(kind)}">${escapeHtml(displayText(kind, title))}</span>`;
   };
 }
 
@@ -96,6 +203,7 @@ export type WikiLinkQuery = {
   from: number;
   to: number;
   query: string;
+  kind: NoteLinkKind;
 };
 
 export type WikiLinkOptions = {
@@ -108,7 +216,7 @@ export type WikiLinkOptions = {
 
 export const wikiLinkSuggestKey = new PluginKey("wikiLinkSuggest");
 
-/** Active `[[query` range ending at the cursor, or null. */
+/** Active `[[` / `#` / `@` query range ending at the cursor, or null. */
 export function findActiveWikiLinkQuery(
   doc: ProseMirrorNode,
   pos: number,
@@ -121,22 +229,42 @@ export function findActiveWikiLinkQuery(
   const parentStart = $pos.start();
   const textBefore = parent.textBetween(0, $pos.parentOffset, "\0", "\0");
   const open = textBefore.lastIndexOf("[[");
-  if (open < 0) {
-    return null;
+  if (open >= 0) {
+    const afterOpen = textBefore.slice(open + 2);
+    if (!afterOpen.includes("]]") && !afterOpen.includes("\0")) {
+      // Don't treat `[[task:` as a note wikilink query (ENG-61).
+      if (!afterOpen.toLowerCase().startsWith("task:")) {
+        return {
+          from: parentStart + open,
+          to: pos,
+          query: afterOpen,
+          kind: "wiki",
+        };
+      }
+    }
   }
-  const afterOpen = textBefore.slice(open + 2);
-  if (afterOpen.includes("]]") || afterOpen.includes("\0")) {
-    return null;
+
+  const tag = /(?<![\w@])#([\w-]*)$/.exec(textBefore);
+  if (tag) {
+    return {
+      from: parentStart + tag.index,
+      to: pos,
+      query: tag[1] ?? "",
+      kind: "tag",
+    };
   }
-  // Don't treat `[[task:` as a note wikilink query (ENG-61).
-  if (afterOpen.toLowerCase().startsWith("task:")) {
-    return null;
+
+  const mentionAt = /(?<![\w@])@(.*)$/.exec(textBefore);
+  if (mentionAt && isMentionQuery(mentionAt[1] ?? "")) {
+    return {
+      from: parentStart + mentionAt.index,
+      to: pos,
+      query: mentionAt[1] ?? "",
+      kind: "mention",
+    };
   }
-  return {
-    from: parentStart + open,
-    to: pos,
-    query: afterOpen,
-  };
+
+  return null;
 }
 
 function wikiLinkSuggestPlugin(options: WikiLinkOptions): Plugin {
@@ -161,6 +289,15 @@ function wikiLinkSuggestPlugin(options: WikiLinkOptions): Plugin {
 
 /** Convert a completed `[[Title]]` typed in the editor into a wikiLink atom. */
 const wikiLinkInputRegex = /\[\[([^[\]]+)\]\]$/;
+/** `#tag` + trailing space → tag atom (space re-inserted). */
+const tagInputRegex = /#([\w-]+)\s$/;
+/**
+ * `@Name` + punctuation, or `@Name Surname` + space → mention atom.
+ * ponytail: single-name mentions don't complete on space (keeps surname typing);
+ * use autocomplete or trailing punctuation; upgrade with a proper tokenizer later.
+ */
+const mentionInputRegex =
+  /@([A-Za-z][\w-]* [A-Z][\w-]*)\s$|@([A-Za-z][\w-]*)([.,;:!?])$/;
 
 function resolveNoteId(title: string, getNotes?: () => Note[]): string | null {
   const notes = getNotes?.() ?? [];
@@ -172,6 +309,7 @@ export function insertWikiLink(
   range: { from: number; to: number },
   title: string,
   noteId: string | null = null,
+  kind: NoteLinkKind = "wiki",
 ): boolean {
   const trimmed = title.trim();
   if (!trimmed) {
@@ -183,13 +321,13 @@ export function insertWikiLink(
     .deleteRange(range)
     .insertContent({
       type: "wikiLink",
-      attrs: { title: trimmed, noteId },
+      attrs: { title: trimmed, noteId, kind },
     })
     .run();
 }
 
 /**
- * Inline wikilink node with `[[` autocomplete hooks and clickable render.
+ * Inline note-link node: `[[wikilink]]`, `#tag`, or `@mention`.
  */
 export const WikiLink = Node.create<WikiLinkOptions>({
   name: "wikiLink",
@@ -207,6 +345,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
       title: { default: "" },
       // Runtime only — never written to markdown.
       noteId: { default: null },
+      kind: { default: "wiki" },
     };
   },
 
@@ -220,7 +359,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
           }
           const title =
             el.getAttribute("data-title")?.trim() ||
-            el.textContent?.trim() ||
+            el.textContent?.trim().replace(/^[#@]/, "") ||
             "";
           if (!title) {
             return false;
@@ -228,6 +367,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
           return {
             title,
             noteId: el.getAttribute("data-note-id"),
+            kind: parseKind(el.getAttribute("data-kind")),
           };
         },
       },
@@ -237,16 +377,24 @@ export const WikiLink = Node.create<WikiLinkOptions>({
   renderHTML({ node, HTMLAttributes }) {
     const title = String(node.attrs.title ?? "");
     const noteId = node.attrs.noteId as string | null;
+    const kind = parseKind(String(node.attrs.kind ?? "wiki"));
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
         "data-type": "wiki-link",
+        "data-kind": kind,
         "data-title": title,
         ...(noteId ? { "data-note-id": noteId } : {}),
-        class: "wiki-link",
+        class: linkClass(kind),
       }),
-      title,
+      displayText(kind, title),
     ];
+  },
+
+  renderText({ node }) {
+    const title = String(node.attrs.title ?? "");
+    const kind = parseKind(String(node.attrs.kind ?? "wiki"));
+    return displayText(kind, title);
   },
 
   addInputRules() {
@@ -264,8 +412,49 @@ export const WikiLink = Node.create<WikiLinkOptions>({
             .deleteRange(range)
             .insertContent({
               type: this.name,
-              attrs: { title, noteId },
+              attrs: { title, noteId, kind: "wiki" },
             })
+            .run();
+        },
+      }),
+      new InputRule({
+        find: tagInputRegex,
+        handler: ({ range, match, chain }) => {
+          const title = (match[1] ?? "").trim();
+          if (!title) {
+            return;
+          }
+          const noteId = resolveNoteId(title, getNotes);
+          chain()
+            .deleteRange(range)
+            .insertContent([
+              {
+                type: this.name,
+                attrs: { title, noteId, kind: "tag" },
+              },
+              { type: "text", text: " " },
+            ])
+            .run();
+        },
+      }),
+      new InputRule({
+        find: mentionInputRegex,
+        handler: ({ range, match, chain }) => {
+          const title = (match[1] ?? match[2] ?? "").trim();
+          const trailing = match[3] ?? " ";
+          if (!title) {
+            return;
+          }
+          const noteId = resolveNoteId(title, getNotes);
+          chain()
+            .deleteRange(range)
+            .insertContent([
+              {
+                type: this.name,
+                attrs: { title, noteId, kind: "mention" },
+              },
+              { type: "text", text: trailing },
+            ])
             .run();
         },
       }),
@@ -308,7 +497,9 @@ export const WikiLink = Node.create<WikiLinkOptions>({
     return {
       markdown: {
         serialize(state: MarkdownWriteState, node: ProseMirrorNode) {
-          state.write(`[[${String(node.attrs.title ?? "")}]]`);
+          const title = String(node.attrs.title ?? "");
+          const kind = parseKind(String(node.attrs.kind ?? "wiki"));
+          state.write(serializeLink(kind, title));
         },
         parse: {
           setup(md: MarkdownItLike) {
@@ -320,7 +511,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
   },
 });
 
-/** Coords for positioning the autocomplete popup under the `[[` query. */
+/** Coords for positioning the autocomplete popup under the query. */
 export function wikiLinkQueryRect(
   view: EditorView,
   query: WikiLinkQuery,

@@ -72,9 +72,11 @@ describe("markdown golden round-trip", () => {
     );
     const html = editor.getHTML();
     expect(html).toContain('data-type="wiki-link"');
+    expect(html).toContain('data-kind="tag"');
+    expect(html).toContain('data-kind="mention"');
     expect(html).toContain("Launch Plan");
-    expect(editor.getText()).toContain("#launch");
-    expect(editor.getText()).toContain("@Ada Lovelace");
+    expect(html).toContain("#launch");
+    expect(html).toContain("@Ada Lovelace");
     expect(getEditorMarkdown(editor)).toBe(
       "Meet [[Launch Plan]] about #launch with @Ada Lovelace",
     );

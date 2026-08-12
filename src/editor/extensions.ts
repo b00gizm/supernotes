@@ -411,7 +411,7 @@ const MarkdownTableFixup = Extension.create({
   },
 });
 
-/** Shared TipTap extensions for the note body editor (ENG-53 + ENG-54 + ENG-56). */
+/** Shared TipTap extensions for the note body editor (ENG-53 … ENG-57). */
 export function noteEditorExtensions(
   wikiLink: WikiLinkOptions = {},
 ): Extensions {
@@ -437,9 +437,10 @@ export function noteEditorExtensions(
     StaticMarkdownTable,
     MarkdownTableFixup,
     NoteImage,
+    // WikiLink also owns `#tag` / `@mention` shorthand (ENG-57).
     WikiLink.configure(wikiLink),
     Placeholder.configure({ placeholder: "Start writing…" }),
-    // Tags (`#`/`@`) stay literal until ENG-57; task pills are ENG-61.
+    // Task pills are ENG-61.
     Markdown.configure({
       html: false,
       transformPastedText: true,

@@ -1,36 +1,71 @@
-/** Shared wikilink helpers (ENG-56). Mirrors `src-tauri/src/db/wikilinks.rs`. */
+/** Shared note-link helpers (ENG-56/57). Mirrors `src-tauri/src/db/wikilinks.rs`. */
 
 const WIKI_OPEN = "[[";
 const WIKI_CLOSE = "]]";
 
-/** Titles inside `[[…]]`, document order. Skips empty / multiline and `[[task:…]]`. */
+function isWordyBefore(body: string, index: number): boolean {
+  if (index <= 0) {
+    return false;
+  }
+  return /[\w@]/.test(body.charAt(index - 1));
+}
+
+const TAG_TITLE = /^[\w-]+$/;
+const MENTION_TITLE = /^[A-Za-z][\w-]*(?: [A-Z][\w-]*)?$/;
+
+/** Titles from `[[…]]`, `#tag`, and `@mention`, document order. Skips `[[task:…]]`. */
 export function extractWikilinkTitles(body: string): string[] {
   const titles: string[] = [];
   let i = 0;
   while (i < body.length) {
-    const open = body.indexOf(WIKI_OPEN, i);
-    if (open < 0) {
-      break;
-    }
-    const start = open + WIKI_OPEN.length;
-    const close = body.indexOf(WIKI_CLOSE, start);
-    if (close < 0) {
-      break;
-    }
-    i = close + WIKI_CLOSE.length;
-    const title = body.slice(start, close).trim();
-    if (!title || title.includes("\n")) {
+    if (body.startsWith(WIKI_OPEN, i)) {
+      const start = i + WIKI_OPEN.length;
+      const close = body.indexOf(WIKI_CLOSE, start);
+      if (close < 0) {
+        break;
+      }
+      i = close + WIKI_CLOSE.length;
+      const title = body.slice(start, close).trim();
+      if (!title || title.includes("\n")) {
+        continue;
+      }
+      if (title.length >= 5 && title.slice(0, 5).toLowerCase() === "task:") {
+        continue;
+      }
+      titles.push(title);
       continue;
     }
-    if (title.length >= 5 && title.slice(0, 5).toLowerCase() === "task:") {
-      continue;
+
+    if (body.charAt(i) === "#" && !isWordyBefore(body, i)) {
+      const match = body.slice(i + 1).match(/^([\w-]+)/);
+      if (match?.[1]) {
+        titles.push(match[1]);
+        i += 1 + match[1].length;
+        continue;
+      }
     }
-    titles.push(title);
+
+    if (body.charAt(i) === "@" && !isWordyBefore(body, i)) {
+      const match = body
+        .slice(i + 1)
+        .match(/^([A-Za-z][\w-]*(?: [A-Z][\w-]*)?)/);
+      if (match?.[1]) {
+        titles.push(match[1]);
+        i += 1 + match[1].length;
+        continue;
+      }
+    }
+
+    i += 1;
   }
   return titles;
 }
 
-/** Replace `[[oldTitle]]` with `[[newTitle]]` when the inner title matches exactly (trimmed). */
+/**
+ * Replace `[[oldTitle]]` / `#old` / `@old` with the new title when the inner
+ * title matches exactly (trimmed). Tag/mention forms rewrite only when both
+ * titles still fit that syntax (otherwise leave the shorthand unchanged).
+ */
 export function rewriteWikilinkTitle(
   body: string,
   oldTitle: string,
@@ -39,6 +74,9 @@ export function rewriteWikilinkTitle(
   if (oldTitle === newTitle) {
     return body;
   }
+  const rewriteTag = TAG_TITLE.test(oldTitle) && TAG_TITLE.test(newTitle);
+  const rewriteMention =
+    MENTION_TITLE.test(oldTitle) && MENTION_TITLE.test(newTitle);
   let out = "";
   let i = 0;
   while (i < body.length) {
@@ -54,6 +92,27 @@ export function rewriteWikilinkTitle(
         }
       }
     }
+
+    if (rewriteTag && body.charAt(i) === "#" && !isWordyBefore(body, i)) {
+      const match = body.slice(i + 1).match(/^([\w-]+)/);
+      if (match?.[1] === oldTitle) {
+        out += `#${newTitle}`;
+        i += 1 + match[1].length;
+        continue;
+      }
+    }
+
+    if (rewriteMention && body.charAt(i) === "@" && !isWordyBefore(body, i)) {
+      const match = body
+        .slice(i + 1)
+        .match(/^([A-Za-z][\w-]*(?: [A-Z][\w-]*)?)/);
+      if (match?.[1] === oldTitle) {
+        out += `@${newTitle}`;
+        i += 1 + match[1].length;
+        continue;
+      }
+    }
+
     out += body.charAt(i);
     i += 1;
   }
@@ -83,7 +142,7 @@ export function findNoteByTitle<T extends { title: string }>(
 }
 
 /**
- * Rank notes for `[[` autocomplete: exact → prefix → substring, then recency.
+ * Rank notes for `[[` / `#` / `@` autocomplete: exact → prefix → substring, then recency.
  * Excludes `excludeId` when set.
  */
 export function rankNotesForWikiLink<

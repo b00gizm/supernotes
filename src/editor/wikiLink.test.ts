@@ -35,7 +35,7 @@ describe("wikilink input", () => {
     }
   });
 
-  function create(notes: { id: string; title: string }[] = []) {
+  function create(notes: { id: string; title: string }[] = [], content = "") {
     const element = document.createElement("div");
     document.body.appendChild(element);
     editor = new Editor({
@@ -51,7 +51,7 @@ describe("wikilink input", () => {
             updated_at: "2026-08-10T00:00:00.000Z",
           })),
       }),
-      content: "",
+      content,
     });
     editor.commands.focus("end");
     return editor;
@@ -85,5 +85,73 @@ describe("wikilink input", () => {
       editor.state.selection.from,
     );
     expect(q?.query).toBe("fo");
+    expect(q?.kind).toBe("wiki");
+  });
+
+  it("turns #tag into a tag atom on trailing space", () => {
+    editor = create([{ id: "1", title: "project" }]);
+    typeText(editor, "See #project ");
+    expect(editor.getHTML()).toContain('data-kind="tag"');
+    expect(editor.getHTML()).toContain("is-tag");
+    expect(getEditorMarkdown(editor)).toContain("#project");
+
+    let found: {
+      title: string;
+      noteId: string | null;
+      kind: string;
+    } | null = null;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "wikiLink") {
+        found = {
+          title: String(node.attrs.title),
+          noteId: node.attrs.noteId as string | null,
+          kind: String(node.attrs.kind),
+        };
+        return false;
+      }
+    });
+    expect(found).toEqual({ title: "project", noteId: "1", kind: "tag" });
+  });
+
+  it("detects open # and @ queries", () => {
+    editor = create();
+    typeText(editor, "Hello #pro");
+    expect(
+      findActiveWikiLinkQuery(editor.state.doc, editor.state.selection.from),
+    ).toMatchObject({ query: "pro", kind: "tag" });
+
+    editor.commands.clearContent();
+    editor.commands.focus("end");
+    typeText(editor, "Hi @Pri");
+    expect(
+      findActiveWikiLinkQuery(editor.state.doc, editor.state.selection.from),
+    ).toMatchObject({ query: "Pri", kind: "mention" });
+  });
+
+  it("parses #tag and @mention from markdown to the same note title as [[]]", () => {
+    editor = create(
+      [
+        { id: "1", title: "project" },
+        { id: "2", title: "Priya Sharma" },
+      ],
+      "See [[project]] and #project with @Priya Sharma",
+    );
+    const links: Array<{ title: string; kind: string }> = [];
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "wikiLink") {
+        links.push({
+          title: String(node.attrs.title),
+          kind: String(node.attrs.kind),
+        });
+      }
+    });
+    expect(links).toEqual([
+      { title: "project", kind: "wiki" },
+      { title: "project", kind: "tag" },
+      { title: "Priya Sharma", kind: "mention" },
+    ]);
+    expect(getEditorMarkdown(editor)).toBe(
+      "See [[project]] and #project with @Priya Sharma",
+    );
   });
 });

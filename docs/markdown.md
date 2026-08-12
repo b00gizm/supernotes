@@ -49,11 +49,12 @@ fixtures already use that form).
 - Editor node attrs may hold a resolved `noteId`; markdown always stores the
   **title**. Renaming a note rewrites `[[old]]` → `[[new]]` in notes that link
   to it (without bumping those notes' `updated_at`). The `links` table is the
-  ID index (see `docs/data-model.md`), synced from `[[…]]` on every note save.
+  ID index (see `docs/data-model.md`), synced from `[[…]]` / `#tag` / `@mention`
+  on every note save.
 - Typing `[[` opens an inline title autocomplete; click navigates, creating the
   target note on first click when missing.
 
-## Tags / mentions (ENG-57 UI; literal markdown)
+## Tags / mentions (ENG-57)
 
 ```text
 #project
@@ -66,9 +67,9 @@ fixtures already use that form).
 - Stay **literal** in markdown (no HTML wrapping in the stored string).
 - `#tag` has **no** space after `#` (a space makes an ATX heading).
 - `@Name` may include one optional capitalized surname token.
-
-Until ENG-57 lands nodes, these remain plain text in the editor and still
-round-trip.
+- Typing `#` / `@` opens the same title autocomplete as `[[`; editor renders
+  compact chips (tags vs mentions styled apart from wikilinks). Click /
+  create-on-miss / `links` sync match wikilinks.
 
 ## Task pills (ENG-61; convention only)
 
