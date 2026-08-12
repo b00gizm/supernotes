@@ -24,10 +24,11 @@ const tauriNotesApi: NotesApi = {
   deleteNote: async (id) => {
     await invoke("delete_note", { id });
   },
+  // Tauri 2 deserializes multi-word command args as camelCase by default.
   listLinksFrom: (sourceNoteId) =>
-    invoke<Link[]>("list_links_from", { source_note_id: sourceNoteId }),
+    invoke<Link[]>("list_links_from", { sourceNoteId }),
   listLinksTo: (targetNoteId) =>
-    invoke<Link[]>("list_links_to", { target_note_id: targetNoteId }),
+    invoke<Link[]>("list_links_to", { targetNoteId }),
 };
 
 function isTauriRuntime(): boolean {
