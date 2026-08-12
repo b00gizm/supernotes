@@ -47,8 +47,8 @@
   --radius-lg: 0.7rem;
   /* Capsule chips for #tags / @mentions (mockup 1c). */
   --radius-pill: 999px;
-  /* Clears trafficLightPosition (y:18) + button cluster; mac Overlay only. */
-  --mac-titlebar-height: 3.25rem;
+  /* Titlebar row height; traffic lights + collapse sit vertically centered here. */
+  --mac-titlebar-height: 3.5rem;
 
   color: var(--text);
   background: var(--bg-app);
@@ -134,7 +134,7 @@ button {
   padding: var(--space-3) var(--space-2) var(--space-3);
 }
 
-/* Empty strip under native traffic lights; also the window drag handle (ENG-115). */
+/* Window drag handle (ENG-115). Expanded: fills the titlebar row beside traffic lights. */
 .titlebar-drag {
   flex-shrink: 0;
   height: var(--mac-titlebar-height);
@@ -147,20 +147,45 @@ button {
   padding-top: 0;
 }
 
-.has-mac-overlay-chrome .titlebar-drag-sidebar {
-  /* Span full sidebar width (cancel horizontal padding). */
-  margin: 0 calc(-1 * var(--space-2));
-}
-
 .sidebar-top {
   display: flex;
   justify-content: flex-end;
   padding: 0 var(--space-2) var(--space-2);
 }
 
-.has-mac-overlay-chrome .sidebar-top {
-  /* Keep the collapse control below the traffic-light cluster. */
-  padding-top: var(--space-1);
+/* Expanded: one titlebar row — [traffic lights] …drag… [≡] */
+.has-mac-overlay-chrome:not(.is-sidebar-collapsed) .sidebar-top {
+  position: relative;
+  align-items: center;
+  height: var(--mac-titlebar-height);
+  margin: 0 calc(-1 * var(--space-2)) var(--space-3);
+  padding: 0 var(--space-3);
+}
+
+.has-mac-overlay-chrome:not(.is-sidebar-collapsed) .titlebar-drag-sidebar {
+  position: absolute;
+  inset: 0;
+}
+
+.has-mac-overlay-chrome .sidebar-collapse {
+  position: relative;
+  z-index: 1;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Collapsed rail is too narrow for lights + hamburger; stack hamburger under chrome. */
+.has-mac-overlay-chrome.is-sidebar-collapsed .sidebar-top {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 0 0 var(--space-2);
+}
+
+.has-mac-overlay-chrome.is-sidebar-collapsed .titlebar-drag-sidebar {
+  width: 100%;
+  height: var(--mac-titlebar-height);
 }
 
 .sidebar-collapse {

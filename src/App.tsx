@@ -627,14 +627,14 @@ function App() {
         />
       ) : null}
       <aside className="sidebar" aria-label="Sidebar">
-        {macOverlayChrome ? (
-          <div
-            className="titlebar-drag titlebar-drag-sidebar"
-            data-tauri-drag-region
-            aria-hidden="true"
-          />
-        ) : null}
         <div className="sidebar-top">
+          {macOverlayChrome ? (
+            <div
+              className="titlebar-drag titlebar-drag-sidebar"
+              data-tauri-drag-region
+              aria-hidden="true"
+            />
+          ) : null}
           <button
             type="button"
             className="sidebar-collapse"
