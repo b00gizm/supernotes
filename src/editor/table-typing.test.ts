@@ -1,7 +1,11 @@
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { noteEditorExtensions } from "./extensions";
-import { looksLikeGfmTable } from "./markdownTable";
+import {
+  looksLikeGfmTable,
+  withTablePipeEscaping,
+  type TablePipeEscapeState,
+} from "./markdownTable";
 
 function typeText(editor: Editor, text: string) {
   for (const char of text) {
@@ -49,6 +53,26 @@ describe("looksLikeGfmTable", () => {
   });
 });
 
+describe("withTablePipeEscaping", () => {
+  it("sets escapeExtraCharacters only while in a table", () => {
+    const state: TablePipeEscapeState = {
+      inTable: true,
+      options: {},
+    };
+    withTablePipeEscaping(state, () => {
+      expect(state.options.escapeExtraCharacters).toEqual(/\|/g);
+    });
+    expect(state.options.escapeExtraCharacters).toBeUndefined();
+  });
+
+  it("is a no-op outside tables", () => {
+    const state: TablePipeEscapeState = { options: {} };
+    withTablePipeEscaping(state, () => {
+      expect(state.options.escapeExtraCharacters).toBeUndefined();
+    });
+  });
+});
+
 describe("markdown table fixup", () => {
   let editor: Editor | null = null;
   afterEach(() => {
@@ -87,6 +111,33 @@ describe("markdown table fixup", () => {
     typeText(editor, "| A | B |\n| --- | --- |\n| 1 | 2 |");
     expect(editor.getHTML()).toContain("<table");
     expect(editor.getHTML()).not.toMatch(/\| A \| B \|/);
-    expect(md(editor)).toContain("| 1 | 2 |");
+    // Typing leaves a trailing `|` in the last cell (pre-existing); ENG-88
+    // escapes it so we assert cell text rather than an exact pipe row.
+    expect(editor.getHTML()).toMatch(/<p>1<\/p>/);
+    expect(md(editor)).toMatch(/^\| A \| B \|$/m);
+  });
+
+  it("escapes pipes in cells on serialize (ENG-88)", () => {
+    editor = create("| A | B |\n| --- | --- |\n| 1\\|x | 2 |");
+    expect(editor.getHTML()).toMatch(/1\|x/);
+    expect(md(editor)).toBe("| A | B |\n| --- | --- |\n| 1\\|x | 2 |\n");
+  });
+
+  it("serializes hard breaks in cells as <br> (ENG-88)", () => {
+    editor = create("| A | B |\n| --- | --- |\n| a | 2 |");
+    let from = 0;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "tableCell" && from === 0) {
+        from = pos + 2;
+      }
+    });
+    editor
+      .chain()
+      .setTextSelection(from + 1)
+      .setHardBreak()
+      .insertContent("b")
+      .run();
+    expect(md(editor)).toContain("a<br>b");
+    expect(md(editor)).not.toContain("[hardBreak]");
   });
 });

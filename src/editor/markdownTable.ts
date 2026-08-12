@@ -1,9 +1,66 @@
 import type { Editor } from "@tiptap/core";
+import Text from "@tiptap/extension-text";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import { DOMParser as PmDOMParser } from "@tiptap/pm/model";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 
 const tableFixupKey = new PluginKey("markdownTableFixup");
+
+/** Serializer state fields used when escaping `|` inside GFM table cells (ENG-88). */
+export type TablePipeEscapeState = {
+  inTable?: boolean;
+  options: { escapeExtraCharacters?: RegExp };
+};
+
+/**
+ * While `state.inTable`, make prosemirror-markdown `esc()` also escape `|`
+ * so cell text like `x|y` round-trips as `x\|y` instead of splitting columns.
+ */
+export function withTablePipeEscaping<T>(
+  state: TablePipeEscapeState,
+  write: () => T,
+): T {
+  if (!state.inTable) {
+    return write();
+  }
+  const prev = state.options.escapeExtraCharacters;
+  state.options.escapeExtraCharacters = /\|/g;
+  try {
+    return write();
+  } finally {
+    if (prev) {
+      state.options.escapeExtraCharacters = prev;
+    } else {
+      delete state.options.escapeExtraCharacters;
+    }
+  }
+}
+
+/**
+ * TipTap text node that keeps tiptap-markdown's HTML escaping and adds
+ * pipe-escaping inside tables (ENG-88). StarterKit must disable its `text`.
+ */
+export const TablePipeSafeText = Text.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(
+          state: TablePipeEscapeState & { text: (value: string) => void },
+          node: PmNode,
+        ) {
+          // Match tiptap-markdown's text serializer (escapeHTML) then esc().
+          const text = (node.text ?? "")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          withTablePipeEscaping(state, () => {
+            state.text(text);
+          });
+        },
+        parse: {},
+      },
+    };
+  },
+});
 
 /** GFM separator row: `| --- | --- |` (TipTap table tokenizer uses the same idea). */
 export function isGfmTableSeparator(line: string): boolean {
