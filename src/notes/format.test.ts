@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  backlinkSnippet,
   formatDailyTitle,
   formatOverviewWhen,
   formatRelativeUpdated,
@@ -58,6 +59,24 @@ describe("noteSnippet", () => {
     expect(noteSnippet("Draft for #meridian with @Priya")).toBe(
       "Draft for #meridian with @Priya",
     );
+  });
+});
+
+describe("backlinkSnippet", () => {
+  it("returns the line that links to the target title", () => {
+    expect(backlinkSnippet("Intro\nSee [[Foo]] tomorrow.\nOutro", "Foo")).toBe(
+      "See [[Foo]] tomorrow.",
+    );
+    expect(backlinkSnippet("Track #project next", "project")).toBe(
+      "Track #project next",
+    );
+    expect(backlinkSnippet("Ask @Priya later", "Priya")).toBe(
+      "Ask @Priya later",
+    );
+  });
+
+  it("falls back to the first body line when no link line matches", () => {
+    expect(backlinkSnippet("Just a note\nmore", "Missing")).toBe("Just a note");
   });
 });
 

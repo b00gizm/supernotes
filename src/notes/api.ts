@@ -12,6 +12,7 @@ export type NotesApi = {
   setPinned: (id: string, pinned: boolean) => Promise<Note>;
   deleteNote: (id: string) => Promise<void>;
   listLinksFrom: (sourceNoteId: string) => Promise<Link[]>;
+  listLinksTo: (targetNoteId: string) => Promise<Link[]>;
 };
 
 const tauriNotesApi: NotesApi = {
@@ -25,6 +26,8 @@ const tauriNotesApi: NotesApi = {
   },
   listLinksFrom: (sourceNoteId) =>
     invoke<Link[]>("list_links_from", { source_note_id: sourceNoteId }),
+  listLinksTo: (targetNoteId) =>
+    invoke<Link[]>("list_links_to", { target_note_id: targetNoteId }),
 };
 
 function isTauriRuntime(): boolean {

@@ -136,5 +136,10 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
         links.filter((link) => link.source_note_id === sourceNoteId),
       );
     },
+    listLinksTo(targetNoteId: string) {
+      return Promise.resolve(
+        links.filter((link) => link.target_note_id === targetNoteId),
+      );
+    },
   };
 }

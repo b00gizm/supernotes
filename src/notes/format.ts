@@ -1,4 +1,5 @@
 import type { Note } from "./types";
+import { extractWikilinkTitles } from "./wikilinks";
 
 /** Relative updated label for Recent rows (mockup 1b: `2h`, `1d`, `Fri`). */
 export function formatRelativeUpdated(
@@ -71,6 +72,24 @@ export function noteSnippet(body: string): string {
     }
   }
   return "Empty note";
+}
+
+/** Line that links to `targetTitle` (via `[[…]]` / `#` / `@`); falls back to first line. */
+export function backlinkSnippet(body: string, targetTitle: string): string {
+  const needle = targetTitle.trim().toLowerCase();
+  if (needle) {
+    for (const line of body.split(/\r?\n/)) {
+      const titles = extractWikilinkTitles(line);
+      if (!titles.some((title) => title.toLowerCase() === needle)) {
+        continue;
+      }
+      const trimmed = stripMarkdownMarkers(line.trim());
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return noteSnippet(body);
 }
 
 /** Daily note title matching mockup (`Monday, Aug 10`). */

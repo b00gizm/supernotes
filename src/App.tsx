@@ -19,6 +19,7 @@ import {
   startOfLocalDay,
 } from "./notes/format";
 import { NoteEditor } from "./editor/NoteEditor";
+import { Backlinks } from "./notes/Backlinks";
 import {
   isSearchKpiMode,
   runSearchKpi,
@@ -833,6 +834,14 @@ function App() {
                 notes={notes}
                 currentNoteId={selectedId}
                 onOpenWikiLink={openWikiLink}
+              />
+            ) : null}
+            {selectedId ? (
+              <Backlinks
+                noteId={selectedId}
+                noteTitle={titleDraft}
+                notes={notes}
+                onOpen={openFromSearch}
               />
             ) : null}
           </section>

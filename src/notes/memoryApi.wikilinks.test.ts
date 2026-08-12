@@ -82,6 +82,19 @@ describe("memoryApi wikilink sync", () => {
       "project",
     ]);
 
+    expect(await api.listLinksTo("project")).toEqual([
+      expect.objectContaining({
+        source_note_id: "src",
+        target_note_id: "project",
+      }),
+    ]);
+    expect(await api.listLinksTo("priya")).toEqual([
+      expect.objectContaining({
+        source_note_id: "src",
+        target_note_id: "priya",
+      }),
+    ]);
+
     await api.updateNote({
       id: "project",
       title: "meridian",

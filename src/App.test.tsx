@@ -25,6 +25,10 @@ vi.mock("./notes/api", async () => {
       setPinned: (id: string, pinned: boolean) =>
         apiRef.current.setPinned(id, pinned),
       deleteNote: (id: string) => apiRef.current.deleteNote(id),
+      listLinksFrom: (sourceNoteId: string) =>
+        apiRef.current.listLinksFrom(sourceNoteId),
+      listLinksTo: (targetNoteId: string) =>
+        apiRef.current.listLinksTo(targetNoteId),
     },
   };
 });
@@ -285,5 +289,58 @@ describe("App shell", () => {
     await user.keyboard("{ArrowDown}{Enter}");
     expect(await screen.findByLabelText("Note title")).toHaveValue("pricing");
     expect(screen.queryByLabelText("Search notes")).not.toBeInTheDocument();
+  });
+
+  it("shows backlinks from the links index and hides when empty", async () => {
+    const user = userEvent.setup();
+    const stamp = "2026-08-09T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "foo",
+        title: "Foo",
+        body_markdown: "",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+      {
+        id: "src",
+        title: "Source note",
+        body_markdown: "See [[Foo]] tomorrow.",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    // Seed link rows (createMemoryNotesApi only syncs on create/update).
+    await apiRef.current.updateNote({
+      id: "src",
+      title: "Source note",
+      body_markdown: "See [[Foo]] tomorrow.",
+    });
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    await user.click(screen.getByRole("button", { name: /^Foo\b/ }));
+    const backlinks = await screen.findByRole("region", { name: "Backlinks" });
+    expect(
+      within(backlinks).getByRole("button", { name: /Source note/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(backlinks).getByText(/See \[\[Foo\]\] tomorrow/),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(backlinks).getByRole("button", { name: /Source note/ }),
+    );
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Source note",
+    );
+    expect(
+      screen.queryByRole("region", { name: "Backlinks" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -654,8 +654,71 @@ button {
 .note-editor {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+.backlinks {
+  flex: 0 0 auto;
+  max-height: 40%;
+  overflow: auto;
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.backlinks-heading {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.backlinks-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.backlinks-list > li + li {
+  margin-top: 0.15rem;
+}
+
+.backlink-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.backlink-item:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.backlink-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.backlink-snippet {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  line-height: var(--leading-body);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .note-editor .tiptap,
