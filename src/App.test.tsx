@@ -238,6 +238,48 @@ describe("App shell", () => {
     );
   });
 
+  it("reserves mac overlay titlebar drag regions under traffic lights (ENG-115)", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+    const agent = vi
+      .spyOn(window.navigator, "userAgent", "get")
+      .mockReturnValue(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+      );
+
+    try {
+      render(<App />);
+      await screen.findByLabelText("Note title");
+
+      const shell = screen.getByLabelText("Supernotes");
+      expect(shell).toHaveClass("has-mac-overlay-chrome");
+
+      const dragRegions = shell.querySelectorAll("[data-tauri-drag-region]");
+      expect(dragRegions.length).toBe(2);
+      expect(shell.querySelector(".titlebar-drag-sidebar")).toBeInTheDocument();
+      expect(shell.querySelector(".titlebar-drag-main")).toBeInTheDocument();
+
+      // Collapse control stays below the reserved chrome strip.
+      const collapse = screen.getByRole("button", {
+        name: "Collapse sidebar",
+      });
+      const sidebarDrag = shell.querySelector(".titlebar-drag-sidebar");
+      expect(sidebarDrag).toBeInstanceOf(HTMLElement);
+      if (!(sidebarDrag instanceof HTMLElement)) {
+        return;
+      }
+      expect(
+        sidebarDrag.compareDocumentPosition(collapse) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    } finally {
+      agent.mockRestore();
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
   it("shows a dirty-only save dot instead of Unsaved/Saved text (ENG-114)", async () => {
     const user = userEvent.setup();
     render(<App />);

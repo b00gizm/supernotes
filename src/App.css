@@ -47,6 +47,30 @@
   --radius-lg: 0.7rem;
   /* Capsule chips for #tags / @mentions (mockup 1c). */
   --radius-pill: 999px;
+  /*
+   * macOS Overlay chrome — use px so geometry matches trafficLightPosition
+   * (logical px). :root font-size is 0.925rem, so rem titlebar math drifts.
+   */
+  --mac-traffic-light-y: 20px;
+  --mac-titlebar-height: 52px;
+  --mac-collapse-size: 28px;
+  /*
+   * tao turns trafficLightPosition.y into a titlebar container of height
+   * (16px button frame + y), and AppKit re-centers the buttons in it, so the
+   * glyph's center lands at y/2 + 8px — not y + glyph/2. Measured 17.75px
+   * on macOS 15 with y=20. ponytail: hardcodes the 16px AppKit button frame.
+   */
+  --mac-traffic-light-center-y: calc(var(--mac-traffic-light-y) / 2 + 8px);
+  /* Center the 28px control on the traffic lights' actual axis. */
+  --mac-collapse-top: calc(
+    var(--mac-traffic-light-center-y) - var(--mac-collapse-size) / 2
+  );
+  /* Collapsed: just clear traffic lights, then a tight gap before the control. */
+  --mac-collapsed-chrome: 40px;
+  --mac-collapsed-gap: 8px;
+  --mac-collapsed-content-top: calc(
+    var(--mac-collapsed-chrome) + var(--mac-collapsed-gap)
+  );
 
   color: var(--text);
   background: var(--bg-app);
@@ -132,10 +156,64 @@ button {
   padding: var(--space-3) var(--space-2) var(--space-3);
 }
 
+/* Window drag handle (ENG-115). Expanded: fills the titlebar row beside traffic lights. */
+.titlebar-drag {
+  flex-shrink: 0;
+  height: var(--mac-titlebar-height);
+  /* WKWebView honors this in addition to data-tauri-drag-region. */
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.has-mac-overlay-chrome .sidebar {
+  padding-top: 0;
+}
+
 .sidebar-top {
   display: flex;
   justify-content: flex-end;
   padding: 0 var(--space-2) var(--space-2);
+}
+
+/* Expanded: one titlebar row — [traffic lights] …drag… [≡] */
+.has-mac-overlay-chrome:not(.is-sidebar-collapsed) .sidebar-top {
+  position: relative;
+  align-items: flex-start;
+  height: var(--mac-titlebar-height);
+  margin: 0 calc(-1 * var(--space-2)) var(--space-3);
+  padding: var(--mac-collapse-top) var(--space-3) 0;
+}
+
+.has-mac-overlay-chrome:not(.is-sidebar-collapsed) .titlebar-drag-sidebar {
+  position: absolute;
+  inset: 0;
+}
+
+.has-mac-overlay-chrome .sidebar-collapse {
+  position: relative;
+  z-index: 1;
+  width: var(--mac-collapse-size);
+  height: var(--mac-collapse-size);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Collapsed rail is too narrow for lights + hamburger; stack hamburger under chrome. */
+.has-mac-overlay-chrome.is-sidebar-collapsed .sidebar-top {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mac-collapsed-gap);
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 0 0 var(--space-2);
+}
+
+.has-mac-overlay-chrome.is-sidebar-collapsed .titlebar-drag-sidebar {
+  width: 100%;
+  height: var(--mac-collapsed-chrome);
+}
+
+.has-mac-overlay-chrome.is-sidebar-collapsed .titlebar-drag-main {
+  height: var(--mac-collapsed-chrome);
 }
 
 .sidebar-collapse {
@@ -405,6 +483,60 @@ button {
   display: flex;
   flex-direction: column;
   background: var(--bg-main);
+}
+
+.has-mac-overlay-chrome .editor-pane,
+.has-mac-overlay-chrome .placeholder-pane,
+.has-mac-overlay-chrome .overview-pane {
+  /* Titlebar drag strip already reserved height above the pane. */
+  padding-top: var(--space-4);
+}
+
+/* Collapsed: title/header shares the hamburger's vertical start. */
+.has-mac-overlay-chrome.is-sidebar-collapsed .editor-pane,
+.has-mac-overlay-chrome.is-sidebar-collapsed .placeholder-pane,
+.has-mac-overlay-chrome.is-sidebar-collapsed .overview-pane {
+  padding-top: var(--mac-collapsed-gap);
+}
+
+.has-mac-overlay-chrome .editor-pane {
+  position: relative;
+}
+
+/*
+ * Daily note has no breadcrumb — collapse the toolbar out of flow so the
+ * title sits on the same row as the sidebar collapse control (ENG-115).
+ */
+.has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) {
+  height: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  justify-content: flex-end;
+  position: relative;
+  z-index: 1;
+}
+
+.has-mac-overlay-chrome
+  .editor-toolbar:not(:has(.breadcrumb))
+  .editor-toolbar-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: var(--mac-collapse-size);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) + .title-input {
+  /* Match collapse control so title and hamburger share a row. */
+  box-sizing: content-box;
+  min-height: var(--mac-collapse-size);
+  padding-top: 0;
+  padding-bottom: var(--space-4);
+  line-height: var(--mac-collapse-size);
 }
 
 .editor-pane,
@@ -1473,5 +1605,17 @@ button {
   .placeholder-pane,
   .overview-pane {
     padding: var(--space-5) var(--space-4);
+  }
+
+  .has-mac-overlay-chrome .editor-pane,
+  .has-mac-overlay-chrome .placeholder-pane,
+  .has-mac-overlay-chrome .overview-pane {
+    padding-top: var(--space-4);
+  }
+
+  .has-mac-overlay-chrome.is-sidebar-collapsed .editor-pane,
+  .has-mac-overlay-chrome.is-sidebar-collapsed .placeholder-pane,
+  .has-mac-overlay-chrome.is-sidebar-collapsed .overview-pane {
+    padding-top: var(--mac-collapsed-gap);
   }
 }
