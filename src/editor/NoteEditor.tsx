@@ -258,7 +258,7 @@ export function NoteEditor({
             // Insert at current selection after await — doc may have changed.
             insertImageAt(view, src, file.name.replace(/\.[^.]+$/, ""));
           })
-          .catch((err) => {
+          .catch((err: unknown) => {
             setImageErrorRef.current(imageSaveErrorMessage(err));
           });
         return true;
@@ -285,7 +285,7 @@ export function NoteEditor({
               coords?.pos,
             );
           })
-          .catch((err) => {
+          .catch((err: unknown) => {
             setImageErrorRef.current(imageSaveErrorMessage(err));
           });
         return true;
