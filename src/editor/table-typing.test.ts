@@ -142,10 +142,18 @@ describe("markdown table fixup", () => {
     typeText(editor, "| A | B |\n| --- | --- |\n| 1 | 2 |");
     expect(editor.getHTML()).toContain("<table");
     expect(editor.getHTML()).not.toMatch(/\| A \| B \|/);
-    // Typing leaves a trailing `|` in the last cell (pre-existing); ENG-88
-    // escapes it so we assert cell text rather than an exact pipe row.
     expect(editor.getHTML()).toMatch(/<p>1<\/p>/);
-    expect(md(editor)).toMatch(/^\| A \| B \|$/m);
+    expect(editor.getHTML()).toMatch(/<p>A<\/p>/);
+    expect(md(editor)).toBe("| A | B |\n| --- | --- |\n| 1 | 2 |\n");
+  });
+
+  it("does not convert until the body row has a trailing pipe", () => {
+    editor = create();
+    typeText(editor, "| A | B |\n| --- | --- |\n| 1 | 2");
+    expect(editor.getHTML()).not.toContain("<table");
+    typeText(editor, " |");
+    expect(editor.getHTML()).toContain("<table");
+    expect(md(editor)).toBe("| A | B |\n| --- | --- |\n| 1 | 2 |\n");
   });
 
   it("escapes pipes in cells on serialize (ENG-88)", () => {

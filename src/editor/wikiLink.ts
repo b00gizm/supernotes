@@ -4,7 +4,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import type { Note } from "../notes/types";
-import { findNoteByTitle } from "../notes/wikilinks";
+import { findNoteByTitle, MENTION_TITLE, TAG_TITLE } from "../notes/wikilinks";
 
 /** Minimal surface used by tiptap-markdown node serializers. */
 type MarkdownWriteState = {
@@ -91,13 +91,25 @@ function displayText(kind: NoteLinkKind, title: string): string {
 }
 
 function serializeLink(kind: NoteLinkKind, title: string): string {
-  if (kind === "tag") {
+  // Fall back to [[Title]] when shorthand would not round-trip (ENG-89).
+  if (kind === "tag" && TAG_TITLE.test(title)) {
     return `#${title}`;
   }
-  if (kind === "mention") {
+  if (kind === "mention" && MENTION_TITLE.test(title)) {
     return `@${title}`;
   }
   return `[[${title}]]`;
+}
+
+/** Tag/mention only when the title fits that shorthand charset; else wiki. */
+function effectiveLinkKind(kind: NoteLinkKind, title: string): NoteLinkKind {
+  if (kind === "tag" && TAG_TITLE.test(title)) {
+    return "tag";
+  }
+  if (kind === "mention" && MENTION_TITLE.test(title)) {
+    return "mention";
+  }
+  return "wiki";
 }
 
 function parseKind(value: string | null): NoteLinkKind {
@@ -336,7 +348,11 @@ export function insertWikiLink(
     .deleteRange(range)
     .insertContent({
       type: "wikiLink",
-      attrs: { title: trimmed, noteId, kind },
+      attrs: {
+        title: trimmed,
+        noteId,
+        kind: effectiveLinkKind(kind, trimmed),
+      },
     })
     .run();
 }

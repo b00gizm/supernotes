@@ -10,8 +10,10 @@ function isWordyBefore(body: string, index: number): boolean {
   return /[\w@]/.test(body.charAt(index - 1));
 }
 
-const TAG_TITLE = /^[\w-]+$/;
-const MENTION_TITLE = /^[A-Za-z][\w-]*(?: [A-Z][\w-]*)?$/;
+/** Shorthand `#tag` charset — titles outside this must use `[[…]]`. */
+export const TAG_TITLE = /^[\w-]+$/;
+/** Shorthand `@Name` / `@First Last` charset — titles outside this must use `[[…]]`. */
+export const MENTION_TITLE = /^[A-Za-z][\w-]*(?: [A-Z][\w-]*)?$/;
 
 /** Titles from `[[…]]`, `#tag`, and `@mention`, document order. Skips `[[task:…]]`. */
 export function extractWikilinkTitles(body: string): string[] {

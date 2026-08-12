@@ -86,11 +86,19 @@ export function gfmColumnCount(line: string): number {
   return trimmed.split("|").length;
 }
 
-/** At least two cells with content — avoids converting a lone `|` mid-typing. */
+/**
+ * At least two cells with content — avoids converting a lone `|` mid-typing.
+ * Require leading+trailing `|` so live conversion waits until the row is fully
+ * typed; converting on `| 1 | 2` (no trailing pipe) leaves leftover keystrokes
+ * that land in the first cell after ENG-95 caret handoff.
+ */
 export function isCompleteGfmTableRow(line: string): boolean {
   const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) {
+    return false;
+  }
   const pipes = trimmed.match(/\|/g)?.length ?? 0;
-  if (pipes < 2) {
+  if (pipes < 3) {
     return false;
   }
   const cells = trimmed
