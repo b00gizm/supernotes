@@ -347,7 +347,7 @@ describe("App shell", () => {
 
   it("create-on-click @Person keeps an empty Person note selected", async () => {
     // From the daily surface, create-on-click must open Person in one click
-    // (ensureDaily used to steal selection when notes.length bumped).
+    // (leave daily before notes.length bumps so ensureDaily cannot steal).
     const user = userEvent.setup();
     const dailyTitle = formatDailyTitle();
     const dailyBody = "Discuss [[Existing]] with @Person";
@@ -399,5 +399,46 @@ describe("App shell", () => {
       (note) => note.title === "Person",
     );
     expect(person?.body_markdown).toBe("");
+  });
+
+  it("Daily Note nav reopens today from a regular note", async () => {
+    const user = userEvent.setup();
+    const dailyTitle = formatDailyTitle();
+    const stamp = "2026-08-10T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily",
+        title: dailyTitle,
+        body_markdown: "",
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+      {
+        id: "other",
+        title: "Other note",
+        body_markdown: "hello",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+
+    render(<App />);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+
+    await user.click(screen.getByRole("button", { name: /^Other note\b/ }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Other note",
+    );
+
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    await user.click(within(nav).getByRole("button", { name: "Daily Note" }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    expect(
+      screen.queryByRole("button", { name: "Back to Notes" }),
+    ).not.toBeInTheDocument();
   });
 });

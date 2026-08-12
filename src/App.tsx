@@ -465,14 +465,6 @@ function App() {
       (note) => note.note_type === "daily" && note.title === title,
     );
     if (existing) {
-      const selected = selectedIdRef.current
-        ? notesRef.current.find((note) => note.id === selectedIdRef.current)
-        : null;
-      // create-on-click / wiki jump may select a non-daily note while this
-      // surface is still "daily" for one frame; don't yank selection back.
-      if (selected && selected.note_type !== "daily") {
-        return;
-      }
       if (selectedIdRef.current !== existing.id) {
         selectNote(existing.id);
       }
@@ -522,9 +514,11 @@ function App() {
   };
 
   const createFromSearch = (title: string) => {
+    // Leave daily before notes.length bumps so ensureDaily can't steal selection.
+    setSurface({ kind: "note", id: "" });
     void createNote(title).then((created) => {
       if (created) {
-        setSurface({ kind: "note", id: created.id });
+        openFromSearch(created);
       }
     });
   };
@@ -539,8 +533,9 @@ function App() {
       return;
     }
     // Create-on-click: title = link text, empty body (ENG-56).
-    // createNote selects + eager notesRef; openFromSearch sets the surface.
-    // (ensureDaily must not steal selection when notes.length bumps mid-click.)
+    // Leave the daily surface first — otherwise ensureDaily re-selects today
+    // when createNote bumps notes.length (one-frame race).
+    setSurface({ kind: "note", id: "" });
     void createNote(link.title).then((created) => {
       if (created) {
         openFromSearch(created);
