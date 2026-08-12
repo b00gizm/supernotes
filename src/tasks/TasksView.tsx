@@ -9,7 +9,7 @@ import {
 import { formatDailyTitle, parseDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { tasksApi } from "./api";
-import { groupUpcomingTasks, isTaskOverdue } from "./query";
+import { filterTasks, groupUpcomingTasks, isTaskOverdue } from "./query";
 import { TaskMetaPopover } from "./TaskMetaPopover";
 import { priorityDotClass } from "./priority";
 import { TaskStateIcon } from "./TaskStateIcon";
@@ -86,9 +86,7 @@ function TaskRow({
   const terminal = task.state === "done" || task.state === "cancelled";
 
   return (
-    <div
-      className={`tasks-row${terminal ? " is-terminal" : ""}${overdue && showDue ? " is-overdue-due" : ""}`}
-    >
+    <div className={`tasks-row${terminal ? " is-terminal" : ""}`}>
       <button
         type="button"
         className="tasks-row-toggle"
@@ -144,18 +142,23 @@ export function TasksView({
   const [error, setError] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const listed = await tasksApi.listTasks(filter, today);
-      setTasks(listed);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load tasks");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, today]);
+  const reload = useCallback(
+    async (quiet = false) => {
+      if (!quiet) {
+        setLoading(true);
+      }
+      try {
+        const listed = await tasksApi.listTasks(filter, today);
+        setTasks(listed);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load tasks");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [filter, today],
+  );
 
   useEffect(() => {
     void reload();
@@ -180,7 +183,7 @@ export function TasksView({
       due_date?: string | null;
       priority?: TaskPriority | null;
     },
-  ) => {
+  ): Promise<boolean> => {
     try {
       const updated = await tasksApi.updateTask({
         id: task.id,
@@ -189,28 +192,18 @@ export function TasksView({
         due_date: patch.due_date === undefined ? task.due_date : patch.due_date,
         priority: patch.priority === undefined ? task.priority : patch.priority,
       });
-      setTasks((prev) => {
-        const next = prev.map((item) =>
-          item.id === updated.id ? updated : item,
-        );
-        return next.filter((item) => {
-          if (filter === "inbox") {
-            return item.state === "open" && item.due_date == null;
-          }
-          if (filter === "upcoming") {
-            return (
-              (item.state === "open" || item.state === "waiting") &&
-              item.due_date != null
-            );
-          }
-          return (
-            (item.state === "done" || item.state === "cancelled") &&
-            item.completed_at != null
-          );
-        });
-      });
+      setTasks((prev) =>
+        filterTasks(
+          prev.map((item) => (item.id === updated.id ? updated : item)),
+          filter,
+          today,
+        ),
+      );
+      setError(null);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update task");
+      return false;
     }
   };
 
@@ -343,8 +336,12 @@ export function TasksView({
             setPopover(null);
           }}
           onUpdate={(patch) => {
-            void applyUpdate(popoverTask, patch).then(() => {
-              void reload();
+            const current =
+              tasks.find((item) => item.id === popoverTask.id) ?? popoverTask;
+            void applyUpdate(current, patch).then((ok) => {
+              if (ok) {
+                void reload(true);
+              }
             });
           }}
         />

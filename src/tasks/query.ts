@@ -33,6 +33,8 @@ export function isTaskOverdue(task: Task, today: string): boolean {
 }
 
 function completeCutoff(today: string): string {
+  // ponytail: completed_at is UTC ISO; window uses the UTC calendar prefix
+  // against local `today`. Upgrade: convert to local date first.
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today);
   if (!match) {
     return today;
@@ -104,7 +106,15 @@ function formatWeekdayMonthDay(ymd: string): string {
 }
 
 function formatWeekRange(start: string, end: string): string {
-  return `${formatMonthDay(start)} – ${String(parseYmd(end)?.getDate() ?? end)}`;
+  const startDate = parseYmd(start);
+  const endDate = parseYmd(end);
+  if (!startDate || !endDate) {
+    return `${start} – ${end}`;
+  }
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${formatMonthDay(start)} – ${String(endDate.getDate())}`;
+  }
+  return `${formatMonthDay(start)} – ${formatMonthDay(end)}`;
 }
 
 export type UpcomingGroupTone = "overdue" | "today" | "default";

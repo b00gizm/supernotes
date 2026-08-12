@@ -140,4 +140,13 @@ describe("task query helpers (ENG-63)", () => {
     expect(groups[4]?.label).toMatch(/^Next week /);
     expect(groups[5]?.label).toBe("Aug 24 – 30");
   });
+
+  it("labels later weeks that span months with both month names", () => {
+    const groups = groupUpcomingTasks(
+      [task({ id: "sep", title: "September", due_date: "2026-09-02" })],
+      "2026-08-12",
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.label).toBe("Aug 31 – Sep 6");
+  });
 });

@@ -450,12 +450,14 @@ impl<'a> Repository<'a> {
                 ),
                 vec![],
             ),
+            // ponytail: completed_at is UTC ISO; window uses the UTC calendar
+            // prefix against local `today`. Upgrade: convert to local date first.
             TaskListFilter::Complete => (
                 "SELECT id, note_id, title, state, due_date, priority, created_at, updated_at, completed_at
                  FROM tasks
                  WHERE state IN ('done', 'cancelled')
                    AND completed_at IS NOT NULL
-                   AND date(completed_at) >= date(?1, '-14 days')
+                   AND substr(completed_at, 1, 10) >= date(?1, '-14 days')
                  ORDER BY completed_at DESC"
                     .to_string(),
                 vec![today.to_string()],

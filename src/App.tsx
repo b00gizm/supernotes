@@ -652,11 +652,13 @@ function App() {
   }, []);
 
   const openRecent = (note: Note) => {
+    setFocusTaskId(null);
     setSurface({ kind: "note", id: note.id });
     selectNote(note.id);
   };
 
-  const openFromSearch = (note: Note) => {
+  const openFromSearch = (note: Note, taskId: string | null = null) => {
+    setFocusTaskId(taskId);
     if (note.note_type === "daily" && parseDailyTitle(note.title)) {
       setDailyDate(note.title);
       setSurface({ kind: "daily" });
@@ -667,8 +669,7 @@ function App() {
   };
 
   const openTaskSource = (task: Task, note: Note) => {
-    setFocusTaskId(task.id);
-    openFromSearch(note);
+    openFromSearch(note, task.id);
   };
 
   const createFromSearch = (title: string) => {

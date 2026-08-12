@@ -1,5 +1,6 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { TaskMetaPopover } from "../tasks/TaskMetaPopover";
 import { TaskStateIcon } from "../tasks/TaskStateIcon";
 import type { Task, TaskPriority, TaskState } from "../tasks/types";
@@ -190,24 +191,28 @@ export function TaskPillView({
           }
         }}
       />
-      {metaAnchor ? (
-        <TaskMetaPopover
-          task={metaTask}
-          anchor={metaAnchor}
-          onClose={() => {
-            setMetaAnchor(null);
-          }}
-          onUpdate={(patch) => {
-            updateAttributes({
-              state: patch.state ?? state,
-              dueDate: patch.due_date === undefined ? dueDate : patch.due_date,
-              priority:
-                patch.priority === undefined ? priority : patch.priority,
-            });
-            handlers.onMetaUpdate?.(taskId, patch);
-          }}
-        />
-      ) : null}
+      {metaAnchor
+        ? createPortal(
+            <TaskMetaPopover
+              task={metaTask}
+              anchor={metaAnchor}
+              onClose={() => {
+                setMetaAnchor(null);
+              }}
+              onUpdate={(patch) => {
+                updateAttributes({
+                  state: patch.state ?? state,
+                  dueDate:
+                    patch.due_date === undefined ? dueDate : patch.due_date,
+                  priority:
+                    patch.priority === undefined ? priority : patch.priority,
+                });
+                handlers.onMetaUpdate?.(taskId, patch);
+              }}
+            />,
+            document.body,
+          )
+        : null}
     </NodeViewWrapper>
   );
 }
