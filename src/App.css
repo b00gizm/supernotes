@@ -1142,6 +1142,9 @@ button {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
+  /* Match task-pill horizontal inset so mixed lists share a column. */
+  padding: 0.1em 0.6rem;
+  border-radius: var(--radius-md);
 }
 
 .note-editor .tiptap ul[data-type="taskList"] li > label {
@@ -1189,15 +1192,14 @@ button {
 }
 
 /* Borderless task pills (ENG-61 / component sheet 1a): circle + title.
- * When mixed with checkboxes, share icon size + row rhythm; hover still washes. */
+ * Soft rounded hover wash; checkbox rows share the same horizontal inset. */
 .note-editor .tiptap .task-pill {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  /* Bleed pad so the circle sits on the same left edge as checkbox glyphs. */
-  margin: 0 -0.35em;
-  padding: 0.1em 0.35em;
-  border-radius: var(--radius-sm);
+  margin: 0;
+  padding: 0.25em 0.6rem;
+  border-radius: var(--radius-md);
   border: none;
   background: transparent;
   line-height: var(--leading-body);
