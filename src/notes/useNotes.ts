@@ -175,21 +175,31 @@ export function useNotes(options: UseNotesOptions = {}) {
         title,
         body_markdown: body,
       });
-      if (!mountedRef.current || generation !== saveGeneration.current) {
+      if (!mountedRef.current) {
         return;
       }
       if (titleChanged) {
-        // Renames rewrite `[[old]]` in other notes' bodies (ENG-56).
+        // Renames rewrite `[[old]]` in other notes' bodies (ENG-56). Always
+        // reconcile — selectNote bumps saveGeneration after flush, and skipping
+        // here leaves stale bodies that autosave would revert (ENG-91).
         const listed = [...(await apiRef.current.listNotes())].sort(
           byUpdatedAtDesc,
         );
-        // Drop the result if a newer edit superseded this save.
-        if (generation !== saveGeneration.current) {
+        if (!mountedRef.current) {
           return;
         }
         notesRef.current = listed;
         setNotes(listed);
-      } else {
+        // Switched-to note may hold a pre-rewrite body in its draft.
+        const currentId = selectedIdRef.current;
+        if (currentId && currentId !== id && statusRef.current === "idle") {
+          const current = listed.find((note) => note.id === currentId);
+          if (current && bodyDraftRef.current !== current.body_markdown) {
+            bodyDraftRef.current = current.body_markdown;
+            setBodyDraftState(current.body_markdown);
+          }
+        }
+      } else if (generation === saveGeneration.current) {
         setNotes((prev) => {
           const next = [
             ...prev.map((note) => (note.id === id ? saved : note)),
@@ -198,9 +208,20 @@ export function useNotes(options: UseNotesOptions = {}) {
           return next;
         });
       }
-      if (selectedIdRef.current === id) {
-        statusRef.current = "saved";
-        setStatus("saved");
+      // Status belongs to this generation's selection. Only "saved" when drafts
+      // still match the payload — otherwise leave/set dirty so flush-on-close
+      // still runs (ENG-90).
+      if (
+        generation === saveGeneration.current &&
+        selectedIdRef.current === id
+      ) {
+        if (titleDraftRef.current === title && bodyDraftRef.current === body) {
+          statusRef.current = "saved";
+          setStatus("saved");
+        } else {
+          statusRef.current = "dirty";
+          setStatus("dirty");
+        }
       }
     } catch (err) {
       // A stale generation must still surface the failure and reconcile with
