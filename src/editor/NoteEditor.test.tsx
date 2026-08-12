@@ -93,6 +93,21 @@ describe("note editor input rules", () => {
     expect(editor.getText().trim()).toBe("glow");
   });
 
+  it("does not highlight spaced == pairs (ENG-94)", () => {
+    editor = createEditor();
+    editor.commands.setContent("a == b == c");
+    expect(editor.getHTML()).not.toMatch(/<mark/);
+    expect(markdownOf(editor)).toContain("a == b == c");
+  });
+
+  it("preserves GFM links with == in the label (ENG-94)", () => {
+    editor = createEditor();
+    editor.commands.setContent("[a ==b](https://example.com) c== d");
+    expect(editor.getHTML()).toMatch(/<a[^>]+href="https:\/\/example.com"/);
+    expect(editor.getHTML()).not.toMatch(/<mark/);
+    expect(markdownOf(editor)).toContain("[a ==b](https://example.com)");
+  });
+
   it("turns ~~strike~~ into a strike mark", () => {
     editor = createEditor();
     typeText(editor, "~~old~~");
