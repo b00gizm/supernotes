@@ -367,4 +367,31 @@ describe("task pill (ENG-61)", () => {
       expect(textbox.querySelector(".task-pill")).toBeNull();
     });
   });
+
+  it("Backspace on an empty title deletes the pill", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(NoteEditor, {
+        markdown: "",
+        onChange: () => {},
+        currentNoteId: "note-backspace",
+      }),
+    );
+    const textbox = await screen.findByRole("textbox", { name: "Note body" });
+    await user.click(textbox);
+    await user.keyboard("[[] ");
+    const input = await waitFor(() => {
+      const el = textbox.querySelector(".task-pill-title");
+      expect(el).toBeInstanceOf(HTMLInputElement);
+      expect(document.activeElement).toBe(el);
+      return el as HTMLInputElement;
+    });
+    await user.type(input, "x");
+    await user.clear(input);
+    expect(document.activeElement).toBe(input);
+    await user.keyboard("{Backspace}");
+    await waitFor(() => {
+      expect(textbox.querySelector(".task-pill")).toBeNull();
+    });
+  });
 });

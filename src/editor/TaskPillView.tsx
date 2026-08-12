@@ -130,6 +130,7 @@ export function TaskPillView({
     editor
       .chain()
       .deleteRange({ from: pos, to: pos + current.nodeSize })
+      .focus()
       .run();
   };
 
@@ -273,6 +274,12 @@ export function TaskPillView({
             if (typeof pos === "number") {
               handlers.onInsertAfter?.(pos + node.nodeSize);
             }
+          } else if (
+            (event.key === "Backspace" || event.key === "Delete") &&
+            draft.trim() === ""
+          ) {
+            event.preventDefault();
+            deleteThisPill();
           } else if (event.key === "Escape") {
             event.preventDefault();
             setDraft(title);
