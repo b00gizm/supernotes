@@ -2,7 +2,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { noteEditorExtensions } from "./extensions";
 import { getEditorMarkdown } from "./markdown";
-import { findActiveWikiLinkQuery } from "./wikiLink";
+import { findActiveWikiLinkQuery, insertWikiLink } from "./wikiLink";
 
 function typeText(editor: Editor, text: string) {
   for (const char of text) {
@@ -152,6 +152,48 @@ describe("wikilink input", () => {
     ]);
     expect(getEditorMarkdown(editor)).toBe(
       "See [[project]] and #project with @Priya Sharma",
+    );
+  });
+
+  it("falls back to [[wikilink]] when mention/tag title is invalid shorthand (ENG-89)", () => {
+    editor = create([
+      { id: "1", title: "Interview — Priya Sharma" },
+      { id: "2", title: "Weekly review" },
+    ]);
+    const pos = editor.state.selection.from;
+    insertWikiLink(
+      editor,
+      { from: pos, to: pos },
+      "Interview — Priya Sharma",
+      "1",
+      "mention",
+    );
+    insertWikiLink(
+      editor,
+      {
+        from: editor.state.selection.from,
+        to: editor.state.selection.from,
+      },
+      "Weekly review",
+      "2",
+      "tag",
+    );
+
+    const links: Array<{ title: string; kind: string }> = [];
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "wikiLink") {
+        links.push({
+          title: String(node.attrs.title),
+          kind: String(node.attrs.kind),
+        });
+      }
+    });
+    expect(links).toEqual([
+      { title: "Interview — Priya Sharma", kind: "wiki" },
+      { title: "Weekly review", kind: "wiki" },
+    ]);
+    expect(getEditorMarkdown(editor)).toBe(
+      "[[Interview — Priya Sharma]][[Weekly review]]",
     );
   });
 });
