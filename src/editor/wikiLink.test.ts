@@ -2,7 +2,11 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { noteEditorExtensions } from "./extensions";
 import { getEditorMarkdown } from "./markdown";
-import { findActiveWikiLinkQuery, insertWikiLink, sameWikiLinkQuery } from "./wikiLink";
+import {
+  findActiveWikiLinkQuery,
+  insertWikiLink,
+  sameWikiLinkQuery,
+} from "./wikiLink";
 
 function typeText(editor: Editor, text: string) {
   for (const char of text) {
