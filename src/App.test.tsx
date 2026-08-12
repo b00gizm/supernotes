@@ -3,11 +3,22 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type { NotesApi } from "./notes/api";
-import { formatDailyDisplayTitle, formatDailyTitle } from "./notes/format";
+import {
+  formatDailyDisplayTitle,
+  formatDailyTitle,
+  dailyDisplayTitle,
+} from "./notes/format";
 import { createMemoryNotesApi } from "./notes/memoryApi";
+import type { TasksApi } from "./tasks/api";
+import { createMemoryTasksApi } from "./tasks/memoryApi";
+import type { Task } from "./tasks/types";
 
 const apiRef: { current: NotesApi } = {
   current: createMemoryNotesApi(),
+};
+
+const tasksApiRef: { current: TasksApi } = {
+  current: createMemoryTasksApi(),
 };
 
 vi.mock("./notes/api", async () => {
@@ -34,9 +45,32 @@ vi.mock("./notes/api", async () => {
   };
 });
 
+vi.mock("./tasks/api", async () => {
+  const actual =
+    await vi.importActual<typeof import("./tasks/api")>("./tasks/api");
+  return {
+    ...actual,
+    tasksApi: {
+      createTask: (input: Parameters<TasksApi["createTask"]>[0]) =>
+        tasksApiRef.current.createTask(input),
+      getTask: (id: string) => tasksApiRef.current.getTask(id),
+      listTasks: (
+        filter: Parameters<TasksApi["listTasks"]>[0],
+        today: string,
+      ) => tasksApiRef.current.listTasks(filter, today),
+      listTasksForNote: (noteId: string) =>
+        tasksApiRef.current.listTasksForNote(noteId),
+      updateTask: (input: Parameters<TasksApi["updateTask"]>[0]) =>
+        tasksApiRef.current.updateTask(input),
+      deleteTask: (id: string) => tasksApiRef.current.deleteTask(id),
+    },
+  };
+});
+
 describe("App shell", () => {
   beforeEach(() => {
     apiRef.current = createMemoryNotesApi();
+    tasksApiRef.current = createMemoryTasksApi();
   });
 
   it("opens today's daily note by default with shell chrome", async () => {
@@ -54,6 +88,103 @@ describe("App shell", () => {
 
     const title = formatDailyDisplayTitle();
     expect(await screen.findByLabelText("Note title")).toHaveValue(title);
+  });
+
+  it("opens Tasks overview with Inbox / Upcoming / Complete", async () => {
+    const user = userEvent.setup();
+    const today = formatDailyTitle();
+    const todayIso = new Date().toISOString();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "n1",
+        title: "Project plan",
+        body_markdown: "[[task:t-inbox]] Buy milk",
+        note_type: "regular",
+        pinned: false,
+        created_at: todayIso,
+        updated_at: todayIso,
+      },
+      {
+        id: "n2",
+        title: today,
+        body_markdown: "[[task:t-due]] Ship it",
+        note_type: "daily",
+        pinned: false,
+        created_at: todayIso,
+        updated_at: todayIso,
+      },
+    ]);
+    const seed: Task[] = [
+      {
+        id: "t-inbox",
+        note_id: "n1",
+        title: "Buy milk",
+        state: "open",
+        due_date: null,
+        priority: null,
+        created_at: todayIso,
+        updated_at: todayIso,
+        completed_at: null,
+      },
+      {
+        id: "t-due",
+        note_id: "n2",
+        title: "Ship it",
+        state: "open",
+        due_date: "2026-08-01",
+        priority: "high",
+        created_at: todayIso,
+        updated_at: todayIso,
+        completed_at: null,
+      },
+      {
+        id: "t-done",
+        note_id: "n1",
+        title: "Wrapped up",
+        state: "done",
+        due_date: null,
+        priority: null,
+        created_at: todayIso,
+        updated_at: todayIso,
+        completed_at: todayIso,
+      },
+    ];
+    tasksApiRef.current = createMemoryTasksApi(seed);
+
+    render(<App />);
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    await user.click(within(nav).getByRole("button", { name: "Tasks" }));
+
+    const pane = await screen.findByRole("region", { name: "Tasks" });
+    expect(within(pane).getByRole("tab", { name: "Inbox" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(pane).getByText("Buy milk")).toBeInTheDocument();
+    expect(within(pane).queryByText("Ship it")).not.toBeInTheDocument();
+
+    await user.click(
+      within(pane).getByRole("button", { name: "Mark task done" }),
+    );
+    await waitFor(() => {
+      expect(within(pane).queryByText("Buy milk")).not.toBeInTheDocument();
+    });
+
+    await user.click(within(pane).getByRole("tab", { name: "Upcoming" }));
+    expect(await within(pane).findByText("Ship it")).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("region", { name: "Overdue" }),
+    ).toBeInTheDocument();
+    expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
+
+    await user.click(within(pane).getByRole("tab", { name: "Complete" }));
+    expect(await within(pane).findByText("Wrapped up")).toBeInTheDocument();
+
+    await user.click(within(pane).getByRole("tab", { name: "Upcoming" }));
+    await user.click(within(pane).getByText("Ship it"));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      dailyDisplayTitle(today),
+    );
   });
 
   it("opens Notes overview with Pinned/Today groups and pin action", async () => {

@@ -612,6 +612,234 @@ button {
   background: color-mix(in srgb, var(--bg-sidebar-hover) 80%, transparent);
 }
 
+/* Tasks overview (ENG-63) — matches design mockup grouping + row chrome */
+.tasks-pane .overview-header {
+  flex-wrap: wrap;
+}
+
+.tasks-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-chip) 70%, transparent);
+}
+
+.tasks-filter-tab {
+  padding: 0.3rem 0.7rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.tasks-filter-tab:hover {
+  color: var(--text);
+}
+
+.tasks-filter-tab.is-active {
+  background: var(--bg-main);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border-subtle);
+}
+
+.tasks-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin-top: var(--space-6);
+  overflow: auto;
+  min-height: 0;
+}
+
+.tasks-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.tasks-group:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.tasks-group-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.tasks-group.is-overdue .tasks-group-label {
+  color: var(--danger);
+}
+
+.tasks-group.is-today .tasks-group-label {
+  color: var(--accent);
+}
+
+.tasks-group.is-default .tasks-group-label {
+  color: var(--text-tertiary);
+}
+
+.tasks-group-count {
+  font-weight: var(--weight-medium);
+  opacity: 0.75;
+}
+
+.tasks-list {
+  list-style: none;
+  /* Keep horizontal auto from `.overview-pane > *` so flat lists stay centered. */
+  margin: var(--space-6) auto 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  overflow: auto;
+  min-height: 0;
+}
+
+.tasks-group .tasks-list {
+  margin: 0;
+  overflow: visible;
+}
+
+.tasks-row {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  border-radius: var(--radius-md);
+}
+
+.tasks-row:hover {
+  background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
+}
+
+.tasks-row-toggle,
+.tasks-row-more {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.tasks-row-more {
+  opacity: 0;
+}
+
+.tasks-row:hover .tasks-row-more,
+.tasks-row:focus-within .tasks-row-more {
+  opacity: 1;
+}
+
+.tasks-row-toggle:hover,
+.tasks-row-more:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.tasks-row .task-pill-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  display: block;
+}
+
+.tasks-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.25rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+
+.tasks-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+}
+
+.tasks-row.is-terminal .tasks-row-title {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.tasks-row .task-priority-dot {
+  flex: 0 0 auto;
+  width: 5.5px;
+  height: 5.5px;
+  border-radius: 50%;
+}
+
+.tasks-row .task-priority-dot.is-p1 {
+  background: #e5484d;
+}
+
+.tasks-row .task-priority-dot.is-p2 {
+  background: #e2a336;
+}
+
+.tasks-row .task-priority-dot.is-p3 {
+  background: #8e8e93;
+}
+
+.tasks-due-chip {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.tasks-due-chip.is-overdue {
+  color: var(--danger);
+  font-weight: var(--weight-semibold);
+}
+
+.tasks-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 42%;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.tasks-source-arrow {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.tasks-source-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .overview-groups {
   display: flex;
   flex-direction: column;
@@ -1244,8 +1472,14 @@ button {
 
 .note-editor .tiptap .task-pill:hover,
 .note-editor .tiptap .task-pill.is-selected,
-.note-editor .tiptap .task-pill:focus-within {
+.note-editor .tiptap .task-pill:focus-within,
+.note-editor .tiptap .task-pill.is-task-focus {
   background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
+}
+
+.note-editor .tiptap .task-pill.is-task-focus {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .note-editor .tiptap .task-pill-toggle {

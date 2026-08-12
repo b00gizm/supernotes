@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use super::error::{DbError, DbResult};
 use super::models::{
-    CalendarEvent, Link, Meeting, Note, NoteType, Task, TaskPriority, TaskState,
+    CalendarEvent, Link, Meeting, Note, NoteType, Task, TaskListFilter, TaskPriority, TaskState,
 };
 use super::time::utc_now;
 use super::wikilinks::{extract_wikilink_titles, rewrite_wikilink_title};
@@ -418,6 +418,58 @@ impl<'a> Repository<'a> {
              ORDER BY created_at ASC",
         )?;
         let rows = stmt.query_map([note_id], map_task)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    /// Inbox / Upcoming / Complete queries for the Tasks sidebar (ENG-63).
+    /// `today` is local calendar `YYYY-MM-DD` (overdue + 14-day complete window).
+    pub fn list_tasks(&self, filter: TaskListFilter, today: &str) -> DbResult<Vec<Task>> {
+        let priority_order = "CASE priority
+                WHEN 'urgent' THEN 0
+                WHEN 'high' THEN 1
+                WHEN 'medium' THEN 2
+                WHEN 'low' THEN 3
+                WHEN 'none' THEN 4
+                ELSE 5
+             END";
+        let (sql, params): (String, Vec<String>) = match filter {
+            TaskListFilter::Inbox => (
+                "SELECT id, note_id, title, state, due_date, priority, created_at, updated_at, completed_at
+                 FROM tasks
+                 WHERE state = 'open' AND due_date IS NULL
+                 ORDER BY created_at DESC"
+                    .to_string(),
+                vec![],
+            ),
+            TaskListFilter::Upcoming => (
+                format!(
+                    "SELECT id, note_id, title, state, due_date, priority, created_at, updated_at, completed_at
+                     FROM tasks
+                     WHERE state IN ('open', 'waiting') AND due_date IS NOT NULL
+                     ORDER BY due_date ASC, {priority_order} ASC, created_at ASC"
+                ),
+                vec![],
+            ),
+            // ponytail: completed_at is UTC ISO; window uses the UTC calendar
+            // prefix against local `today`. Upgrade: convert to local date first.
+            TaskListFilter::Complete => (
+                "SELECT id, note_id, title, state, due_date, priority, created_at, updated_at, completed_at
+                 FROM tasks
+                 WHERE state IN ('done', 'cancelled')
+                   AND completed_at IS NOT NULL
+                   AND substr(completed_at, 1, 10) >= date(?1, '-14 days')
+                 ORDER BY completed_at DESC"
+                    .to_string(),
+                vec![today.to_string()],
+            ),
+        };
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = if params.is_empty() {
+            stmt.query_map([], map_task)?
+        } else {
+            stmt.query_map(params![params[0]], map_task)?
+        };
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
@@ -1059,6 +1111,91 @@ mod tests {
             repo.delete_task(&created.id).unwrap();
             assert!(matches!(repo.get_task(&created.id), Err(DbError::NotFound)));
         });
+    }
+
+    #[test]
+    fn list_tasks_filters_inbox_upcoming_complete() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let repo = Repository::new(&conn);
+        let note = repo
+            .create_note("Tasks", "", NoteType::Regular, false)
+            .unwrap();
+        let inbox = repo
+            .create_task(&note.id, "Inbox item", TaskState::Open, None, None)
+            .unwrap();
+        let _waiting_no_due = repo
+            .create_task(
+                &note.id,
+                "Waiting undated",
+                TaskState::Waiting,
+                None,
+                None,
+            )
+            .unwrap();
+        let upcoming_low = repo
+            .create_task(
+                &note.id,
+                "Later",
+                TaskState::Open,
+                Some("2026-08-20"),
+                Some(TaskPriority::Low),
+            )
+            .unwrap();
+        let upcoming_high = repo
+            .create_task(
+                &note.id,
+                "Soon high",
+                TaskState::Waiting,
+                Some("2026-08-15"),
+                Some(TaskPriority::High),
+            )
+            .unwrap();
+        let upcoming_same_day = repo
+            .create_task(
+                &note.id,
+                "Soon urgent",
+                TaskState::Open,
+                Some("2026-08-15"),
+                Some(TaskPriority::Urgent),
+            )
+            .unwrap();
+        let done_recent = repo
+            .create_task(
+                &note.id,
+                "Finished",
+                TaskState::Done,
+                Some("2026-08-01"),
+                None,
+            )
+            .unwrap();
+        let cancelled_old = repo
+            .create_task(&note.id, "Ancient", TaskState::Cancelled, None, None)
+            .unwrap();
+        // Force completed_at outside the 14-day window.
+        conn.execute(
+            "UPDATE tasks SET completed_at = '2026-07-01T12:00:00.000Z' WHERE id = ?1",
+            [&cancelled_old.id],
+        )
+        .unwrap();
+
+        let inbox_list = repo.list_tasks(TaskListFilter::Inbox, "2026-08-12").unwrap();
+        assert_eq!(inbox_list.len(), 1);
+        assert_eq!(inbox_list[0].id, inbox.id);
+
+        let upcoming = repo
+            .list_tasks(TaskListFilter::Upcoming, "2026-08-12")
+            .unwrap();
+        assert_eq!(upcoming.len(), 3);
+        assert_eq!(upcoming[0].id, upcoming_same_day.id);
+        assert_eq!(upcoming[1].id, upcoming_high.id);
+        assert_eq!(upcoming[2].id, upcoming_low.id);
+
+        let complete = repo
+            .list_tasks(TaskListFilter::Complete, "2026-08-12")
+            .unwrap();
+        assert_eq!(complete.len(), 1);
+        assert_eq!(complete[0].id, done_recent.id);
     }
 
     #[test]

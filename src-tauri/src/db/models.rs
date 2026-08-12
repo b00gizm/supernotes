@@ -121,6 +121,15 @@ pub struct Task {
     pub completed_at: Option<String>,
 }
 
+/// Global Tasks view filters (ENG-63). `today` is the caller's local `YYYY-MM-DD`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskListFilter {
+    Inbox,
+    Upcoming,
+    Complete,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalendarEvent {
     pub id: String,

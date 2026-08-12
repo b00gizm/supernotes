@@ -18,6 +18,16 @@ describe("tauri task IPC arg keys (ENG-61)", () => {
     });
   });
 
+  it("listTasks passes filter + today for Tauri 2", async () => {
+    const { tasksApi } = await import("./api");
+    await tasksApi.listTasks("upcoming", "2026-08-12");
+
+    expect(invoke).toHaveBeenCalledWith("list_tasks", {
+      filter: "upcoming",
+      today: "2026-08-12",
+    });
+  });
+
   it("listTasksForNote passes camelCase noteId for Tauri 2", async () => {
     const { tasksApi } = await import("./api");
     await tasksApi.listTasksForNote("note-1");
