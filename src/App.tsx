@@ -16,7 +16,9 @@ import {
   formatRelativeUpdated,
   groupNotesForOverview,
   noteSnippet,
+  parseDailyTitle,
   parseSnippetParts,
+  shiftDailyTitle,
   startOfLocalDay,
 } from "./notes/format";
 import { NoteEditor } from "./editor/NoteEditor";
@@ -318,6 +320,8 @@ function App() {
   } = useNotes({ autoSelect: false });
 
   const [surface, setSurface] = useState<Surface>({ kind: "daily" });
+  /** Which calendar day the Daily surface is showing (`YYYY-MM-DD`). */
+  const [dailyDate, setDailyDate] = useState(() => formatDailyTitle());
   const [isNarrow, setIsNarrow] = useState(prefersNarrow);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(prefersNarrow);
   const macOverlayChrome = prefersMacOverlayChrome();
@@ -417,6 +421,45 @@ function App() {
       if (!(event.metaKey || event.ctrlKey)) {
         return;
       }
+
+      if (
+        event.shiftKey &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight")
+      ) {
+        event.preventDefault();
+        const delta = event.key === "ArrowLeft" ? -1 : 1;
+        setDailyDate((prev) => shiftDailyTitle(prev, delta));
+        setSurface({ kind: "daily" });
+        return;
+      }
+
+      if (!event.shiftKey) {
+        if (event.key === "1") {
+          event.preventDefault();
+          setDailyDate(formatDailyTitle());
+          setSurface({ kind: "daily" });
+          return;
+        }
+        if (event.key === "2") {
+          event.preventDefault();
+          setSurface({ kind: "notes" });
+          selectNote(null);
+          return;
+        }
+        if (event.key === "3") {
+          event.preventDefault();
+          setSurface({ kind: "tasks" });
+          selectNote(null);
+          return;
+        }
+        if (event.key === "4") {
+          event.preventDefault();
+          setSurface({ kind: "calendar" });
+          selectNote(null);
+          return;
+        }
+      }
+
       const key = event.key.toLowerCase();
       if (key !== "k" && key !== "o") {
         return;
@@ -439,6 +482,7 @@ function App() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectNote identity churns
   }, []);
 
   // Recent is a glance list, not the full corpus (search owns findability).
@@ -464,6 +508,8 @@ function App() {
       surface.kind === "notes" ? groupNotesForOverview(notes, dayStamp) : [],
     [surface.kind, notes, dayStamp],
   );
+  const todayTitle = formatDailyTitle(new Date(dayStamp));
+  const viewingToday = dailyDate === todayTitle;
 
   const openOverviewNote = (note: Note) => {
     setSurface({ kind: "note", id: note.id });
@@ -508,7 +554,8 @@ function App() {
     }
     dailyOpening.current = true;
     try {
-      await openDaily();
+      const date = parseDailyTitle(dailyDate) ?? new Date();
+      await openDaily(date);
     } finally {
       dailyOpening.current = false;
     }
@@ -519,18 +566,23 @@ function App() {
       return;
     }
     void ensureDaily();
-    // Bootstrap / re-sync when returning to Daily Note after notes load.
+    // Bootstrap / re-sync when returning to Daily Note or changing day.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- openDaily identity is unstable
-  }, [loading, surface.kind, notes.length]);
+  }, [loading, surface.kind, dailyDate, notes.length]);
 
   const goNav = (id: NavId) => {
     if (id === "daily") {
+      setDailyDate(formatDailyTitle(new Date(dayStamp)));
       setSurface({ kind: "daily" });
-      void ensureDaily();
       return;
     }
     setSurface({ kind: id });
     selectNote(null);
+  };
+
+  const goDailyDelta = (delta: number) => {
+    setDailyDate((prev) => shiftDailyTitle(prev, delta));
+    setSurface({ kind: "daily" });
   };
 
   const openRecent = (note: Note) => {
@@ -539,9 +591,8 @@ function App() {
   };
 
   const openFromSearch = (note: Note) => {
-    // Only today's daily belongs on the daily surface — anything else there
-    // would make ensureDaily jump back to (or create) today (ENG-80).
-    if (note.note_type === "daily" && note.title === formatDailyTitle()) {
+    if (note.note_type === "daily" && parseDailyTitle(note.title)) {
+      setDailyDate(note.title);
       setSurface({ kind: "daily" });
     } else {
       setSurface({ kind: "note", id: note.id });
@@ -873,6 +924,44 @@ function App() {
                 >
                   Notes <span aria-hidden="true">›</span>
                 </button>
+              ) : surface.kind === "daily" ? (
+                <div
+                  className="daily-nav"
+                  role="group"
+                  aria-label="Daily navigation"
+                >
+                  <button
+                    type="button"
+                    className="daily-nav-btn"
+                    aria-label="Previous day"
+                    onClick={() => {
+                      goDailyDelta(-1);
+                    }}
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className="daily-nav-btn"
+                    aria-label="Next day"
+                    onClick={() => {
+                      goDailyDelta(1);
+                    }}
+                  >
+                    ›
+                  </button>
+                  {!viewingToday ? (
+                    <button
+                      type="button"
+                      className="text-button daily-today"
+                      onClick={() => {
+                        setDailyDate(todayTitle);
+                      }}
+                    >
+                      Today
+                    </button>
+                  ) : null}
+                </div>
               ) : (
                 <span />
               )}

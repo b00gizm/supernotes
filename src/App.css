@@ -728,6 +728,33 @@ button {
   background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
 }
 
+.daily-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.daily-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.daily-nav-btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
+}
+
+.daily-today {
+  font-size: var(--text-sm);
+}
+
 .editor-toolbar-actions {
   display: flex;
   align-items: center;
