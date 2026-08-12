@@ -1,5 +1,6 @@
 pub mod db;
 mod media;
+mod menu_nav;
 mod notes;
 
 use db::Db;
@@ -21,6 +22,7 @@ pub fn run() {
                 .expect("failed to resolve app data dir");
             let db = Db::open(&data_dir).expect("failed to open sqlite database");
             app.manage(db);
+            menu_nav::install_app_menu(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

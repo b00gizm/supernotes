@@ -336,6 +336,8 @@ function App() {
   const selectedIdRef = useRef(selectedId);
   /** Case-insensitive titles with an in-flight createNote (ENG-97). */
   const creatingWikiTitlesRef = useRef(new Set<string>());
+  const goNavRef = useRef<(id: NavId) => void>(() => {});
+  const goDailyDeltaRef = useRef<(delta: number) => void>(() => {});
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
 
@@ -427,35 +429,40 @@ function App() {
         (event.key === "ArrowLeft" || event.key === "ArrowRight")
       ) {
         event.preventDefault();
-        const delta = event.key === "ArrowLeft" ? -1 : 1;
-        setDailyDate((prev) => shiftDailyTitle(prev, delta));
-        setSurface({ kind: "daily" });
+        goDailyDeltaRef.current(event.key === "ArrowLeft" ? -1 : 1);
         return;
       }
 
       if (!event.shiftKey) {
-        if (event.key === "1") {
+        // Prefer event.code — more stable under modifiers than event.key.
+        const digit =
+          event.code === "Digit1" || event.key === "1"
+            ? "1"
+            : event.code === "Digit2" || event.key === "2"
+              ? "2"
+              : event.code === "Digit3" || event.key === "3"
+                ? "3"
+                : event.code === "Digit4" || event.key === "4"
+                  ? "4"
+                  : null;
+        if (digit === "1") {
           event.preventDefault();
-          setDailyDate(formatDailyTitle());
-          setSurface({ kind: "daily" });
+          goNavRef.current("daily");
           return;
         }
-        if (event.key === "2") {
+        if (digit === "2") {
           event.preventDefault();
-          setSurface({ kind: "notes" });
-          selectNote(null);
+          goNavRef.current("notes");
           return;
         }
-        if (event.key === "3") {
+        if (digit === "3") {
           event.preventDefault();
-          setSurface({ kind: "tasks" });
-          selectNote(null);
+          goNavRef.current("tasks");
           return;
         }
-        if (event.key === "4") {
+        if (digit === "4") {
           event.preventDefault();
-          setSurface({ kind: "calendar" });
-          selectNote(null);
+          goNavRef.current("calendar");
           return;
         }
       }
@@ -478,11 +485,12 @@ function App() {
       event.preventDefault();
       setSearchOpen(true);
     };
-    window.addEventListener("keydown", onKeyDown);
+    // Capture: beat ProseMirror when the chord actually reaches the page.
+    // On macOS Tauri, Cmd+digit usually never arrives — native Go menu covers that.
+    window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDown, true);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectNote identity churns
   }, []);
 
   // Recent is a glance list, not the full corpus (search owns findability).
@@ -584,6 +592,60 @@ function App() {
     setDailyDate((prev) => shiftDailyTitle(prev, delta));
     setSurface({ kind: "daily" });
   };
+
+  goNavRef.current = goNav;
+  goDailyDeltaRef.current = goDailyDelta;
+
+  // Native Go-menu accelerators (CmdOrCtrl+1..4 / Shift+←→). WKWebView on
+  // macOS swallows Cmd+digit before JS; the menu path still fires.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+      return;
+    }
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<string>("menu-nav", (event) => {
+          switch (event.payload) {
+            case "nav-daily":
+              goNavRef.current("daily");
+              break;
+            case "nav-notes":
+              goNavRef.current("notes");
+              break;
+            case "nav-tasks":
+              goNavRef.current("tasks");
+              break;
+            case "nav-calendar":
+              goNavRef.current("calendar");
+              break;
+            case "daily-prev":
+              goDailyDeltaRef.current(-1);
+              break;
+            case "daily-next":
+              goDailyDeltaRef.current(1);
+              break;
+            default:
+              break;
+          }
+        }),
+      )
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unlisten = fn;
+      })
+      .catch(() => {
+        // Browser preview / tests: JS keydown path only.
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const openRecent = (note: Note) => {
     setSurface({ kind: "note", id: note.id });
