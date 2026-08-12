@@ -217,7 +217,10 @@ describe("useNotes", () => {
     await act(async () => {
       const created = await result.current.createNote("Person");
       expect(created).not.toBeNull();
-      personId = created!.id;
+      if (!created) {
+        return;
+      }
+      personId = created.id;
     });
 
     await waitFor(() => {
@@ -294,7 +297,11 @@ describe("useNotes", () => {
     let personId = "";
     await act(async () => {
       const created = await result.current.createNote("Person");
-      personId = created!.id;
+      expect(created).not.toBeNull();
+      if (!created) {
+        return;
+      }
+      personId = created.id;
       result.current.selectNote(personId);
     });
 
@@ -359,7 +366,11 @@ describe("useNotes", () => {
     let personId = "";
     await act(async () => {
       const created = await result.current.createNote("Person");
-      personId = created!.id;
+      expect(created).not.toBeNull();
+      if (!created) {
+        return;
+      }
+      personId = created.id;
     });
 
     await waitFor(() => {
