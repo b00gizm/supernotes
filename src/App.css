@@ -47,11 +47,22 @@
   --radius-lg: 0.7rem;
   /* Capsule chips for #tags / @mentions (mockup 1c). */
   --radius-pill: 999px;
-  /* Expanded titlebar row (traffic lights + collapse). */
-  --mac-titlebar-height: 3.25rem;
+  /*
+   * macOS Overlay chrome — use px so geometry matches trafficLightPosition
+   * (logical px). :root font-size is 0.925rem, so rem titlebar math drifts.
+   */
+  --mac-traffic-light-y: 20px;
+  --mac-traffic-light-size: 12px;
+  --mac-titlebar-height: 52px;
+  --mac-collapse-size: 28px;
+  /* Center the 28px control on the same axis as the 12px traffic lights. */
+  --mac-collapse-top: calc(
+    var(--mac-traffic-light-y) +
+      (var(--mac-traffic-light-size) - var(--mac-collapse-size)) / 2
+  );
   /* Collapsed: just clear traffic lights, then a tight gap before the control. */
-  --mac-collapsed-chrome: 2.5rem;
-  --mac-collapsed-gap: 0.5rem;
+  --mac-collapsed-chrome: 40px;
+  --mac-collapsed-gap: 8px;
   --mac-collapsed-content-top: calc(
     var(--mac-collapsed-chrome) + var(--mac-collapsed-gap)
   );
@@ -162,10 +173,10 @@ button {
 /* Expanded: one titlebar row — [traffic lights] …drag… [≡] */
 .has-mac-overlay-chrome:not(.is-sidebar-collapsed) .sidebar-top {
   position: relative;
-  align-items: center;
+  align-items: flex-start;
   height: var(--mac-titlebar-height);
   margin: 0 calc(-1 * var(--space-2)) var(--space-3);
-  padding: 0 var(--space-3);
+  padding: var(--mac-collapse-top) var(--space-3) 0;
 }
 
 .has-mac-overlay-chrome:not(.is-sidebar-collapsed) .titlebar-drag-sidebar {
@@ -176,6 +187,8 @@ button {
 .has-mac-overlay-chrome .sidebar-collapse {
   position: relative;
   z-index: 1;
+  width: var(--mac-collapse-size);
+  height: var(--mac-collapse-size);
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -506,19 +519,19 @@ button {
   position: absolute;
   top: 0;
   right: 0;
-  height: 1.75rem;
+  height: var(--mac-collapse-size);
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
 .has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) + .title-input {
-  /* Match .sidebar-collapse so title and hamburger share a row. */
+  /* Match collapse control so title and hamburger share a row. */
   box-sizing: content-box;
-  min-height: 1.75rem;
+  min-height: var(--mac-collapse-size);
   padding-top: 0;
   padding-bottom: var(--space-4);
-  line-height: 1.75rem;
+  line-height: var(--mac-collapse-size);
 }
 
 .editor-pane,
