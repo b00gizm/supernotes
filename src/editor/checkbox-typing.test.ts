@@ -66,7 +66,7 @@ describe("checkbox vs bullet input", () => {
     expect(md(editor)).toMatch(/- \[ \] buy milk/);
   });
 
-  it("types - [] into a checkbox", () => {
+  it("types - [] into a checkbox inside a list", () => {
     editor = create();
     // Trailing space after ] is required (same as TipTap's task input rule).
     typeText(editor, "- [] buy milk");
@@ -79,5 +79,13 @@ describe("checkbox vs bullet input", () => {
     typeText(editor, "- [x] done");
     expect(editor.isActive("taskItem")).toBe(true);
     expect(md(editor)).toMatch(/- \[x\] done/);
+  });
+
+  it("does not turn bare [] into a checkbox (task pill owns that)", () => {
+    editor = create();
+    typeText(editor, "[] ");
+    // Without task API, the pill input rule no-ops; checkbox must also no-op.
+    expect(editor.isActive("taskItem")).toBe(false);
+    expect(md(editor)).not.toMatch(/- \[ \]/);
   });
 });

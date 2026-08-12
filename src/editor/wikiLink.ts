@@ -121,7 +121,7 @@ function parseKind(value: string | null): NoteLinkKind {
 
 /**
  * markdown-it: `[[Title]]` / `#tag` / `@Name` → `<span data-type="wiki-link" …>`.
- * Reserved `[[task:…]]` still matches so round-trip stays stable until ENG-61.
+ * `[[task:…]]` is owned by the task-pill block parser (ENG-61).
  */
 function markdownItWikiLink(md: MarkdownItLike): void {
   md.inline.ruler.before("link", "wiki_link", (state, silent) => {
@@ -135,6 +135,10 @@ function markdownItWikiLink(md: MarkdownItLike): void {
     }
     const title = state.src.slice(start + 2, close).trim();
     if (!title || title.includes("\n")) {
+      return false;
+    }
+    // Task pills are a separate block node — never a note wikilink.
+    if (title.toLowerCase().startsWith("task:")) {
       return false;
     }
     if (!silent) {
