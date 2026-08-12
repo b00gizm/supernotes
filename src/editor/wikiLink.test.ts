@@ -200,6 +200,41 @@ describe("wikilink input", () => {
       "[[Interview — Priya Sharma]][[Weekly review]]",
     );
   });
+  it("marks unresolved wiki links and leaves resolved ones without is-unresolved", () => {
+    editor = create([{ id: "1", title: "Weekly Review" }]);
+    typeText(editor, "See [[Weekly Review]] and [[Missing Note]]");
+    const root = editor.view.dom;
+    const resolved = root.querySelector(
+      '.wiki-link[data-title="Weekly Review"]',
+    );
+    const missing = root.querySelector('.wiki-link[data-title="Missing Note"]');
+    expect(resolved?.getAttribute("data-note-id")).toBe("1");
+    expect(resolved?.classList.contains("is-unresolved")).toBe(false);
+    expect(missing?.getAttribute("data-note-id")).toBeNull();
+    expect(missing?.classList.contains("is-unresolved")).toBe(true);
+  });
+
+  it("does not treat bare # or @ as an active autocomplete query (ENG-114)", () => {
+    editor = create([{ id: "1", title: "project" }]);
+    typeText(editor, "Hello #");
+    expect(
+      findActiveWikiLinkQuery(editor.state.doc, editor.state.selection.from),
+    ).toBeNull();
+
+    editor.commands.clearContent();
+    editor.commands.focus("end");
+    typeText(editor, "Hi @");
+    expect(
+      findActiveWikiLinkQuery(editor.state.doc, editor.state.selection.from),
+    ).toBeNull();
+
+    editor.commands.clearContent();
+    editor.commands.focus("end");
+    typeText(editor, "Hi @P");
+    expect(
+      findActiveWikiLinkQuery(editor.state.doc, editor.state.selection.from),
+    ).toMatchObject({ query: "P", kind: "mention" });
+  });
 });
 
 describe("sameWikiLinkQuery (ENG-87)", () => {

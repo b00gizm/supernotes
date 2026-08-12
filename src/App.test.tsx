@@ -238,6 +238,20 @@ describe("App shell", () => {
     );
   });
 
+  it("shows a dirty-only save dot instead of Unsaved/Saved text (ENG-114)", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const title = await screen.findByLabelText("Note title");
+    expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Unsaved changes")).not.toBeInTheDocument();
+
+    await user.clear(title);
+    await user.type(title, "Edited daily");
+    expect(await screen.findByLabelText("Unsaved changes")).toBeInTheDocument();
+    expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
+  });
+
   it("opens title search with ⌘K, filters, and creates from the always-on row", async () => {
     const user = userEvent.setup();
     apiRef.current = createMemoryNotesApi([
