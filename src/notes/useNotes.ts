@@ -185,9 +185,8 @@ export function useNotes(options: UseNotesOptions = {}) {
         const listed = [...(await apiRef.current.listNotes())].sort(
           byUpdatedAtDesc,
         );
-        if (!mountedRef.current) {
-          return;
-        }
+        // Mounted already checked after updateNote; skip a second ref read —
+        // TS narrows `mountedRef.current` across the await (always-falsy lint).
         notesRef.current = listed;
         setNotes(listed);
         // Switched-to note may hold a pre-rewrite body in its draft.
