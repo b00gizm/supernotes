@@ -266,9 +266,12 @@ describe("App shell", () => {
         name: "Collapse sidebar",
       });
       const sidebarDrag = shell.querySelector(".titlebar-drag-sidebar");
-      expect(sidebarDrag).toBeTruthy();
+      expect(sidebarDrag).toBeInstanceOf(HTMLElement);
+      if (!(sidebarDrag instanceof HTMLElement)) {
+        return;
+      }
       expect(
-        sidebarDrag!.compareDocumentPosition(collapse) &
+        sidebarDrag.compareDocumentPosition(collapse) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     } finally {
