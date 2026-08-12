@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -343,5 +343,60 @@ describe("App shell", () => {
     expect(
       screen.queryByRole("region", { name: "Backlinks" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("create-on-click @Person keeps an empty Person note selected", async () => {
+    // Regression for content-corruption / cleared-selection on create-on-click:
+    // openWikiLink does createNote (already selects) then openFromSearch →
+    // selectNote again; a stale notesRef clears selection, and a dirty flush
+    // of the daily draft can overwrite the new note (see useNotes.test.ts).
+    const user = userEvent.setup();
+    const dailyTitle = formatDailyTitle();
+    const dailyBody = "Discuss [[Existing]] with @Person";
+    const stamp = "2026-08-10T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily",
+        title: dailyTitle,
+        body_markdown: dailyBody,
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+      {
+        id: "existing",
+        title: "Existing",
+        body_markdown: "",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    await apiRef.current.updateNote({
+      id: "daily",
+      title: dailyTitle,
+      body_markdown: dailyBody,
+    });
+
+    render(<App />);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    await screen.findByLabelText("Note body");
+
+    const personLink = await waitFor(() => {
+      const el = document.querySelector('.wiki-link[data-title="Person"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(personLink);
+
+    expect(await screen.findByLabelText("Note title")).toHaveValue("Person");
+    expect(await screen.findByLabelText("Note body")).toHaveTextContent("");
+
+    const person = (await apiRef.current.listNotes()).find(
+      (note) => note.title === "Person",
+    );
+    expect(person?.body_markdown).toBe("");
   });
 });

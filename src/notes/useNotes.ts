@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { debugLog as dbg } from "../debugLog";
 import type { NotesApi } from "./api";
 import { notesApi as defaultNotesApi } from "./api";
 import { byUpdatedAtDesc } from "./format";
@@ -118,6 +119,17 @@ export function useNotes(options: UseNotesOptions = {}) {
 
     const title = titleDraftRef.current;
     const body = bodyDraftRef.current;
+    // #region agent log
+    dbg("A", "useNotes.ts:persistDraft", "persistDraft capture", {
+      id,
+      title,
+      bodyLen: body.length,
+      bodyPreview: body.slice(0, 80),
+      existingBodyLen: existing.body_markdown.length,
+      existingTitle: existing.title,
+      status: statusRef.current,
+    });
+    // #endregion
     if (title === existing.title && body === existing.body_markdown) {
       dirtySinceRef.current = null;
       setStatus("idle");
@@ -151,6 +163,17 @@ export function useNotes(options: UseNotesOptions = {}) {
         title,
         body_markdown: body,
       });
+      // #region agent log
+      dbg("A", "useNotes.ts:persistDraft:afterUpdate", "updateNote completed", {
+        id,
+        title,
+        bodyPreview: body.slice(0, 80),
+        generation,
+        currentGeneration: saveGeneration.current,
+        stale: generation !== saveGeneration.current,
+        selectedIdNow: selectedIdRef.current,
+      });
+      // #endregion
       if (!mountedRef.current || generation !== saveGeneration.current) {
         return;
       }
@@ -241,6 +264,17 @@ export function useNotes(options: UseNotesOptions = {}) {
   }, []);
 
   const selectNote = (id: string | null) => {
+    // #region agent log
+    dbg("A", "useNotes.ts:selectNote", "selectNote called", {
+      toId: id,
+      fromId: selectedIdRef.current,
+      status: statusRef.current,
+      willFlushDirty:
+        Boolean(selectedIdRef.current) && statusRef.current === "dirty",
+      bodyPreview: bodyDraftRef.current.slice(0, 80),
+      notesHasTarget: id ? notesRef.current.some((n) => n.id === id) : null,
+    });
+    // #endregion
     if (selectedIdRef.current && statusRef.current === "dirty") {
       void persistDraftRef.current();
     }
@@ -256,6 +290,14 @@ export function useNotes(options: UseNotesOptions = {}) {
   ) => {
     setError(null);
     try {
+      // #region agent log
+      dbg("C", "useNotes.ts:createNote:start", "createNote start", {
+        title,
+        selectedId: selectedIdRef.current,
+        status: statusRef.current,
+        bodyPreview: bodyDraftRef.current.slice(0, 80),
+      });
+      // #endregion
       if (selectedIdRef.current && statusRef.current === "dirty") {
         await persistDraftRef.current();
       }
@@ -267,6 +309,20 @@ export function useNotes(options: UseNotesOptions = {}) {
       setNotes((prev) => [created, ...prev].sort(byUpdatedAtDesc));
       saveGeneration.current += 1;
       applySelection(created);
+      // #region agent log
+      dbg(
+        "C",
+        "useNotes.ts:createNote:afterSelect",
+        "createNote applied selection",
+        {
+          createdId: created.id,
+          createdTitle: created.title,
+          selectedIdRefStill: selectedIdRef.current,
+          bodyDraftRefStill: bodyDraftRef.current.slice(0, 80),
+          notesRefHasCreated: notesRef.current.some((n) => n.id === created.id),
+        },
+      );
+      // #endregion
       return created;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -336,7 +392,17 @@ export function useNotes(options: UseNotesOptions = {}) {
     loading,
     selectNote,
     setTitleDraft: setTitleDraftState,
-    setBodyDraft: setBodyDraftState,
+    setBodyDraft: (body: string) => {
+      // #region agent log
+      dbg("B", "useNotes.ts:setBodyDraft", "setBodyDraft", {
+        selectedId: selectedIdRef.current,
+        bodyLen: body.length,
+        bodyPreview: body.slice(0, 80),
+        prevPreview: bodyDraftRef.current.slice(0, 80),
+      });
+      // #endregion
+      setBodyDraftState(body);
+    },
     createNote,
     deleteSelected,
     setPinned,

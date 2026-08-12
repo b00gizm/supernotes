@@ -2,6 +2,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import type { EditorView } from "@tiptap/pm/view";
 import { useEffect, useRef, useState } from "react";
+import { debugLog } from "../debugLog";
 import type { Note } from "../notes/types";
 import { rankNotesForWikiLink } from "../notes/wikilinks";
 import { noteEditorExtensions } from "./extensions";
@@ -252,7 +253,15 @@ export function NoteEditor({
       },
     },
     onUpdate: ({ editor: current }) => {
-      onChange(getEditorMarkdown(current) || current.getText());
+      const md = getEditorMarkdown(current) || current.getText();
+      // #region agent log
+      debugLog("B", "NoteEditor.tsx:onUpdate", "TipTap onUpdate", {
+        currentNoteId: currentNoteIdRef.current,
+        mdLen: md.length,
+        mdPreview: md.slice(0, 80),
+      });
+      // #endregion
+      onChange(md);
     },
   });
 

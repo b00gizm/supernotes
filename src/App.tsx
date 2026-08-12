@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { SearchPalette } from "./SearchPalette";
+import { debugLog } from "./debugLog";
 import { notesApi } from "./notes/api";
 import {
   formatDailyTitle,
@@ -531,8 +532,27 @@ function App() {
       return;
     }
     // Create-on-click: title = link text, empty body (ENG-56).
+    // #region agent log
+    debugLog("C", "App.tsx:openWikiLink", "create-on-click", {
+      title: link.title,
+      selectedId: selectedIdRef.current,
+      notesCount: notesRef.current.length,
+    });
+    // #endregion
     void createNote(link.title).then((created) => {
       if (created) {
+        // #region agent log
+        debugLog(
+          "C",
+          "App.tsx:openWikiLink:afterCreate",
+          "openFromSearch after createNote",
+          {
+            createdId: created.id,
+            selectedIdNow: selectedIdRef.current,
+            notesHasCreated: notesRef.current.some((n) => n.id === created.id),
+          },
+        );
+        // #endregion
         openFromSearch(created);
       }
     });
