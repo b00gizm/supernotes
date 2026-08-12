@@ -19,7 +19,7 @@ import { common, createLowlight } from "lowlight";
 import taskListPlugin from "markdown-it-task-lists";
 import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
-import { markdownTableFixupPlugin } from "./markdownTable";
+import { markdownTableFixupPlugin, TablePipeSafeText } from "./markdownTable";
 import { StaticMarkdownTable } from "./staticTable";
 import { WikiLink, type WikiLinkOptions } from "./wikiLink";
 
@@ -420,7 +420,10 @@ export function noteEditorExtensions(
       heading: { levels: [1, 2, 3, 4, 5, 6] },
       codeBlock: false,
       link: false,
+      // Replaced by TablePipeSafeText (ENG-88 pipe escape in cells).
+      text: false,
     }),
+    TablePipeSafeText,
     NoteLink,
     Highlight,
     CodeBlockLowlight.configure({ lowlight }),
@@ -442,7 +445,9 @@ export function noteEditorExtensions(
     Placeholder.configure({ placeholder: "Start writing…" }),
     // Task pills are ENG-61.
     Markdown.configure({
-      html: false,
+      // html:true so hardBreak in table cells serializes as <br> (tiptap-markdown
+      // falls back to "[hardBreak]" when html is off — ENG-88).
+      html: true,
       transformPastedText: true,
     }),
   ];
