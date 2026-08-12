@@ -346,10 +346,8 @@ describe("App shell", () => {
   });
 
   it("create-on-click @Person keeps an empty Person note selected", async () => {
-    // Regression for content-corruption / cleared-selection on create-on-click:
-    // openWikiLink does createNote (already selects) then openFromSearch →
-    // selectNote again; a stale notesRef clears selection, and a dirty flush
-    // of the daily draft can overwrite the new note (see useNotes.test.ts).
+    // From the daily surface, create-on-click must open Person in one click
+    // (ensureDaily used to steal selection when notes.length bumped).
     const user = userEvent.setup();
     const dailyTitle = formatDailyTitle();
     const dailyBody = "Discuss [[Existing]] with @Person";
@@ -393,6 +391,9 @@ describe("App shell", () => {
 
     expect(await screen.findByLabelText("Note title")).toHaveValue("Person");
     expect(await screen.findByLabelText("Note body")).toHaveTextContent("");
+    expect(
+      await screen.findByRole("button", { name: "Back to Notes" }),
+    ).toBeInTheDocument();
 
     const person = (await apiRef.current.listNotes()).find(
       (note) => note.title === "Person",
