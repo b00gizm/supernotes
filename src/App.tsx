@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import { SearchPalette } from "./SearchPalette";
-import { debugLog } from "./debugLog";
 import { notesApi } from "./notes/api";
 import {
   formatDailyTitle,
@@ -532,28 +531,18 @@ function App() {
       return;
     }
     // Create-on-click: title = link text, empty body (ENG-56).
-    // #region agent log
-    debugLog("C", "App.tsx:openWikiLink", "create-on-click", {
-      title: link.title,
-      selectedId: selectedIdRef.current,
-      notesCount: notesRef.current.length,
-    });
-    // #endregion
+    // createNote already selects; only set the surface (don't selectNote again —
+    // a stale notesRef lookup would clear the selection).
     void createNote(link.title).then((created) => {
       if (created) {
-        // #region agent log
-        debugLog(
-          "C",
-          "App.tsx:openWikiLink:afterCreate",
-          "openFromSearch after createNote",
-          {
-            createdId: created.id,
-            selectedIdNow: selectedIdRef.current,
-            notesHasCreated: notesRef.current.some((n) => n.id === created.id),
-          },
-        );
-        // #endregion
-        openFromSearch(created);
+        if (
+          created.note_type === "daily" &&
+          created.title === formatDailyTitle()
+        ) {
+          setSurface({ kind: "daily" });
+        } else {
+          setSurface({ kind: "note", id: created.id });
+        }
       }
     });
   };

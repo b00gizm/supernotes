@@ -184,10 +184,8 @@ describe("useNotes", () => {
   });
 
   it("does not write the previous note body into a create-on-click note", async () => {
-    // Repro: after createNote selects Person, a stale TipTap onChange can push
-    // the daily markdown into bodyDraft while selectedId is already Person.
-    // Navigating away then fire-and-forget persistDraft writes that draft onto
-    // Person (selectNote @ useNotes.ts).
+    // Stale TipTap onUpdate from the daily editor must not dirty Person after
+    // create-on-click; navigating away must not persist daily text onto Person.
     const dailyBody = "Discuss [[Existing]] with @Person";
     const api = createMemoryNotesApi([
       seedNote({
@@ -222,27 +220,24 @@ describe("useNotes", () => {
       personId = created!.id;
     });
 
-    // Let React flush createNote's applySelection + setNotes.
     await waitFor(() => {
       expect(result.current.selectedId).toBe(personId);
       expect(result.current.bodyDraft).toBe("");
     });
 
-    // App openWikiLink re-selects via openFromSearch after create resolves.
+    // App openWikiLink used to re-select via openFromSearch after create.
     act(() => {
       result.current.selectNote(personId);
     });
     expect(result.current.selectedId).toBe(personId);
 
-    // Stale TipTap onUpdate from the previous editor (or remount) after the
-    // selection already moved — UI can still show empty while draft is dirty.
+    // Stale onUpdate from the daily editor (wrong fromNoteId) is ignored.
     act(() => {
-      result.current.setBodyDraft(dailyBody);
+      result.current.setBodyDraft(dailyBody, "daily");
     });
-    expect(result.current.status).toBe("dirty");
-    expect(result.current.selectedId).toBe(personId);
+    expect(result.current.bodyDraft).toBe("");
+    expect(result.current.status).toBe("idle");
 
-    // Backlink → daily: selectNote flushes the dirty draft onto Person.
     act(() => {
       result.current.selectNote("daily");
     });
@@ -257,10 +252,8 @@ describe("useNotes", () => {
   });
 
   it("openWikiLink double-select must not clear selection or flush daily into Person", async () => {
-    // createNote applySelection(created) then openFromSearch → selectNote(id)
-    // before React flushes leaves notesRef without Person (notesHasTarget:false)
-    // and applySelection(null). When status is still dirty with the daily draft,
-    // fire-and-forget persist can also race.
+    // createNote applySelection(created) then selectNote(id) before React
+    // flushes must still find Person (notesRef updated eagerly).
     const dailyBody = "Discuss [[Existing]] with @Person";
     const api = createMemoryNotesApi([
       seedNote({
@@ -293,7 +286,6 @@ describe("useNotes", () => {
       result.current.selectNote("daily");
     });
 
-    // Dirty daily (TipTap roundtrip / edit) before create-on-click.
     act(() => {
       result.current.setBodyDraft(`${dailyBody} `);
     });
@@ -303,9 +295,6 @@ describe("useNotes", () => {
     await act(async () => {
       const created = await result.current.createNote("Person");
       personId = created!.id;
-      // Same tick as App.tsx openWikiLink .then(openFromSearch) — notesRef
-      // may still omit Person; selectNote must not drop selection or write
-      // the daily draft onto the new id.
       result.current.selectNote(personId);
     });
 
@@ -314,7 +303,6 @@ describe("useNotes", () => {
     });
     expect(result.current.bodyDraft).toBe("");
 
-    // Person must never receive the daily body via any persist from this path.
     expect(
       updateCalls.some(
         (call) => call.id === personId && call.body.includes("[[Existing]]"),
@@ -378,10 +366,11 @@ describe("useNotes", () => {
       expect(result.current.selectedId).toBe(personId);
     });
 
-    // Stale onChange from the daily editor after Person is selected.
+    // Stale onChange attributed to the daily note while Person is selected.
     act(() => {
-      result.current.setBodyDraft(`${dailyBody}!`);
+      result.current.setBodyDraft(`${dailyBody}!`, "daily");
     });
+    expect(result.current.bodyDraft).toBe("");
 
     act(() => {
       result.current.selectNote("daily");

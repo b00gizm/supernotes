@@ -2,7 +2,6 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import type { EditorView } from "@tiptap/pm/view";
 import { useEffect, useRef, useState } from "react";
-import { debugLog } from "../debugLog";
 import type { Note } from "../notes/types";
 import { rankNotesForWikiLink } from "../notes/wikilinks";
 import { noteEditorExtensions } from "./extensions";
@@ -17,7 +16,8 @@ import {
 export type NoteEditorProps = {
   /** Initial markdown; remount (via `key`) when switching notes. */
   markdown: string;
-  onChange: (markdown: string) => void;
+  /** Second arg is the note this editor belongs to (ignore stale updates). */
+  onChange: (markdown: string, noteId: string | null) => void;
   notes?: Note[];
   currentNoteId?: string | null;
   /** Navigate to an existing note or create-on-click when missing. */
@@ -253,15 +253,13 @@ export function NoteEditor({
       },
     },
     onUpdate: ({ editor: current }) => {
-      const md = getEditorMarkdown(current) || current.getText();
-      // #region agent log
-      debugLog("B", "NoteEditor.tsx:onUpdate", "TipTap onUpdate", {
-        currentNoteId: currentNoteIdRef.current,
-        mdLen: md.length,
-        mdPreview: md.slice(0, 80),
-      });
-      // #endregion
-      onChange(md);
+      if (current.isDestroyed) {
+        return;
+      }
+      onChange(
+        getEditorMarkdown(current) || current.getText(),
+        currentNoteIdRef.current,
+      );
     },
   });
 
