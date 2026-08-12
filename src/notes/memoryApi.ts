@@ -89,6 +89,33 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
       };
       notes = [note, ...notes];
       syncLinksFromBody(note.id, note.body_markdown);
+      // Late targets: bodies that already mention this title get a link row.
+      for (const source of notes) {
+        if (source.id === note.id) {
+          continue;
+        }
+        for (const title of extractWikilinkTitles(source.body_markdown)) {
+          const target = findNoteByTitle(notes, title);
+          if (!target || target.id !== note.id) {
+            continue;
+          }
+          if (
+            links.some(
+              (link) =>
+                link.source_note_id === source.id &&
+                link.target_note_id === note.id,
+            )
+          ) {
+            break;
+          }
+          links.push({
+            source_note_id: source.id,
+            target_note_id: note.id,
+            created_at: stamp,
+          });
+          break;
+        }
+      }
       return Promise.resolve(note);
     },
     updateNote(input: UpdateNoteInput) {

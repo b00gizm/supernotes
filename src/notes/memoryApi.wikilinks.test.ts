@@ -105,4 +105,37 @@ describe("memoryApi wikilink sync", () => {
       "Track #meridian with @Priya and [[meridian]].",
     );
   });
+
+  it("backfills inbound links when a mentioned note is created later", async () => {
+    const api = createMemoryNotesApi([
+      seed({
+        id: "src",
+        title: "Source",
+        body_markdown: "Ask @Sam about #project.",
+      }),
+    ]);
+    // Seed body had unresolved mentions; sync only runs on create/update.
+    await api.updateNote({
+      id: "src",
+      title: "Source",
+      body_markdown: "Ask @Sam about #project.",
+    });
+    expect(await api.listLinksFrom("src")).toEqual([]);
+
+    const sam = await api.createNote({ title: "Sam" });
+    const project = await api.createNote({ title: "project" });
+
+    expect(await api.listLinksTo(sam.id)).toEqual([
+      expect.objectContaining({
+        source_note_id: "src",
+        target_note_id: sam.id,
+      }),
+    ]);
+    expect(await api.listLinksTo(project.id)).toEqual([
+      expect.objectContaining({
+        source_note_id: "src",
+        target_note_id: project.id,
+      }),
+    ]);
+  });
 });
