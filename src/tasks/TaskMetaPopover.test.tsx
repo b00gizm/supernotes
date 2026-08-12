@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { todayYmd } from "./due";
 import { TaskMetaPopover } from "./TaskMetaPopover";
 import type { Task } from "./types";
 
@@ -34,11 +35,7 @@ describe("TaskMetaPopover (ENG-62)", () => {
     expect(onUpdate).toHaveBeenCalledWith({ state: "waiting" });
 
     await user.click(screen.getByRole("button", { name: "Today" }));
-    expect(onUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        due_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      }),
-    );
+    expect(onUpdate).toHaveBeenCalledWith({ due_date: todayYmd() });
 
     await user.click(screen.getByRole("button", { name: "P1" }));
     expect(onUpdate).toHaveBeenCalledWith({ priority: "high" });
