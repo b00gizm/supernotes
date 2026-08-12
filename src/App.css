@@ -47,6 +47,8 @@
   --radius-lg: 0.7rem;
   /* Capsule chips for #tags / @mentions (mockup 1c). */
   --radius-pill: 999px;
+  /* Clears trafficLightPosition (y:18) + button cluster; mac Overlay only. */
+  --mac-titlebar-height: 3.25rem;
 
   color: var(--text);
   background: var(--bg-app);
@@ -132,10 +134,33 @@ button {
   padding: var(--space-3) var(--space-2) var(--space-3);
 }
 
+/* Empty strip under native traffic lights; also the window drag handle (ENG-115). */
+.titlebar-drag {
+  flex-shrink: 0;
+  height: var(--mac-titlebar-height);
+  /* WKWebView honors this in addition to data-tauri-drag-region. */
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.has-mac-overlay-chrome .sidebar {
+  padding-top: 0;
+}
+
+.has-mac-overlay-chrome .titlebar-drag-sidebar {
+  /* Span full sidebar width (cancel horizontal padding). */
+  margin: 0 calc(-1 * var(--space-2));
+}
+
 .sidebar-top {
   display: flex;
   justify-content: flex-end;
   padding: 0 var(--space-2) var(--space-2);
+}
+
+.has-mac-overlay-chrome .sidebar-top {
+  /* Keep the collapse control below the traffic-light cluster. */
+  padding-top: var(--space-1);
 }
 
 .sidebar-collapse {
@@ -405,6 +430,13 @@ button {
   display: flex;
   flex-direction: column;
   background: var(--bg-main);
+}
+
+.has-mac-overlay-chrome .editor-pane,
+.has-mac-overlay-chrome .placeholder-pane,
+.has-mac-overlay-chrome .overview-pane {
+  /* Titlebar drag strip already reserved height above the pane. */
+  padding-top: var(--space-4);
 }
 
 .editor-pane,
@@ -1473,5 +1505,11 @@ button {
   .placeholder-pane,
   .overview-pane {
     padding: var(--space-5) var(--space-4);
+  }
+
+  .has-mac-overlay-chrome .editor-pane,
+  .has-mac-overlay-chrome .placeholder-pane,
+  .has-mac-overlay-chrome .overview-pane {
+    padding-top: var(--space-4);
   }
 }

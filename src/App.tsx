@@ -52,6 +52,15 @@ function prefersNarrow(): boolean {
   );
 }
 
+/** Overlay titlebar + traffic lights are macOS-only (`titleBarStyle: Overlay`). */
+function prefersMacOverlayChrome(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window &&
+    /Mac|iPhone|iPod|iPad/i.test(navigator.userAgent)
+  );
+}
+
 function saveIndicator(
   status: ReturnType<typeof useNotes>["status"],
 ): ReactNode {
@@ -308,6 +317,7 @@ function App() {
   const [surface, setSurface] = useState<Surface>({ kind: "daily" });
   const [isNarrow, setIsNarrow] = useState(prefersNarrow);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(prefersNarrow);
+  const macOverlayChrome = prefersMacOverlayChrome();
   const [recentOpen, setRecentOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
@@ -596,13 +606,16 @@ function App() {
     (surface.kind === "daily" || surface.kind === "note") &&
     Boolean(selectedId);
 
+  const shellClass = [
+    "app-shell",
+    sidebarCollapsed ? "is-sidebar-collapsed" : "",
+    macOverlayChrome ? "has-mac-overlay-chrome" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div
-      className={
-        sidebarCollapsed ? "app-shell is-sidebar-collapsed" : "app-shell"
-      }
-      aria-label="Supernotes"
-    >
+    <div className={shellClass} aria-label="Supernotes">
       {isNarrow && !sidebarCollapsed ? (
         <button
           type="button"
@@ -614,6 +627,13 @@ function App() {
         />
       ) : null}
       <aside className="sidebar" aria-label="Sidebar">
+        {macOverlayChrome ? (
+          <div
+            className="titlebar-drag titlebar-drag-sidebar"
+            data-tauri-drag-region
+            aria-hidden="true"
+          />
+        ) : null}
         <div className="sidebar-top">
           <button
             type="button"
@@ -730,6 +750,13 @@ function App() {
       </aside>
 
       <main className="main-pane">
+        {macOverlayChrome ? (
+          <div
+            className="titlebar-drag titlebar-drag-main"
+            data-tauri-drag-region
+            aria-hidden="true"
+          />
+        ) : null}
         {surface.kind === "notes" ? (
           <section className="overview-pane" aria-label="Notes overview">
             <div className="overview-header">
