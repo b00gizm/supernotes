@@ -1,6 +1,8 @@
+import { filterTasks } from "./query";
 import type {
   CreateTaskInput,
   Task,
+  TaskListFilter,
   TaskState,
   UpdateTaskInput,
 } from "./types";
@@ -40,6 +42,9 @@ export function createMemoryTasksApi(seed: Task[] = []): TasksApi {
         return Promise.reject(new Error("not found"));
       }
       return Promise.resolve(task);
+    },
+    listTasks(filter: TaskListFilter, today: string) {
+      return Promise.resolve(filterTasks(tasks, filter, today));
     },
     listTasksForNote(noteId: string) {
       return Promise.resolve(

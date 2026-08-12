@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use tauri::State;
 
-use crate::db::{Db, Repository, Task, TaskPriority, TaskState};
+use crate::db::{Db, Repository, Task, TaskListFilter, TaskPriority, TaskState};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTaskInput {
@@ -50,12 +50,20 @@ pub fn get_task(state: State<'_, Db>, id: String) -> Result<Task, String> {
 }
 
 #[tauri::command]
-pub fn list_tasks_for_note(
-    state: State<'_, Db>,
-    note_id: String,
-) -> Result<Vec<Task>, String> {
+pub fn list_tasks_for_note(state: State<'_, Db>, note_id: String) -> Result<Vec<Task>, String> {
     state
         .with_conn(|conn| Repository::new(conn).list_tasks_for_note(&note_id))
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn list_tasks(
+    state: State<'_, Db>,
+    filter: TaskListFilter,
+    today: String,
+) -> Result<Vec<Task>, String> {
+    state
+        .with_conn(|conn| Repository::new(conn).list_tasks(filter, &today))
         .map_err(|err| err.to_string())
 }
 
@@ -97,13 +105,7 @@ mod tests {
 
         let created = db
             .with_conn(|conn| {
-                Repository::new(conn).create_task(
-                    &note.id,
-                    "Buy milk",
-                    TaskState::Open,
-                    None,
-                    None,
-                )
+                Repository::new(conn).create_task(&note.id, "Buy milk", TaskState::Open, None, None)
             })
             .unwrap();
         assert_eq!(created.title, "Buy milk");

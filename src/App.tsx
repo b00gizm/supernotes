@@ -23,6 +23,8 @@ import {
 } from "./notes/format";
 import { NoteEditor } from "./editor/NoteEditor";
 import { Backlinks } from "./notes/Backlinks";
+import { TasksView } from "./tasks/TasksView";
+import type { Task } from "./tasks/types";
 import {
   isSearchKpiMode,
   runSearchKpi,
@@ -327,6 +329,7 @@ function App() {
   const [recentOpen, setRecentOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const [kpiMode] = useState(() => isSearchKpiMode());
   const [kpiResult, setKpiResult] = useState<SearchKpiResult | null>(null);
   const [lastSearchMs, setLastSearchMs] = useState<number | null>(null);
@@ -519,6 +522,7 @@ function App() {
   const viewingToday = dailyDate === todayTitle;
 
   const openOverviewNote = (note: Note) => {
+    setFocusTaskId(null);
     setSurface({ kind: "note", id: note.id });
     selectNote(note.id);
     setPinMenu(null);
@@ -581,15 +585,18 @@ function App() {
     if (id === "daily") {
       setDailyDate(formatDailyTitle(new Date(dayStamp)));
       setSurface({ kind: "daily" });
+      setFocusTaskId(null);
       return;
     }
     setSurface({ kind: id });
     selectNote(null);
+    setFocusTaskId(null);
   };
 
   const goDailyDelta = (delta: number) => {
     setDailyDate((prev) => shiftDailyTitle(prev, delta));
     setSurface({ kind: "daily" });
+    setFocusTaskId(null);
   };
 
   goNavRef.current = goNav;
@@ -647,11 +654,13 @@ function App() {
   }, []);
 
   const openRecent = (note: Note) => {
+    setFocusTaskId(null);
     setSurface({ kind: "note", id: note.id });
     selectNote(note.id);
   };
 
-  const openFromSearch = (note: Note) => {
+  const openFromSearch = (note: Note, taskId: string | null = null) => {
+    setFocusTaskId(taskId);
     if (note.note_type === "daily" && parseDailyTitle(note.title)) {
       setDailyDate(note.title);
       setSurface({ kind: "daily" });
@@ -659,6 +668,10 @@ function App() {
       setSurface({ kind: "note", id: note.id });
     }
     selectNote(note.id);
+  };
+
+  const openTaskSource = (task: Task, note: Note) => {
+    openFromSearch(note, task.id);
   };
 
   const createFromSearch = (title: string) => {
@@ -957,10 +970,11 @@ function App() {
         ) : null}
 
         {surface.kind === "tasks" ? (
-          <section className="placeholder-pane" aria-label="Tasks">
-            <h1 className="pane-title">Tasks</h1>
-            <p className="muted">Tasks arrive in a later milestone.</p>
-          </section>
+          <TasksView
+            notes={notes}
+            today={formatDailyTitle(new Date(dayStamp))}
+            onOpenTask={openTaskSource}
+          />
         ) : null}
 
         {surface.kind === "calendar" ? (
@@ -1069,6 +1083,10 @@ function App() {
                 notes={notes}
                 currentNoteId={selectedId}
                 onOpenWikiLink={openWikiLink}
+                focusTaskId={focusTaskId}
+                onFocusedTask={() => {
+                  setFocusTaskId(null);
+                }}
               />
             ) : null}
             {selectedId ? (
