@@ -134,6 +134,14 @@ function markdownItTaskPill(md: MarkdownItLike): void {
 export type TaskPillHandlers = {
   onSetState?: (id: string, state: TaskState) => void;
   onTitleCommit?: (id: string, title: string) => void;
+  onMetaUpdate?: (
+    id: string,
+    patch: {
+      state?: TaskState;
+      due_date?: string | null;
+      priority?: TaskPriority | null;
+    },
+  ) => void;
 };
 
 export type TaskPillOptions = {
@@ -537,6 +545,34 @@ function wireTaskPillHandlers(options: TaskPillOptions, editor: Editor): void {
       })
       .catch((err: unknown) => {
         console.error("Failed to update task title", err);
+      });
+  };
+  bag.onMetaUpdate = (id, patch) => {
+    const node = findTaskNode(editor, id);
+    if (!node || !options.updateTask) {
+      return;
+    }
+    const dueDate =
+      patch.due_date !== undefined
+        ? patch.due_date
+        : typeof node.attrs.dueDate === "string"
+          ? node.attrs.dueDate
+          : null;
+    const priority =
+      patch.priority !== undefined
+        ? patch.priority
+        : parsePriority(node.attrs.priority);
+    const state = patch.state ?? parseState(String(node.attrs.state ?? "open"));
+    void options
+      .updateTask({
+        id,
+        title: String(node.attrs.title ?? ""),
+        state,
+        due_date: dueDate,
+        priority,
+      })
+      .catch((err: unknown) => {
+        console.error("Failed to update task metadata", err);
       });
   };
 }

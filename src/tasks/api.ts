@@ -1,10 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createMemoryTasksApi } from "./memoryApi";
-import type { CreateTaskInput, Task, UpdateTaskInput } from "./types";
+import type {
+  CreateTaskInput,
+  Task,
+  TaskListFilter,
+  UpdateTaskInput,
+} from "./types";
 
 export type TasksApi = {
   createTask: (input: CreateTaskInput) => Promise<Task>;
   getTask: (id: string) => Promise<Task>;
+  listTasks: (filter: TaskListFilter, today: string) => Promise<Task[]>;
   listTasksForNote: (noteId: string) => Promise<Task[]>;
   updateTask: (input: UpdateTaskInput) => Promise<Task>;
   deleteTask: (id: string) => Promise<void>;
@@ -14,6 +20,7 @@ const tauriTasksApi: TasksApi = {
   createTask: (input) => invoke<Task>("create_task", { input }),
   getTask: (id) => invoke<Task>("get_task", { id }),
   // Tauri 2 deserializes multi-word command args as camelCase by default.
+  listTasks: (filter, today) => invoke<Task[]>("list_tasks", { filter, today }),
   listTasksForNote: (noteId) =>
     invoke<Task[]>("list_tasks_for_note", { noteId }),
   updateTask: (input) => invoke<Task>("update_task", { input }),

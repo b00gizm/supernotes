@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use tauri::State;
 
-use crate::db::{Db, Repository, Task, TaskPriority, TaskState};
+use crate::db::{Db, Repository, Task, TaskListFilter, TaskPriority, TaskState};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTaskInput {
@@ -56,6 +56,17 @@ pub fn list_tasks_for_note(
 ) -> Result<Vec<Task>, String> {
     state
         .with_conn(|conn| Repository::new(conn).list_tasks_for_note(&note_id))
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn list_tasks(
+    state: State<'_, Db>,
+    filter: TaskListFilter,
+    today: String,
+) -> Result<Vec<Task>, String> {
+    state
+        .with_conn(|conn| Repository::new(conn).list_tasks(filter, &today))
         .map_err(|err| err.to_string())
 }
 

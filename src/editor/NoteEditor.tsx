@@ -25,6 +25,9 @@ export type NoteEditorProps = {
   currentNoteId?: string | null;
   /** Navigate to an existing note or create-on-click when missing. */
   onOpenWikiLink?: (link: { title: string; noteId: string | null }) => void;
+  /** After open from Tasks view: scroll the matching pill into view once. */
+  focusTaskId?: string | null;
+  onFocusedTask?: () => void;
 };
 
 function IconNoteDoc() {
@@ -135,13 +138,17 @@ export function NoteEditor({
   notes = [],
   currentNoteId = null,
   onOpenWikiLink,
+  focusTaskId = null,
+  onFocusedTask,
 }: NoteEditorProps) {
   const notesRef = useRef(notes);
   const currentNoteIdRef = useRef(currentNoteId);
   const onOpenWikiLinkRef = useRef(onOpenWikiLink);
+  const onFocusedTaskRef = useRef(onFocusedTask);
   notesRef.current = notes;
   currentNoteIdRef.current = currentNoteId;
   onOpenWikiLinkRef.current = onOpenWikiLink;
+  onFocusedTaskRef.current = onFocusedTask;
 
   const [query, setQuery] = useState<WikiLinkQuery | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -366,6 +373,42 @@ export function NoteEditor({
   });
 
   editorRef.current = editor;
+
+  useEffect(() => {
+    if (!editor || !focusTaskId) {
+      return;
+    }
+    const scroll = () => {
+      const root = editor.view.dom;
+      const pill = root.querySelector(
+        `[data-task-id="${CSS.escape(focusTaskId)}"]`,
+      );
+      if (!(pill instanceof HTMLElement)) {
+        return false;
+      }
+      pill.scrollIntoView({ block: "center", behavior: "smooth" });
+      pill.classList.add("is-task-focus");
+      window.setTimeout(() => {
+        pill.classList.remove("is-task-focus");
+      }, 1600);
+      onFocusedTaskRef.current?.();
+      return true;
+    };
+    if (scroll()) {
+      return;
+    }
+    // Hydration may replace pending attrs shortly after mount.
+    const timers = [50, 150, 400].map((ms) =>
+      window.setTimeout(() => {
+        scroll();
+      }, ms),
+    );
+    return () => {
+      for (const id of timers) {
+        window.clearTimeout(id);
+      }
+    };
+  }, [editor, focusTaskId]);
 
   useEffect(() => {
     if (!editor || !query) {

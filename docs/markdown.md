@@ -91,7 +91,7 @@ distinct pill node:
 - Typing `[]` + space at the start of a paragraph creates a DB task + pill.
   `- [ ]` / `[ ]` / `- []` (inside a list) still create square checkboxes.
 - Clicking the circle sets state to `done` (click again reopens). Waiting /
-  cancelled are set from elsewhere (Tasks view / metadata popover later).
+  cancelled are set from the Tasks view / shared metadata popover.
 - Deleting the pill in the editor **deletes** the task row (not orphaned).
 - State lives in SQLite (`open` \| `waiting` \| `done` \| `cancelled`); it is
   not encoded in the markdown. On load, pills hydrate state from the `tasks`
