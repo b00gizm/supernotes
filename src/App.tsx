@@ -42,19 +42,31 @@ type PinMenu = { noteId: string; pinned: boolean; x: number; y: number };
 const PIN_MENU_SAFE_WIDTH = 160;
 const PIN_MENU_SAFE_HEIGHT = 48;
 
-function saveLabel(status: ReturnType<typeof useNotes>["status"]): string {
-  switch (status) {
-    case "dirty":
-      return "Unsaved";
-    case "saving":
-      return "Saving…";
-    case "saved":
-      return "Saved";
-    case "error":
-      return "Save failed";
-    default:
-      return "";
+const NARROW_MQ = "(max-width: 720px)";
+
+function prefersNarrow(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(NARROW_MQ).matches
+  );
+}
+
+function saveIndicator(
+  status: ReturnType<typeof useNotes>["status"],
+): ReactNode {
+  if (status === "error") {
+    return (
+      <span className="save-status" aria-live="polite">
+        Save failed
+      </span>
+    );
   }
+  // Quiet dirty-only cue — no "Saved"/"Unsaved" text (ENG-114).
+  if (status === "dirty") {
+    return <span className="save-dot" aria-label="Unsaved changes" />;
+  }
+  return null;
 }
 
 function IconDaily({ active }: { active?: boolean }) {
@@ -294,7 +306,8 @@ function App() {
   } = useNotes({ autoSelect: false });
 
   const [surface, setSurface] = useState<Surface>({ kind: "daily" });
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(prefersNarrow);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(prefersNarrow);
   const [recentOpen, setRecentOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
@@ -311,6 +324,24 @@ function App() {
 
   const pinMenuRef = useRef<HTMLDivElement | null>(null);
   const pinMenuItemRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") {
+      return;
+    }
+    const mq = window.matchMedia(NARROW_MQ);
+    const onChange = () => {
+      setIsNarrow(mq.matches);
+      // Narrow windows use the icon rail; force collapse when crossing in.
+      if (mq.matches) {
+        setSidebarCollapsed(true);
+      }
+    };
+    mq.addEventListener("change", onChange);
+    return () => {
+      mq.removeEventListener("change", onChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (!pinMenu) {
@@ -572,6 +603,16 @@ function App() {
       }
       aria-label="Supernotes"
     >
+      {isNarrow && !sidebarCollapsed ? (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="Close sidebar"
+          onClick={() => {
+            setSidebarCollapsed(true);
+          }}
+        />
+      ) : null}
       <aside className="sidebar" aria-label="Sidebar">
         <div className="sidebar-top">
           <button
@@ -816,9 +857,7 @@ function App() {
                 <span />
               )}
               <div className="editor-toolbar-actions">
-                <span className="save-status" aria-live="polite">
-                  {saveLabel(status)}
-                </span>
+                {saveIndicator(status)}
                 {surface.kind === "note" ? (
                   <button
                     type="button"

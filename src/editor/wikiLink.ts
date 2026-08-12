@@ -70,14 +70,14 @@ function isMentionQuery(after: string): boolean {
   );
 }
 
-function linkClass(kind: NoteLinkKind): string {
+function linkClass(kind: NoteLinkKind, resolved = true): string {
+  let base = "wiki-link";
   if (kind === "tag") {
-    return "wiki-link is-tag";
+    base = "wiki-link is-tag";
+  } else if (kind === "mention") {
+    base = "wiki-link is-mention";
   }
-  if (kind === "mention") {
-    return "wiki-link is-mention";
-  }
-  return "wiki-link";
+  return resolved ? base : `${base} is-unresolved`;
 }
 
 function displayText(kind: NoteLinkKind, title: string): string {
@@ -272,7 +272,8 @@ export function findActiveWikiLinkQuery(
   }
 
   const tag = /(?<![\w@])#([\w-]*)$/.exec(textBefore);
-  if (tag) {
+  // Bare `#` alone must not open autocomplete — Enter would swallow the newline (ENG-114).
+  if (tag && (tag[1] ?? "").length > 0) {
     return {
       from: parentStart + tag.index,
       to: pos,
@@ -282,11 +283,13 @@ export function findActiveWikiLinkQuery(
   }
 
   const mentionAt = /(?<![\w@])@(.*)$/.exec(textBefore);
-  if (mentionAt && isMentionQuery(mentionAt[1] ?? "")) {
+  const mentionQuery = mentionAt?.[1] ?? "";
+  // Same for bare `@`: require at least one character before suggesting.
+  if (mentionAt && mentionQuery.length > 0 && isMentionQuery(mentionQuery)) {
     return {
       from: parentStart + mentionAt.index,
       to: pos,
-      query: mentionAt[1] ?? "",
+      query: mentionQuery,
       kind: "mention",
     };
   }
@@ -407,7 +410,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
 
   renderHTML({ node, HTMLAttributes }) {
     const title = String(node.attrs.title ?? "");
-    const noteId = node.attrs.noteId as string | null;
+    const noteId = (node.attrs.noteId as string | null) || null;
     const kind = parseKind(String(node.attrs.kind ?? "wiki"));
     return [
       "span",
@@ -416,7 +419,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
         "data-kind": kind,
         "data-title": title,
         ...(noteId ? { "data-note-id": noteId } : {}),
-        class: linkClass(kind),
+        class: linkClass(kind, Boolean(noteId)),
       }),
       displayText(kind, title),
     ];

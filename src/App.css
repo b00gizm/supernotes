@@ -124,6 +124,8 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  grid-column: 1;
+  grid-row: 1;
   background: var(--bg-sidebar);
   border-right: 1px solid
     color-mix(in srgb, var(--border-subtle) 70%, transparent);
@@ -398,6 +400,8 @@ button {
   position: relative;
   min-width: 0;
   min-height: 0;
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   background: var(--bg-main);
@@ -825,6 +829,14 @@ button {
   cursor: pointer;
 }
 
+/* Missing targets: muted + dashed underline so create-on-click is obvious (ENG-114). */
+.note-editor .tiptap .wiki-link.is-unresolved {
+  color: var(--text-secondary);
+  text-decoration: underline dashed;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.18em;
+}
+
 .note-editor .tiptap .wiki-link.is-tag,
 .note-editor .tiptap .wiki-link.is-mention {
   display: inline-flex;
@@ -844,6 +856,20 @@ button {
 .note-editor .tiptap .wiki-link.is-mention {
   background: color-mix(in srgb, var(--accent) 16%, var(--bg-main));
   color: color-mix(in srgb, var(--accent) 82%, var(--text));
+}
+
+.note-editor .tiptap .wiki-link.is-tag.is-unresolved,
+.note-editor .tiptap .wiki-link.is-mention.is-unresolved {
+  color: var(--text-tertiary);
+  background: color-mix(in srgb, var(--bg-chip) 70%, transparent);
+  text-decoration: underline dashed;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.18em;
+}
+
+.note-editor .tiptap .wiki-link.is-mention.is-unresolved {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-main));
+  color: var(--text-tertiary);
 }
 
 .note-editor {
@@ -1174,6 +1200,15 @@ button {
   font-size: var(--text-sm);
 }
 
+.save-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
 .text-button {
   color: var(--accent);
   font-size: var(--text-sm);
@@ -1396,33 +1431,48 @@ button {
   font-size: var(--text-xs);
 }
 
+.sidebar-backdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  grid-column: 1;
+  grid-row: 1;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: color-mix(in srgb, #000 28%, transparent);
+  cursor: pointer;
+}
+
 @media (max-width: 720px) {
+  /* Icon rail instead of stacking the full sidebar above the note (ENG-114). */
   .app-shell,
   .app-shell.is-sidebar-collapsed {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: 3.5rem 1fr;
+    grid-template-rows: none;
   }
 
   .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--border-subtle);
-    max-height: 45vh;
+    border-right: 1px solid
+      color-mix(in srgb, var(--border-subtle) 70%, transparent);
+    border-bottom: 0;
+    max-height: none;
+  }
+
+  /* Expanded = drawer over the content; collapsed = icon rail. */
+  .app-shell:not(.is-sidebar-collapsed) .sidebar {
+    position: fixed;
+    z-index: 40;
+    inset: 0 auto 0 0;
+    width: min(16.5rem, 85vw);
+    max-height: none;
+    box-shadow: 8px 0 28px color-mix(in srgb, #000 18%, transparent);
   }
 
   .editor-pane,
   .placeholder-pane,
   .overview-pane {
     padding: var(--space-5) var(--space-4);
-  }
-
-  .app-shell.is-sidebar-collapsed .nav-item-label,
-  .app-shell.is-sidebar-collapsed .sidebar-recent,
-  .app-shell.is-sidebar-collapsed .search-hint-label,
-  .app-shell.is-sidebar-collapsed .search-chip {
-    display: initial;
-  }
-
-  .app-shell.is-sidebar-collapsed .sidebar-recent {
-    display: flex;
   }
 }

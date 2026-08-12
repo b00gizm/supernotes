@@ -1,7 +1,7 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import type { EditorView } from "@tiptap/pm/view";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { Note } from "../notes/types";
 import { rankNotesForWikiLink } from "../notes/wikilinks";
 import { noteEditorExtensions } from "./extensions";
@@ -228,6 +228,13 @@ export function NoteEditor({
           return true;
         }
         if (event.key === "Enter" || event.key === "Tab") {
+          // Empty `[[` may still commit; bare `#`/`@` never open a popup (ENG-114).
+          // If somehow open with an empty query, let Enter insert a newline.
+          if (event.key === "Enter" && !active.query.trim()) {
+            dismissedFromRef.current = active.from;
+            setQuery(null);
+            return false;
+          }
           event.preventDefault();
           if (state.activeIndex < state.suggestions.length) {
             const note = state.suggestions[state.activeIndex];
@@ -335,8 +342,33 @@ export function NoteEditor({
     setQuery(null);
   };
 
+  /** Click empty space below the last block → focus end (ENG-114). */
+  const focusEndIfBelowContent = (event: MouseEvent<HTMLDivElement>) => {
+    if (!editor || editor.isDestroyed) {
+      return;
+    }
+    const pm = editor.view.dom;
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    // Clicks on real content (text, links, widgets) keep default caret placement.
+    if (pm.contains(target) && target !== pm) {
+      return;
+    }
+    const last = pm.lastElementChild;
+    if (last && event.clientY <= last.getBoundingClientRect().bottom) {
+      return;
+    }
+    event.preventDefault();
+    editor.commands.focus("end");
+  };
+
   return (
-    <div className="body-input note-editor">
+    <div
+      className="body-input note-editor"
+      onMouseDown={focusEndIfBelowContent}
+    >
       <EditorContent editor={editor} />
       {imageError ? (
         <p className="note-image-insert-error" role="alert">
