@@ -9,6 +9,7 @@ import { getEditorMarkdown } from "./markdown";
 import { openExternalUrl, saveNoteImage } from "./media";
 import {
   insertWikiLink,
+  sameWikiLinkQuery,
   wikiLinkQueryRect,
   type WikiLinkQuery,
 } from "./wikiLink";
@@ -40,22 +41,45 @@ function firstImageFile(data: DataTransfer | null): File | null {
   return null;
 }
 
+/** Drop stale/out-of-range positions so insert never throws RangeError (ENG-96). */
+export function resolveInsertPos(
+  docSize: number,
+  pos: number | undefined,
+): number | undefined {
+  if (pos === undefined || pos < 0 || pos > docSize) {
+    return undefined;
+  }
+  return pos;
+}
+
 function insertImageAt(
   view: EditorView,
   src: string,
   alt: string,
   pos?: number,
 ) {
+  if (view.isDestroyed) {
+    return;
+  }
   const type = view.state.schema.nodes.image;
   if (!type) {
     return;
   }
   const node = type.create({ src, alt });
+  const safePos = resolveInsertPos(view.state.doc.content.size, pos);
   const tr =
-    pos === undefined
+    safePos === undefined
       ? view.state.tr.replaceSelectionWith(node)
-      : view.state.tr.insert(pos, node);
+      : view.state.tr.insert(safePos, node);
   view.dispatch(tr);
+}
+
+function imageSaveErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/too large/i.test(message)) {
+    return "Image is too large (max 15 MB).";
+  }
+  return message || "Could not save image";
 }
 
 const SUGGEST_LIMIT = 8;
@@ -80,7 +104,10 @@ export function NoteEditor({
     top: number;
     left: number;
   } | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
   const dismissedFromRef = useRef<number | null>(null);
+  const setImageErrorRef = useRef(setImageError);
+  setImageErrorRef.current = setImageError;
 
   const onQueryChange = (next: WikiLinkQuery | null) => {
     if (next && dismissedFromRef.current === next.from) {
@@ -88,7 +115,8 @@ export function NoteEditor({
       return;
     }
     dismissedFromRef.current = null;
-    setQuery(next);
+    // Fresh object every plugin update — skip setState when fields match (ENG-87).
+    setQuery((prev) => (sameWikiLinkQuery(prev, next) ? prev : next));
   };
 
   const suggestions = query
@@ -226,9 +254,15 @@ export function NoteEditor({
           return false;
         }
         event.preventDefault();
-        void saveNoteImage(file).then((src) => {
-          insertImageAt(view, src, file.name.replace(/\.[^.]+$/, ""));
-        });
+        setImageErrorRef.current(null);
+        void saveNoteImage(file)
+          .then((src) => {
+            // Insert at current selection after await — doc may have changed.
+            insertImageAt(view, src, file.name.replace(/\.[^.]+$/, ""));
+          })
+          .catch((err: unknown) => {
+            setImageErrorRef.current(imageSaveErrorMessage(err));
+          });
         return true;
       },
       handleDrop: (view, event) => {
@@ -237,18 +271,25 @@ export function NoteEditor({
           return false;
         }
         event.preventDefault();
-        const coords = view.posAtCoords({
-          left: event.clientX,
-          top: event.clientY,
-        });
-        void saveNoteImage(file).then((src) => {
-          insertImageAt(
-            view,
-            src,
-            file.name.replace(/\.[^.]+$/, ""),
-            coords?.pos,
-          );
-        });
+        setImageErrorRef.current(null);
+        const { clientX, clientY } = event;
+        void saveNoteImage(file)
+          .then((src) => {
+            if (view.isDestroyed) {
+              return;
+            }
+            // Re-resolve drop coords after await so we never insert a stale pos.
+            const coords = view.posAtCoords({ left: clientX, top: clientY });
+            insertImageAt(
+              view,
+              src,
+              file.name.replace(/\.[^.]+$/, ""),
+              coords?.pos,
+            );
+          })
+          .catch((err: unknown) => {
+            setImageErrorRef.current(imageSaveErrorMessage(err));
+          });
         return true;
       },
     },
@@ -297,6 +338,11 @@ export function NoteEditor({
   return (
     <div className="body-input note-editor">
       <EditorContent editor={editor} />
+      {imageError ? (
+        <p className="note-image-insert-error" role="alert">
+          {imageError}
+        </p>
+      ) : null}
       {query && popupPos && itemCount > 0 ? (
         <div
           className="wiki-link-suggest"

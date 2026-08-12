@@ -81,6 +81,119 @@ describe("useNotes", () => {
     expect(result.current.notes[0]?.title).toBe("Alpha edited");
   });
 
+  it("keeps status dirty when drafts advance past an in-flight save (ENG-90)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = createMemoryNotesApi([seedNote()]);
+    let releaseSave: (() => void) | undefined;
+    const realUpdate = api.updateNote.bind(api);
+    vi.spyOn(api, "updateNote").mockImplementation(async (input) => {
+      await new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      return realUpdate(input);
+    });
+
+    const { result } = renderHook(() =>
+      useNotes({ api, debounceMs: AUTOSAVE_DEBOUNCE_MS }),
+    );
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+    expect(result.current.loading).toBe(false);
+
+    act(() => {
+      result.current.setBodyDraft("first");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS);
+    });
+    expect(result.current.status).toBe("saving");
+
+    // Trailing keystrokes while save 1 is in flight.
+    act(() => {
+      result.current.setBodyDraft("first and more");
+    });
+    expect(result.current.status).toBe("dirty");
+
+    await act(async () => {
+      releaseSave?.();
+      await Promise.resolve();
+    });
+
+    // Must stay dirty — "saved" would make flush-on-close skip the drafts.
+    expect(result.current.status).toBe("dirty");
+    expect(result.current.bodyDraft).toBe("first and more");
+  });
+
+  it("reconciles wikilink rewrites after rename + quick switch (ENG-91)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = createMemoryNotesApi([
+      seedNote({
+        id: "alpha",
+        title: "Alpha",
+        body_markdown: "",
+        updated_at: "2026-08-10T12:00:00.000Z",
+      }),
+      seedNote({
+        id: "beta",
+        title: "Beta",
+        body_markdown: "see [[Alpha]]",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      }),
+    ]);
+    // Seed bodies don't sync link rows — save once so rename can rewrite.
+    await api.updateNote({
+      id: "beta",
+      title: "Beta",
+      body_markdown: "see [[Alpha]]",
+    });
+
+    let releaseSave: (() => void) | undefined;
+    const realUpdate = api.updateNote.bind(api);
+    vi.spyOn(api, "updateNote").mockImplementation(async (input) => {
+      await new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      return realUpdate(input);
+    });
+
+    const { result } = renderHook(() => useNotes({ api, autoSelect: false }));
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+
+    act(() => {
+      result.current.selectNote("alpha");
+    });
+    expect(result.current.selectedId).toBe("alpha");
+
+    act(() => {
+      result.current.setTitleDraft("Gamma");
+    });
+    expect(result.current.status).toBe("dirty");
+
+    // Flush rename then switch before updateNote resolves — bumps generation.
+    act(() => {
+      result.current.selectNote("beta");
+    });
+    expect(result.current.selectedId).toBe("beta");
+    expect(result.current.bodyDraft).toBe("see [[Alpha]]");
+
+    await act(async () => {
+      releaseSave?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.notes.find((note) => note.id === "beta")?.body_markdown,
+      ).toBe("see [[Gamma]]");
+    });
+    expect(result.current.bodyDraft).toBe("see [[Gamma]]");
+    expect(result.current.status).toBe("idle");
+  });
+
   it("force-saves within the max wait while typing continuously", async () => {
     vi.useFakeTimers();
     const api = createMemoryNotesApi([seedNote()]);

@@ -218,6 +218,21 @@ export type WikiLinkQuery = {
   kind: NoteLinkKind;
 };
 
+/** Structural equality for query payloads (fresh objects each plugin update). */
+export function sameWikiLinkQuery(
+  a: WikiLinkQuery | null,
+  b: WikiLinkQuery | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.from === b.from &&
+    a.to === b.to &&
+    a.query === b.query &&
+    a.kind === b.kind
+  );
+}
+
 export type WikiLinkOptions = {
   /** Live note list for autocomplete + noteId resolution. */
   getNotes?: () => Note[];

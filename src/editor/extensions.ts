@@ -19,7 +19,7 @@ import { common, createLowlight } from "lowlight";
 import taskListPlugin from "markdown-it-task-lists";
 import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
-import { markdownTableFixupPlugin } from "./markdownTable";
+import { markdownTableFixupPlugin, TablePipeSafeText } from "./markdownTable";
 import { StaticMarkdownTable } from "./staticTable";
 import { WikiLink, type WikiLinkOptions } from "./wikiLink";
 
@@ -160,6 +160,7 @@ type MarkdownItLike = {
 
 type InlineState = {
   pos: number;
+  posMax: number;
   src: string;
   push: (
     type: string,
@@ -168,28 +169,63 @@ type InlineState = {
   ) => { markup: string; content: string };
 };
 
+function isInlineWhitespace(ch: string): boolean {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+}
+
 /**
  * markdown-it plugin: ==text== → <mark>text</mark>
+ * Flanking like **: no space after opener / before closer; scan clamped to posMax.
  * ponytail: flat text inside marks (no nested emphasis); enough for ENG-53.
  */
 function markdownItMark(md: MarkdownItLike): void {
-  md.inline.ruler.after("emphasis", "mark", (state, silent) => {
+  md.inline.ruler.after("link", "mark", (state, silent) => {
+    // skipToken (link labels) must not jump to a far closer past `]` (ENG-94).
+    if (silent) {
+      return false;
+    }
     const start = state.pos;
+    if (start + 1 >= state.posMax) {
+      return false;
+    }
     if (state.src.slice(start, start + 2) !== "==") {
       return false;
     }
-    const close = state.src.indexOf("==", start + 2);
+    const contentStart = start + 2;
+    // No space after opener (left-flanking).
+    if (
+      contentStart >= state.posMax ||
+      isInlineWhitespace(state.src.charAt(contentStart))
+    ) {
+      return false;
+    }
+
+    // Find closer within posMax; no space before closer; non-empty content.
+    let close = -1;
+    for (let i = contentStart; i + 1 < state.posMax; i++) {
+      if (state.src.slice(i, i + 2) !== "==") {
+        continue;
+      }
+      if (i === contentStart) {
+        continue;
+      }
+      if (isInlineWhitespace(state.src.charAt(i - 1))) {
+        continue;
+      }
+      close = i;
+      break;
+    }
     if (close < 0) {
       return false;
     }
-    if (!silent) {
-      const open = state.push("mark_open", "mark", 1);
-      open.markup = "==";
-      const text = state.push("text", "", 0);
-      text.content = state.src.slice(start + 2, close);
-      const end = state.push("mark_close", "mark", -1);
-      end.markup = "==";
-    }
+
+    // `silent` already returned above — always emit tokens here.
+    const open = state.push("mark_open", "mark", 1);
+    open.markup = "==";
+    const text = state.push("text", "", 0);
+    text.content = state.src.slice(contentStart, close);
+    const end = state.push("mark_close", "mark", -1);
+    end.markup = "==";
     state.pos = close + 2;
     return true;
   });
@@ -420,7 +456,10 @@ export function noteEditorExtensions(
       heading: { levels: [1, 2, 3, 4, 5, 6] },
       codeBlock: false,
       link: false,
+      // Replaced by TablePipeSafeText (ENG-88 pipe escape in cells).
+      text: false,
     }),
+    TablePipeSafeText,
     NoteLink,
     Highlight,
     CodeBlockLowlight.configure({ lowlight }),
@@ -442,7 +481,9 @@ export function noteEditorExtensions(
     Placeholder.configure({ placeholder: "Start writing…" }),
     // Task pills are ENG-61.
     Markdown.configure({
-      html: false,
+      // html:true so hardBreak in table cells serializes as <br> (tiptap-markdown
+      // falls back to "[hardBreak]" when html is off — ENG-88).
+      html: true,
       transformPastedText: true,
     }),
   ];

@@ -41,6 +41,23 @@ describe("editor media helpers", () => {
     const file = new File(["hi"], "notes.txt", { type: "text/plain" });
     await expect(saveNoteImage(file)).rejects.toThrow(/not an image/);
   });
+
+  it("rejects oversized images before IPC (ENG-96)", async () => {
+    const tooBig = new Uint8Array(15 * 1024 * 1024 + 1);
+    const file = new File([tooBig], "huge.png", { type: "image/png" });
+    await expect(saveNoteImage(file)).rejects.toThrow(/too large/);
+  });
+});
+
+describe("resolveInsertPos (ENG-96)", () => {
+  it("drops stale positions outside the doc", async () => {
+    const { resolveInsertPos } = await import("./NoteEditor");
+    expect(resolveInsertPos(10, 11)).toBeUndefined();
+    expect(resolveInsertPos(10, -1)).toBeUndefined();
+    expect(resolveInsertPos(10, undefined)).toBeUndefined();
+    expect(resolveInsertPos(10, 0)).toBe(0);
+    expect(resolveInsertPos(10, 10)).toBe(10);
+  });
 });
 
 describe("prompted link shortcut contract", () => {

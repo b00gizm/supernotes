@@ -64,10 +64,10 @@ export async function saveNoteImage(file: File): Promise<string> {
     });
   }
 
+  // Raw Uint8Array body — avoids Array.from + JSON on multi‑MB images (ENG-96).
   const buffer = new Uint8Array(await file.arrayBuffer());
-  return invoke<string>("save_note_image", {
-    bytes: Array.from(buffer),
-    extension: extensionForFile(file),
+  return invoke<string>("save_note_image", buffer, {
+    headers: { "x-supernotes-extension": extensionForFile(file) },
   });
 }
 

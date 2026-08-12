@@ -1,0 +1,17 @@
+[
+  {
+    "name": "unclosed wiki continues to tags and mentions",
+    "body": "before [[unclosed and #tag plus @Sam after",
+    "titles": ["tag", "Sam"]
+  },
+  {
+    "name": "closed wiki then unclosed then tag",
+    "body": "[[Ok]] then [[still open and #later",
+    "titles": ["Ok", "later"]
+  },
+  {
+    "name": "empty and task pills still skipped",
+    "body": "[[ ]] [[task:abc]] #keep",
+    "titles": ["keep"]
+  }
+]

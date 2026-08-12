@@ -401,6 +401,60 @@ describe("App shell", () => {
     expect(person?.body_markdown).toBe("");
   });
 
+  it("double-clicking unresolved wikilink creates only one note (ENG-97)", async () => {
+    const user = userEvent.setup();
+    const dailyTitle = formatDailyTitle();
+    const dailyBody = "Ping @Person";
+    const stamp = "2026-08-10T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily",
+        title: dailyTitle,
+        body_markdown: dailyBody,
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    await apiRef.current.updateNote({
+      id: "daily",
+      title: dailyTitle,
+      body_markdown: dailyBody,
+    });
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realCreate = apiRef.current.createNote.bind(apiRef.current);
+    const createSpy = vi
+      .spyOn(apiRef.current, "createNote")
+      .mockImplementation(async (input) => {
+        await gate;
+        return realCreate(input);
+      });
+
+    render(<App />);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    const personLink = await waitFor(() => {
+      const el = document.querySelector('.wiki-link[data-title="Person"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    await user.click(personLink);
+    await user.click(personLink);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    release();
+
+    expect(await screen.findByLabelText("Note title")).toHaveValue("Person");
+    const persons = (await apiRef.current.listNotes()).filter(
+      (note) => note.title.toLowerCase() === "person",
+    );
+    expect(persons).toHaveLength(1);
+  });
+
   it("Daily Note nav reopens today from a regular note", async () => {
     const user = userEvent.setup();
     const dailyTitle = formatDailyTitle();
