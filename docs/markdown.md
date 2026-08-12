@@ -74,7 +74,7 @@ fixtures already use that form).
   compact chips (tags vs mentions styled apart from wikilinks). Click /
   create-on-miss / `links` sync match wikilinks.
 
-## Task pills (ENG-61)
+## Task pills (ENG-61 / ENG-62)
 
 Square checklists (`- [ ]`) stay GFM task items. First-class tasks use a
 distinct pill node:
@@ -90,9 +90,13 @@ distinct pill node:
 - Does **not** use `- [ ]` syntax (that remains the lightweight checklist).
 - Typing `[]` + space at the start of a paragraph creates a DB task + pill.
   `- [ ]` / `[ ]` / `- []` (inside a list) still create square checkboxes.
-- Clicking the circle sets state to `done` (click again reopens). Waiting /
-  cancelled are set from elsewhere (Tasks view / metadata popover later).
+- Clicking the circle sets state to `done` (click again reopens). Right-click
+  (or the ··· hover control) opens the metadata popover: state
+  (Open / Waiting / Done / Cancel), due date (Today / Tomorrow / Next week +
+  month calendar; Clear removes the due date), and priority (P1 / P2 / P3 /
+  None → DB `high` / `medium` / `low` / `null`).
+- Compact due chips and priority dots render next to the title; metadata is
+  not encoded in markdown.
 - Deleting the pill in the editor **deletes** the task row (not orphaned).
-- State lives in SQLite (`open` \| `waiting` \| `done` \| `cancelled`); it is
-  not encoded in the markdown. On load, pills hydrate state from the `tasks`
-  table.
+- State / due / priority live in SQLite; on load, pills hydrate from the
+  `tasks` table.

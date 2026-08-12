@@ -134,6 +134,14 @@ function markdownItTaskPill(md: MarkdownItLike): void {
 export type TaskPillHandlers = {
   onSetState?: (id: string, state: TaskState) => void;
   onTitleCommit?: (id: string, title: string) => void;
+  onMetaUpdate?: (
+    id: string,
+    patch: {
+      state?: TaskState;
+      due_date?: string | null;
+      priority?: TaskPriority | null;
+    },
+  ) => void;
 };
 
 export type TaskPillOptions = {
@@ -267,6 +275,9 @@ export const TaskPill = Node.create<TaskPillOptions>({
     const taskId = String(node.attrs.taskId ?? "");
     const title = String(node.attrs.title ?? "");
     const state = parseState(String(node.attrs.state ?? "open"));
+    const dueDate =
+      typeof node.attrs.dueDate === "string" ? node.attrs.dueDate : null;
+    const priority = parsePriority(node.attrs.priority);
     return [
       "div",
       mergeAttributes(HTMLAttributes, {
@@ -274,6 +285,8 @@ export const TaskPill = Node.create<TaskPillOptions>({
         "data-task-id": taskId,
         "data-state": state,
         "data-title": title,
+        ...(dueDate ? { "data-due-date": dueDate } : {}),
+        ...(priority ? { "data-priority": priority } : {}),
         class: `task-pill is-${state}`,
       }),
     ];
@@ -284,9 +297,20 @@ export const TaskPill = Node.create<TaskPillOptions>({
       // Keep key events inside the title input (don't let PM steal them).
       stopEvent: ({ event }) => {
         const target = event.target;
-        return (
+        if (
           target instanceof HTMLInputElement &&
           target.classList.contains("task-pill-title")
+        ) {
+          return true;
+        }
+        // Keep meta / toggle clicks out of ProseMirror selection churn.
+        return (
+          target instanceof HTMLElement &&
+          Boolean(
+            target.closest(
+              ".task-pill-meta, .task-pill-toggle, .task-due-chip",
+            ),
+          )
         );
       },
     });
@@ -537,6 +561,35 @@ function wireTaskPillHandlers(options: TaskPillOptions, editor: Editor): void {
       })
       .catch((err: unknown) => {
         console.error("Failed to update task title", err);
+      });
+  };
+  bag.onMetaUpdate = (id, patch) => {
+    const node = findTaskNode(editor, id);
+    if (!node || !options.updateTask) {
+      return;
+    }
+    // Prefer patch values — node attrs can still be pre-optimistic after await.
+    const dueDate =
+      patch.due_date !== undefined
+        ? patch.due_date
+        : typeof node.attrs.dueDate === "string"
+          ? node.attrs.dueDate
+          : null;
+    const priority =
+      patch.priority !== undefined
+        ? patch.priority
+        : parsePriority(node.attrs.priority);
+    const state = patch.state ?? parseState(String(node.attrs.state ?? "open"));
+    void options
+      .updateTask({
+        id,
+        title: String(node.attrs.title ?? ""),
+        state,
+        due_date: dueDate,
+        priority,
+      })
+      .catch((err: unknown) => {
+        console.error("Failed to update task metadata", err);
       });
   };
 }

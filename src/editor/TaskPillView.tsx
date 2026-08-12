@@ -1,6 +1,11 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { useEffect, useRef, useState } from "react";
-import type { TaskState } from "../tasks/types";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
+import { dueChip } from "../tasks/due";
+import { priorityDotClass } from "../tasks/priority";
+import { TaskMetaPopover } from "../tasks/TaskMetaPopover";
+import { TaskStateIcon } from "../tasks/TaskStateIcon";
+import type { Task, TaskPriority, TaskState } from "../tasks/types";
 import { taskPillHandlers } from "./taskPill";
 
 function parseState(value: unknown): TaskState {
@@ -10,76 +15,22 @@ function parseState(value: unknown): TaskState {
   return "open";
 }
 
-/** Circle glyphs per component sheet 1a. */
-function StateIcon({ state }: { state: TaskState }) {
-  if (state === "done") {
-    return (
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="task-pill-icon">
-        <circle cx="8" cy="8" r="7" fill="currentColor" />
-        <path
-          d="M4.5 8.2l2.2 2.2 4.8-5"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
+function parsePriority(value: unknown): TaskPriority | null {
+  if (
+    value === "none" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "urgent"
+  ) {
+    return value;
   }
-  if (state === "cancelled") {
-    return (
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="task-pill-icon">
-        <circle cx="8" cy="8" r="6.25" fill="currentColor" opacity="0.45" />
-        <path
-          d="M5.2 5.2l5.6 5.6M10.8 5.2l-5.6 5.6"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-        />
-      </svg>
-    );
-  }
-  if (state === "waiting") {
-    return (
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="task-pill-icon">
-        <circle
-          cx="8"
-          cy="8"
-          r="6.25"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          d="M8 4.75V8l2 1.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="task-pill-icon">
-      <circle
-        cx="8"
-        cy="8"
-        r="6.25"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-    </svg>
-  );
+  return null;
 }
 
 /**
- * Borderless task pill (component sheet 1a): circle + editable title.
- * Clicking the circle resolves to Done (click again reopens).
+ * Borderless task pill (component sheet 1a): circle + title + due/priority.
+ * Clicking the circle resolves to Done; right-click / ··· opens metadata.
  */
 export function TaskPillView({
   node,
@@ -91,10 +42,19 @@ export function TaskPillView({
   const state = parseState(node.attrs.state);
   const title = String(node.attrs.title ?? "");
   const taskId = String(node.attrs.taskId ?? "");
+  const dueDate =
+    typeof node.attrs.dueDate === "string" ? node.attrs.dueDate : null;
+  const priority = parsePriority(node.attrs.priority);
   const wantsFocus = Boolean(node.attrs.autofocus);
   const [draft, setDraft] = useState(title);
+  const [metaAnchor, setMetaAnchor] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const handlers = taskPillHandlers(editor);
+  const terminal = state === "done" || state === "cancelled";
+  const chip = dueChip(dueDate, undefined, { terminal });
+  const dot = priorityDotClass(priority);
 
   useEffect(() => {
     setDraft(title);
@@ -155,6 +115,25 @@ export function TaskPillView({
     handlers.onSetState?.(taskId, next);
   };
 
+  const openMeta = (x: number, y: number) => {
+    if (!taskId || taskId.startsWith("pending-")) {
+      return;
+    }
+    setMetaAnchor({ x, y });
+  };
+
+  const metaTask: Task = {
+    id: taskId,
+    note_id: "",
+    title,
+    state,
+    due_date: dueDate,
+    priority,
+    created_at: "",
+    updated_at: "",
+    completed_at: null,
+  };
+
   return (
     <NodeViewWrapper
       as="div"
@@ -162,8 +141,15 @@ export function TaskPillView({
       data-type="task-pill"
       data-task-id={taskId || undefined}
       data-state={state}
+      data-due-date={dueDate || undefined}
+      data-priority={priority || undefined}
       data-autofocus={wantsFocus ? "true" : undefined}
       data-drag-handle
+      onContextMenu={(event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openMeta(event.clientX, event.clientY);
+      }}
     >
       <button
         type="button"
@@ -179,7 +165,7 @@ export function TaskPillView({
           toggleDone();
         }}
       >
-        <StateIcon state={state} />
+        <TaskStateIcon state={state} />
       </button>
       <input
         ref={inputRef}
@@ -215,6 +201,60 @@ export function TaskPillView({
           }
         }}
       />
+      {chip ? (
+        <span
+          className={`task-due-chip is-${chip.tone}`}
+          contentEditable={false}
+        >
+          {chip.label}
+        </span>
+      ) : null}
+      {dot ? (
+        <span
+          className={`task-priority-dot ${dot}`}
+          aria-hidden="true"
+          contentEditable={false}
+        />
+      ) : null}
+      <button
+        type="button"
+        className="task-pill-meta"
+        aria-label="Edit task metadata"
+        contentEditable={false}
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = event.currentTarget.getBoundingClientRect();
+          openMeta(rect.left, rect.bottom + 4);
+        }}
+      >
+        ···
+      </button>
+      {metaAnchor
+        ? createPortal(
+            <TaskMetaPopover
+              task={metaTask}
+              anchor={metaAnchor}
+              onClose={() => {
+                setMetaAnchor(null);
+              }}
+              onUpdate={(patch) => {
+                updateAttributes({
+                  state: patch.state ?? state,
+                  dueDate:
+                    patch.due_date === undefined ? dueDate : patch.due_date,
+                  priority:
+                    patch.priority === undefined ? priority : patch.priority,
+                });
+                handlers.onMetaUpdate?.(taskId, patch);
+              }}
+            />,
+            document.body,
+          )
+        : null}
     </NodeViewWrapper>
   );
 }
