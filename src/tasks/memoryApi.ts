@@ -1,4 +1,5 @@
 import { filterTasks } from "./query";
+import { emitTasksChanged } from "./events";
 import type {
   CreateTaskInput,
   Task,
@@ -34,6 +35,7 @@ export function createMemoryTasksApi(seed: Task[] = []): TasksApi {
         completed_at: state === "done" || state === "cancelled" ? now : null,
       };
       tasks = [...tasks, task];
+      emitTasksChanged(task.note_id);
       return Promise.resolve(task);
     },
     getTask(id: string) {
@@ -51,6 +53,18 @@ export function createMemoryTasksApi(seed: Task[] = []): TasksApi {
         tasks
           .filter((task) => task.note_id === noteId)
           .sort((a, b) => a.created_at.localeCompare(b.created_at)),
+      );
+    },
+    searchTasks(query: string) {
+      const needle = query.trim().toLowerCase();
+      const listed = [...tasks].sort((a, b) =>
+        b.updated_at.localeCompare(a.updated_at),
+      );
+      if (!needle) {
+        return Promise.resolve(listed);
+      }
+      return Promise.resolve(
+        listed.filter((task) => task.title.toLowerCase().includes(needle)),
       );
     },
     updateTask(input: UpdateTaskInput) {
@@ -75,6 +89,7 @@ export function createMemoryTasksApi(seed: Task[] = []): TasksApi {
         completed_at,
       };
       tasks = tasks.map((item) => (item.id === input.id ? updated : item));
+      emitTasksChanged(updated.note_id);
       return Promise.resolve(updated);
     },
     deleteTask(id: string) {
@@ -83,6 +98,7 @@ export function createMemoryTasksApi(seed: Task[] = []): TasksApi {
       if (tasks.length === before) {
         return Promise.reject(new Error("not found"));
       }
+      emitTasksChanged();
       return Promise.resolve();
     },
   };

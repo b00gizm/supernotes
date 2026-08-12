@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { formatDailyTitle } from "../notes/format";
 import { shiftYmd } from "./due";
+import { emitTasksChanged } from "./events";
 import { createMemoryTasksApi } from "./memoryApi";
 import type {
   CreateTaskInput,
@@ -14,6 +15,7 @@ export type TasksApi = {
   getTask: (id: string) => Promise<Task>;
   listTasks: (filter: TaskListFilter, today: string) => Promise<Task[]>;
   listTasksForNote: (noteId: string) => Promise<Task[]>;
+  searchTasks: (query: string) => Promise<Task[]>;
   updateTask: (input: UpdateTaskInput) => Promise<Task>;
   deleteTask: (id: string) => Promise<void>;
 };
@@ -25,6 +27,7 @@ const tauriTasksApi: TasksApi = {
   listTasks: (filter, today) => invoke<Task[]>("list_tasks", { filter, today }),
   listTasksForNote: (noteId) =>
     invoke<Task[]>("list_tasks_for_note", { noteId }),
+  searchTasks: (query) => invoke<Task[]>("search_tasks", { query }),
   updateTask: (input) => invoke<Task>("update_task", { input }),
   deleteTask: async (id) => {
     await invoke("delete_task", { id });
@@ -143,6 +146,29 @@ function demoTasks(): Task[] {
 }
 
 /** Browser `npm run dev` has no Tauri IPC; use memory so the shell is previewable. */
-export const tasksApi: TasksApi = isTauriRuntime()
-  ? tauriTasksApi
-  : createMemoryTasksApi(demoTasks());
+function withTaskInvalidation(api: TasksApi): TasksApi {
+  return {
+    createTask: async (input) => {
+      const task = await api.createTask(input);
+      emitTasksChanged(task.note_id);
+      return task;
+    },
+    getTask: (id) => api.getTask(id),
+    listTasks: (filter, today) => api.listTasks(filter, today),
+    listTasksForNote: (noteId) => api.listTasksForNote(noteId),
+    searchTasks: (query) => api.searchTasks(query),
+    updateTask: async (input) => {
+      const task = await api.updateTask(input);
+      emitTasksChanged(task.note_id);
+      return task;
+    },
+    deleteTask: async (id) => {
+      await api.deleteTask(id);
+      emitTasksChanged();
+    },
+  };
+}
+
+export const tasksApi: TasksApi = withTaskInvalidation(
+  isTauriRuntime() ? tauriTasksApi : createMemoryTasksApi(demoTasks()),
+);

@@ -61,6 +61,7 @@ vi.mock("./tasks/api", async () => {
       ) => tasksApiRef.current.listTasks(filter, today),
       listTasksForNote: (noteId: string) =>
         tasksApiRef.current.listTasksForNote(noteId),
+      searchTasks: (query: string) => tasksApiRef.current.searchTasks(query),
       updateTask: (input: Parameters<TasksApi["updateTask"]>[0]) =>
         tasksApiRef.current.updateTask(input),
       deleteTask: (id: string) => tasksApiRef.current.deleteTask(id),

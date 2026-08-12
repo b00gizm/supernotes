@@ -57,6 +57,13 @@ pub fn list_tasks_for_note(state: State<'_, Db>, note_id: String) -> Result<Vec<
 }
 
 #[tauri::command]
+pub fn search_tasks(state: State<'_, Db>, query: String) -> Result<Vec<Task>, String> {
+    state
+        .with_conn(|conn| Repository::new(conn).search_tasks_by_title(&query))
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub fn list_tasks(
     state: State<'_, Db>,
     filter: TaskListFilter,

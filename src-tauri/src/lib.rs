@@ -10,7 +10,9 @@ use notes::{
     create_note, delete_note, get_note, get_or_create_daily_note, list_links_from, list_links_to,
     list_notes, search_notes, set_note_pinned, update_note,
 };
-use tasks::{create_task, delete_task, get_task, list_tasks, list_tasks_for_note, update_task};
+use tasks::{
+    create_task, delete_task, get_task, list_tasks, list_tasks_for_note, search_tasks, update_task,
+};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -42,6 +44,7 @@ pub fn run() {
             get_task,
             list_tasks,
             list_tasks_for_note,
+            search_tasks,
             update_task,
             delete_task,
             save_note_image,

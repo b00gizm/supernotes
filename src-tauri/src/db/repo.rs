@@ -421,6 +421,19 @@ impl<'a> Repository<'a> {
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
+    /// Title search for ⌘K (ENG-122). Empty query returns all tasks, newest first.
+    pub fn search_tasks_by_title(&self, query: &str) -> DbResult<Vec<Task>> {
+        let pattern = like_contains_pattern(&query.to_lowercase());
+        let mut stmt = self.conn.prepare(
+            "SELECT id, note_id, title, state, due_date, priority, created_at, updated_at, completed_at
+             FROM tasks
+             WHERE LOWER(title) LIKE ?1 ESCAPE '\\'
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map([pattern], map_task)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
     /// Inbox / Upcoming / Complete queries for the Tasks sidebar (ENG-63).
     /// `today` is local calendar `YYYY-MM-DD` (overdue + 14-day complete window).
     pub fn list_tasks(&self, filter: TaskListFilter, today: &str) -> DbResult<Vec<Task>> {
@@ -436,7 +449,7 @@ impl<'a> Repository<'a> {
             TaskListFilter::Inbox => (
                 "SELECT id, note_id, title, state, due_date, priority, created_at, updated_at, completed_at
                  FROM tasks
-                 WHERE state = 'open' AND due_date IS NULL
+                 WHERE state IN ('open', 'waiting') AND due_date IS NULL
                  ORDER BY created_at DESC"
                     .to_string(),
                 vec![],
@@ -1124,7 +1137,7 @@ mod tests {
         let inbox = repo
             .create_task(&note.id, "Inbox item", TaskState::Open, None, None)
             .unwrap();
-        let _waiting_no_due = repo
+        let waiting_no_due = repo
             .create_task(
                 &note.id,
                 "Waiting undated",
@@ -1180,8 +1193,9 @@ mod tests {
         .unwrap();
 
         let inbox_list = repo.list_tasks(TaskListFilter::Inbox, "2026-08-12").unwrap();
-        assert_eq!(inbox_list.len(), 1);
-        assert_eq!(inbox_list[0].id, inbox.id);
+        assert_eq!(inbox_list.len(), 2);
+        assert_eq!(inbox_list[0].id, waiting_no_due.id);
+        assert_eq!(inbox_list[1].id, inbox.id);
 
         let upcoming = repo
             .list_tasks(TaskListFilter::Upcoming, "2026-08-12")
@@ -1196,6 +1210,38 @@ mod tests {
             .unwrap();
         assert_eq!(complete.len(), 1);
         assert_eq!(complete[0].id, done_recent.id);
+    }
+
+    #[test]
+    fn search_tasks_by_title_is_case_insensitive_and_escapes_like() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let repo = Repository::new(&conn);
+        let note = repo
+            .create_note("Tasks", "", NoteType::Regular, false)
+            .unwrap();
+        repo.create_task(&note.id, "Buy milk", TaskState::Open, None, None)
+            .unwrap();
+        repo.create_task(&note.id, "MILK run", TaskState::Waiting, None, None)
+            .unwrap();
+        repo.create_task(&note.id, "100% done_draft", TaskState::Open, None, None)
+            .unwrap();
+        repo.create_task(&note.id, "Unrelated", TaskState::Open, None, None)
+            .unwrap();
+
+        let hits = repo.search_tasks_by_title("MILK").unwrap();
+        assert_eq!(hits.len(), 2);
+        assert!(hits.iter().all(|t| t.title.to_lowercase().contains("milk")));
+
+        let literal = repo.search_tasks_by_title("100%").unwrap();
+        assert_eq!(literal.len(), 1);
+        assert_eq!(literal[0].title, "100% done_draft");
+
+        let underscore = repo.search_tasks_by_title("done_draft").unwrap();
+        assert_eq!(underscore.len(), 1);
+
+        let empty = repo.search_tasks_by_title("").unwrap();
+        assert_eq!(empty.len(), 4);
     }
 
     #[test]

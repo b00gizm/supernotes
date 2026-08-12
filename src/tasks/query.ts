@@ -296,8 +296,13 @@ export function filterTasks(
   today: string,
 ): Task[] {
   if (filter === "inbox") {
+    // ENG-117: undated Waiting has no other home; Inbox is all undated non-terminal.
     return tasks
-      .filter((task) => task.state === "open" && task.due_date == null)
+      .filter(
+        (task) =>
+          (task.state === "open" || task.state === "waiting") &&
+          task.due_date == null,
+      )
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
   if (filter === "upcoming") {
