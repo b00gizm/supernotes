@@ -7,7 +7,7 @@ import { priorityDotClass } from "./priority";
 import { TaskStateIcon } from "./TaskStateIcon";
 import type { Task } from "./types";
 
-export function noteLabel(note: Note): string {
+function noteLabel(note: Note): string {
   if (note.note_type === "daily") {
     const parsed = parseDailyTitle(note.title);
     if (parsed) {
