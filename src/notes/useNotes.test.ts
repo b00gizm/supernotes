@@ -182,4 +182,216 @@ describe("useNotes", () => {
     // Pinning is metadata-only and must not masquerade as an edit.
     expect(pinned?.updated_at).toBe("2026-08-09T10:00:00.000Z");
   });
+
+  it("does not write the previous note body into a create-on-click note", async () => {
+    // Stale TipTap onUpdate from the daily editor must not dirty Person after
+    // create-on-click; navigating away must not persist daily text onto Person.
+    const dailyBody = "Discuss [[Existing]] with @Person";
+    const api = createMemoryNotesApi([
+      seedNote({
+        id: "daily",
+        title: "Friday, August 8, 2025",
+        body_markdown: dailyBody,
+        note_type: "daily",
+        updated_at: "2026-08-10T12:00:00.000Z",
+      }),
+      seedNote({
+        id: "existing",
+        title: "Existing",
+        body_markdown: "",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      }),
+    ]);
+
+    const { result } = renderHook(() => useNotes({ api, autoSelect: false }));
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    act(() => {
+      result.current.selectNote("daily");
+    });
+    expect(result.current.bodyDraft).toBe(dailyBody);
+
+    let personId = "";
+    await act(async () => {
+      const created = await result.current.createNote("Person");
+      expect(created).not.toBeNull();
+      if (!created) {
+        return;
+      }
+      personId = created.id;
+    });
+
+    await waitFor(() => {
+      expect(result.current.selectedId).toBe(personId);
+      expect(result.current.bodyDraft).toBe("");
+    });
+
+    // App openWikiLink used to re-select via openFromSearch after create.
+    act(() => {
+      result.current.selectNote(personId);
+    });
+    expect(result.current.selectedId).toBe(personId);
+
+    // Stale onUpdate from the daily editor (wrong fromNoteId) is ignored.
+    act(() => {
+      result.current.setBodyDraft(dailyBody, "daily");
+    });
+    expect(result.current.bodyDraft).toBe("");
+    expect(result.current.status).toBe("idle");
+
+    act(() => {
+      result.current.selectNote("daily");
+    });
+
+    await waitFor(() => {
+      const person = result.current.notes.find((note) => note.id === personId);
+      expect(person?.body_markdown).toBe("");
+    });
+
+    const listed = await api.listNotes();
+    expect(listed.find((note) => note.id === personId)?.body_markdown).toBe("");
+  });
+
+  it("openWikiLink double-select must not clear selection or flush daily into Person", async () => {
+    // createNote applySelection(created) then selectNote(id) before React
+    // flushes must still find Person (notesRef updated eagerly).
+    const dailyBody = "Discuss [[Existing]] with @Person";
+    const api = createMemoryNotesApi([
+      seedNote({
+        id: "daily",
+        title: "Daily",
+        body_markdown: dailyBody,
+        note_type: "daily",
+      }),
+      seedNote({
+        id: "existing",
+        title: "Existing",
+        body_markdown: "",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      }),
+    ]);
+
+    const updateCalls: { id: string; body: string }[] = [];
+    const realUpdate = api.updateNote.bind(api);
+    vi.spyOn(api, "updateNote").mockImplementation(async (input) => {
+      updateCalls.push({ id: input.id, body: input.body_markdown });
+      return realUpdate(input);
+    });
+
+    const { result } = renderHook(() => useNotes({ api, autoSelect: false }));
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    act(() => {
+      result.current.selectNote("daily");
+    });
+
+    act(() => {
+      result.current.setBodyDraft(`${dailyBody} `);
+    });
+    expect(result.current.status).toBe("dirty");
+
+    let personId = "";
+    await act(async () => {
+      const created = await result.current.createNote("Person");
+      expect(created).not.toBeNull();
+      if (!created) {
+        return;
+      }
+      personId = created.id;
+      result.current.selectNote(personId);
+    });
+
+    await waitFor(() => {
+      expect(result.current.selectedId).toBe(personId);
+    });
+    expect(result.current.bodyDraft).toBe("");
+
+    expect(
+      updateCalls.some(
+        (call) => call.id === personId && call.body.includes("[[Existing]]"),
+      ),
+    ).toBe(false);
+    expect(
+      result.current.notes.find((note) => note.id === personId)?.body_markdown,
+    ).toBe("");
+  });
+
+  it("createNote then immediate selectNote must not persist daily draft onto Person", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const dailyBody = "Discuss [[Existing]] with @Person";
+    const api = createMemoryNotesApi([
+      seedNote({
+        id: "daily",
+        title: "Daily",
+        body_markdown: dailyBody,
+        note_type: "daily",
+      }),
+      seedNote({
+        id: "existing",
+        title: "Existing",
+        body_markdown: "",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      }),
+    ]);
+
+    const realUpdate = api.updateNote.bind(api);
+    vi.spyOn(api, "updateNote").mockImplementation(async (input) => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
+      return realUpdate(input);
+    });
+
+    const { result } = renderHook(() =>
+      useNotes({ api, autoSelect: false, debounceMs: 500 }),
+    );
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+    expect(result.current.loading).toBe(false);
+
+    act(() => {
+      result.current.selectNote("daily");
+    });
+
+    act(() => {
+      result.current.setBodyDraft(`${dailyBody}!`);
+    });
+    expect(result.current.status).toBe("dirty");
+
+    let personId = "";
+    await act(async () => {
+      const created = await result.current.createNote("Person");
+      expect(created).not.toBeNull();
+      if (!created) {
+        return;
+      }
+      personId = created.id;
+    });
+
+    await waitFor(() => {
+      expect(result.current.selectedId).toBe(personId);
+    });
+
+    // Stale onChange attributed to the daily note while Person is selected.
+    act(() => {
+      result.current.setBodyDraft(`${dailyBody}!`, "daily");
+    });
+    expect(result.current.bodyDraft).toBe("");
+
+    act(() => {
+      result.current.selectNote("daily");
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    const person = result.current.notes.find((note) => note.id === personId);
+    expect(person?.body_markdown).toBe("");
+  });
 });

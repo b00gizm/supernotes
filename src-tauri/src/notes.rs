@@ -93,6 +93,13 @@ pub fn list_links_from(
         .map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+pub fn list_links_to(state: State<'_, Db>, target_note_id: String) -> Result<Vec<Link>, String> {
+    state
+        .with_conn(|conn| Repository::new(conn).list_links_to(&target_note_id))
+        .map_err(|err| err.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

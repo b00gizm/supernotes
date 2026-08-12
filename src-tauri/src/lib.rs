@@ -5,8 +5,8 @@ mod notes;
 use db::Db;
 use media::{resolve_note_image_path, save_note_image};
 use notes::{
-    create_note, delete_note, get_note, list_links_from, list_notes, search_notes, set_note_pinned,
-    update_note,
+    create_note, delete_note, get_note, list_links_from, list_links_to, list_notes, search_notes,
+    set_note_pinned, update_note,
 };
 use tauri::Manager;
 
@@ -32,6 +32,7 @@ pub fn run() {
             set_note_pinned,
             delete_note,
             list_links_from,
+            list_links_to,
             save_note_image,
             resolve_note_image_path
         ])

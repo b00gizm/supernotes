@@ -19,6 +19,7 @@ import {
   startOfLocalDay,
 } from "./notes/format";
 import { NoteEditor } from "./editor/NoteEditor";
+import { Backlinks } from "./notes/Backlinks";
 import {
   isSearchKpiMode,
   runSearchKpi,
@@ -513,9 +514,11 @@ function App() {
   };
 
   const createFromSearch = (title: string) => {
+    // Leave daily before notes.length bumps so ensureDaily can't steal selection.
+    setSurface({ kind: "note", id: "" });
     void createNote(title).then((created) => {
       if (created) {
-        setSurface({ kind: "note", id: created.id });
+        openFromSearch(created);
       }
     });
   };
@@ -530,6 +533,9 @@ function App() {
       return;
     }
     // Create-on-click: title = link text, empty body (ENG-56).
+    // Leave the daily surface first — otherwise ensureDaily re-selects today
+    // when createNote bumps notes.length (one-frame race).
+    setSurface({ kind: "note", id: "" });
     void createNote(link.title).then((created) => {
       if (created) {
         openFromSearch(created);
@@ -833,6 +839,14 @@ function App() {
                 notes={notes}
                 currentNoteId={selectedId}
                 onOpenWikiLink={openWikiLink}
+              />
+            ) : null}
+            {selectedId ? (
+              <Backlinks
+                noteId={selectedId}
+                noteTitle={titleDraft}
+                notes={notes}
+                onOpen={openFromSearch}
               />
             ) : null}
           </section>

@@ -50,7 +50,10 @@ fixtures already use that form).
   **title**. Renaming a note rewrites `[[old]]` → `[[new]]` in notes that link
   to it (without bumping those notes' `updated_at`). The `links` table is the
   ID index (see `docs/data-model.md`), synced from `[[…]]` / `#tag` / `@mention`
-  on every note save.
+  on every note save. A read-only Backlinks section below the editor lists
+  inbound sources from that index (never written into the note body). Creating
+  a note backfills link rows from bodies that already mentioned its title
+  (create-on-click for a missing `@Sam` / `#tag` / `[[Title]]`).
 - Typing `[[` opens an inline title autocomplete; click navigates, creating the
   target note on first click when missing.
 

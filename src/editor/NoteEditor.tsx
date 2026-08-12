@@ -16,7 +16,8 @@ import {
 export type NoteEditorProps = {
   /** Initial markdown; remount (via `key`) when switching notes. */
   markdown: string;
-  onChange: (markdown: string) => void;
+  /** Second arg is the note this editor belongs to (ignore stale updates). */
+  onChange: (markdown: string, noteId: string | null) => void;
   notes?: Note[];
   currentNoteId?: string | null;
   /** Navigate to an existing note or create-on-click when missing. */
@@ -252,7 +253,13 @@ export function NoteEditor({
       },
     },
     onUpdate: ({ editor: current }) => {
-      onChange(getEditorMarkdown(current) || current.getText());
+      if (current.isDestroyed) {
+        return;
+      }
+      onChange(
+        getEditorMarkdown(current) || current.getText(),
+        currentNoteIdRef.current,
+      );
     },
   });
 

@@ -51,6 +51,8 @@ impl<'a> Repository<'a> {
             ],
         )?;
         self.sync_links_from_body(&note.id, body_markdown)?;
+        // Unresolved `[[…]]` / `#` / `@` at earlier saves gain rows once the target exists.
+        self.backfill_incoming_links(&note)?;
         Ok(note)
     }
 
@@ -248,6 +250,35 @@ impl<'a> Repository<'a> {
             }
         }
         self.replace_links_for_source(source_note_id, &targets)
+    }
+
+    /// When a note is created, attach link rows from existing bodies that already
+    /// mention its title (create-on-click / late target).
+    /// ponytail: O(n notes) scan on create — fine for personal corpora; index later if needed.
+    fn backfill_incoming_links(&self, new_note: &Note) -> DbResult<()> {
+        let sources = self.list_notes()?;
+        for source in sources {
+            if source.id == new_note.id {
+                continue;
+            }
+            let mut mentions = false;
+            for title in extract_wikilink_titles(&source.body_markdown) {
+                if let Some(target) = self.find_note_by_title(&title)? {
+                    if target.id == new_note.id {
+                        mentions = true;
+                        break;
+                    }
+                }
+            }
+            if !mentions {
+                continue;
+            }
+            if matches!(self.get_link(&source.id, &new_note.id), Ok(_)) {
+                continue;
+            }
+            let _ = self.create_link(&source.id, &new_note.id)?;
+        }
+        Ok(())
     }
 
     fn rewrite_incoming_wikilink_titles(
@@ -841,6 +872,38 @@ mod tests {
 
             repo.update_note(&source.id, "Source", "no links").unwrap();
             assert!(repo.list_links_from(&source.id).unwrap().is_empty());
+        });
+    }
+
+    #[test]
+    fn create_note_backfills_links_from_existing_mentions() {
+        with_repo(|repo| {
+            let source = repo
+                .create_note(
+                    "Source",
+                    "Ask @Sam about #project and [[Missing]].",
+                    NoteType::Regular,
+                    false,
+                )
+                .unwrap();
+            assert!(repo.list_links_from(&source.id).unwrap().is_empty());
+
+            let sam = repo
+                .create_note("Sam", "", NoteType::Regular, false)
+                .unwrap();
+            let project = repo
+                .create_note("project", "", NoteType::Regular, false)
+                .unwrap();
+
+            let to_sam = repo.list_links_to(&sam.id).unwrap();
+            assert_eq!(to_sam.len(), 1);
+            assert_eq!(to_sam[0].source_note_id, source.id);
+
+            let to_project = repo.list_links_to(&project.id).unwrap();
+            assert_eq!(to_project.len(), 1);
+            assert_eq!(to_project[0].source_note_id, source.id);
+
+            assert!(repo.list_links_from(&source.id).unwrap().len() >= 2);
         });
     }
 

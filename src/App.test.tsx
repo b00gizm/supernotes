@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -25,6 +25,10 @@ vi.mock("./notes/api", async () => {
       setPinned: (id: string, pinned: boolean) =>
         apiRef.current.setPinned(id, pinned),
       deleteNote: (id: string) => apiRef.current.deleteNote(id),
+      listLinksFrom: (sourceNoteId: string) =>
+        apiRef.current.listLinksFrom(sourceNoteId),
+      listLinksTo: (targetNoteId: string) =>
+        apiRef.current.listLinksTo(targetNoteId),
     },
   };
 });
@@ -285,5 +289,156 @@ describe("App shell", () => {
     await user.keyboard("{ArrowDown}{Enter}");
     expect(await screen.findByLabelText("Note title")).toHaveValue("pricing");
     expect(screen.queryByLabelText("Search notes")).not.toBeInTheDocument();
+  });
+
+  it("shows backlinks from the links index and hides when empty", async () => {
+    const user = userEvent.setup();
+    const stamp = "2026-08-09T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "foo",
+        title: "Foo",
+        body_markdown: "",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+      {
+        id: "src",
+        title: "Source note",
+        body_markdown: "See [[Foo]] tomorrow.",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    // Seed link rows (createMemoryNotesApi only syncs on create/update).
+    await apiRef.current.updateNote({
+      id: "src",
+      title: "Source note",
+      body_markdown: "See [[Foo]] tomorrow.",
+    });
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    await user.click(screen.getByRole("button", { name: /^Foo\b/ }));
+    const backlinks = await screen.findByRole("region", { name: "Backlinks" });
+    expect(
+      within(backlinks).getByRole("button", { name: /Source note/ }),
+    ).toBeInTheDocument();
+    const match = within(backlinks).getByText("[[Foo]]");
+    expect(match.tagName).toBe("MARK");
+    expect(match).toHaveClass("backlink-match");
+    expect(match.parentElement).toHaveTextContent("See [[Foo]] tomorrow.");
+
+    await user.click(
+      within(backlinks).getByRole("button", { name: /Source note/ }),
+    );
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Source note",
+    );
+    expect(
+      screen.queryByRole("region", { name: "Backlinks" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("create-on-click @Person keeps an empty Person note selected", async () => {
+    // From the daily surface, create-on-click must open Person in one click
+    // (leave daily before notes.length bumps so ensureDaily cannot steal).
+    const user = userEvent.setup();
+    const dailyTitle = formatDailyTitle();
+    const dailyBody = "Discuss [[Existing]] with @Person";
+    const stamp = "2026-08-10T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily",
+        title: dailyTitle,
+        body_markdown: dailyBody,
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+      {
+        id: "existing",
+        title: "Existing",
+        body_markdown: "",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    await apiRef.current.updateNote({
+      id: "daily",
+      title: dailyTitle,
+      body_markdown: dailyBody,
+    });
+
+    render(<App />);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    await screen.findByLabelText("Note body");
+
+    const personLink = await waitFor(() => {
+      const el = document.querySelector('.wiki-link[data-title="Person"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(personLink);
+
+    expect(await screen.findByLabelText("Note title")).toHaveValue("Person");
+    expect(await screen.findByLabelText("Note body")).toHaveTextContent("");
+    expect(
+      await screen.findByRole("button", { name: "Back to Notes" }),
+    ).toBeInTheDocument();
+
+    const person = (await apiRef.current.listNotes()).find(
+      (note) => note.title === "Person",
+    );
+    expect(person?.body_markdown).toBe("");
+  });
+
+  it("Daily Note nav reopens today from a regular note", async () => {
+    const user = userEvent.setup();
+    const dailyTitle = formatDailyTitle();
+    const stamp = "2026-08-10T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily",
+        title: dailyTitle,
+        body_markdown: "",
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+      {
+        id: "other",
+        title: "Other note",
+        body_markdown: "hello",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+
+    render(<App />);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+
+    await user.click(screen.getByRole("button", { name: /^Other note\b/ }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Other note",
+    );
+
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    await user.click(within(nav).getByRole("button", { name: "Daily Note" }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    expect(
+      screen.queryByRole("button", { name: "Back to Notes" }),
+    ).not.toBeInTheDocument();
   });
 });

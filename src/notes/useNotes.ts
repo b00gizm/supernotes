@@ -18,6 +18,12 @@ export type UseNotesOptions = {
   autoSelect?: boolean;
 };
 
+type DraftSnapshot = {
+  id: string;
+  title: string;
+  body: string;
+};
+
 export function useNotes(options: UseNotesOptions = {}) {
   const api = options.api ?? defaultNotesApi;
   const debounceMs = options.debounceMs ?? AUTOSAVE_DEBOUNCE_MS;
@@ -56,9 +62,18 @@ export function useNotes(options: UseNotesOptions = {}) {
     : null;
 
   const applySelection = (note: Note | null) => {
-    setSelectedId(note?.id ?? null);
-    setTitleDraftState(note?.title ?? "");
-    setBodyDraftState(note?.body_markdown ?? "");
+    const id = note?.id ?? null;
+    const title = note?.title ?? "";
+    const body = note?.body_markdown ?? "";
+    // Eager refs: callers may flush/select again before React re-renders.
+    selectedIdRef.current = id;
+    titleDraftRef.current = title;
+    bodyDraftRef.current = body;
+    statusRef.current = "idle";
+    dirtySinceRef.current = null;
+    setSelectedId(id);
+    setTitleDraftState(title);
+    setBodyDraftState(body);
     setStatus("idle");
   };
 
@@ -71,6 +86,7 @@ export function useNotes(options: UseNotesOptions = {}) {
       if (!mountedRef.current) {
         return;
       }
+      notesRef.current = listed;
       setNotes(listed);
       setError(null);
 
@@ -105,8 +121,8 @@ export function useNotes(options: UseNotesOptions = {}) {
     };
   }, []);
 
-  const persistDraft = async () => {
-    const id = selectedIdRef.current;
+  const persistDraft = async (snapshot?: DraftSnapshot) => {
+    const id = snapshot?.id ?? selectedIdRef.current;
     if (!id) {
       return;
     }
@@ -116,21 +132,27 @@ export function useNotes(options: UseNotesOptions = {}) {
       return;
     }
 
-    const title = titleDraftRef.current;
-    const body = bodyDraftRef.current;
+    const title = snapshot?.title ?? titleDraftRef.current;
+    const body = snapshot?.body ?? bodyDraftRef.current;
     if (title === existing.title && body === existing.body_markdown) {
       dirtySinceRef.current = null;
-      setStatus("idle");
+      if (!snapshot || selectedIdRef.current === id) {
+        statusRef.current = "idle";
+        setStatus("idle");
+      }
       return;
     }
 
     dirtySinceRef.current = null;
     const generation = ++saveGeneration.current;
-    setStatus("saving");
+    if (!snapshot || selectedIdRef.current === id) {
+      statusRef.current = "saving";
+      setStatus("saving");
+    }
     setError(null);
 
-    setNotes((prev) =>
-      [
+    setNotes((prev) => {
+      const next = [
         ...prev.map((note) =>
           note.id === id
             ? {
@@ -141,8 +163,10 @@ export function useNotes(options: UseNotesOptions = {}) {
               }
             : note,
         ),
-      ].sort(byUpdatedAtDesc),
-    );
+      ].sort(byUpdatedAtDesc);
+      notesRef.current = next;
+      return next;
+    });
 
     try {
       const titleChanged = title !== existing.title;
@@ -163,19 +187,30 @@ export function useNotes(options: UseNotesOptions = {}) {
         if (generation !== saveGeneration.current) {
           return;
         }
+        notesRef.current = listed;
         setNotes(listed);
       } else {
-        setNotes((prev) =>
-          [...prev.map((note) => (note.id === id ? saved : note))].sort(
-            byUpdatedAtDesc,
-          ),
-        );
+        setNotes((prev) => {
+          const next = [
+            ...prev.map((note) => (note.id === id ? saved : note)),
+          ].sort(byUpdatedAtDesc);
+          notesRef.current = next;
+          return next;
+        });
       }
-      setStatus("saved");
+      if (selectedIdRef.current === id) {
+        statusRef.current = "saved";
+        setStatus("saved");
+      }
     } catch (err) {
       // A stale generation must still surface the failure and reconcile with
       // the DB; only the status flag belongs to the current selection (ENG-78).
-      if (mountedRef.current && generation === saveGeneration.current) {
+      if (
+        mountedRef.current &&
+        generation === saveGeneration.current &&
+        selectedIdRef.current === id
+      ) {
+        statusRef.current = "error";
         setStatus("error");
       }
       // Reconcile first — refresh() clears the error state.
@@ -202,6 +237,7 @@ export function useNotes(options: UseNotesOptions = {}) {
       return;
     }
 
+    statusRef.current = "dirty";
     setStatus("dirty");
     // Trailing debounce, but never later than maxWaitMs after the first
     // unsaved keystroke — continuous typing must still persist (ENG-78).
@@ -242,7 +278,12 @@ export function useNotes(options: UseNotesOptions = {}) {
 
   const selectNote = (id: string | null) => {
     if (selectedIdRef.current && statusRef.current === "dirty") {
-      void persistDraftRef.current();
+      // Snapshot before switching — live refs will point at the next note.
+      void persistDraftRef.current({
+        id: selectedIdRef.current,
+        title: titleDraftRef.current,
+        body: bodyDraftRef.current,
+      });
     }
     saveGeneration.current += 1;
     applySelection(
@@ -257,14 +298,20 @@ export function useNotes(options: UseNotesOptions = {}) {
     setError(null);
     try {
       if (selectedIdRef.current && statusRef.current === "dirty") {
-        await persistDraftRef.current();
+        await persistDraftRef.current({
+          id: selectedIdRef.current,
+          title: titleDraftRef.current,
+          body: bodyDraftRef.current,
+        });
       }
       const created = await apiRef.current.createNote({
         title,
         body_markdown: "",
         ...input,
       });
-      setNotes((prev) => [created, ...prev].sort(byUpdatedAtDesc));
+      const next = [created, ...notesRef.current].sort(byUpdatedAtDesc);
+      notesRef.current = next;
+      setNotes(next);
       saveGeneration.current += 1;
       applySelection(created);
       return created;
@@ -283,12 +330,14 @@ export function useNotes(options: UseNotesOptions = {}) {
     saveGeneration.current += 1;
     const previous = notesRef.current;
     const remaining = previous.filter((note) => note.id !== id);
+    notesRef.current = remaining;
     setNotes(remaining);
     applySelection(remaining[0] ?? null);
     try {
       await apiRef.current.deleteNote(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      notesRef.current = previous;
       setNotes(previous);
       applySelection(previous.find((note) => note.id === id) ?? null);
     }
@@ -302,19 +351,25 @@ export function useNotes(options: UseNotesOptions = {}) {
     setError(null);
     // Metadata-only toggle: content and updated_at stay untouched, so this
     // can't race the autosave and doesn't reorder the lists (ENG-79).
-    setNotes((prev) =>
-      prev.map((note) => (note.id === id ? { ...note, pinned } : note)),
-    );
+    setNotes((prev) => {
+      const next = prev.map((note) =>
+        note.id === id ? { ...note, pinned } : note,
+      );
+      notesRef.current = next;
+      return next;
+    });
     try {
       const saved = await apiRef.current.setPinned(id, pinned);
       if (!mountedRef.current) {
         return;
       }
-      setNotes((prev) =>
-        prev.map((note) =>
+      setNotes((prev) => {
+        const next = prev.map((note) =>
           note.id === id ? { ...note, pinned: saved.pinned } : note,
-        ),
-      );
+        );
+        notesRef.current = next;
+        return next;
+      });
     } catch (err) {
       // Reconcile first — refresh() clears the error state.
       await refresh();
@@ -323,6 +378,20 @@ export function useNotes(options: UseNotesOptions = {}) {
       }
       setError(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  /** Ignore TipTap onUpdate from a note that is no longer selected. */
+  const setBodyDraft = (body: string, fromNoteId?: string | null) => {
+    if (fromNoteId !== undefined && fromNoteId !== selectedIdRef.current) {
+      return;
+    }
+    bodyDraftRef.current = body;
+    setBodyDraftState(body);
+  };
+
+  const setTitleDraft = (title: string) => {
+    titleDraftRef.current = title;
+    setTitleDraftState(title);
   };
 
   return {
@@ -335,8 +404,8 @@ export function useNotes(options: UseNotesOptions = {}) {
     error,
     loading,
     selectNote,
-    setTitleDraft: setTitleDraftState,
-    setBodyDraft: setBodyDraftState,
+    setTitleDraft,
+    setBodyDraft,
     createNote,
     deleteSelected,
     setPinned,
