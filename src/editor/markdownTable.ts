@@ -1,7 +1,12 @@
 import type { Editor } from "@tiptap/core";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import { DOMParser as PmDOMParser } from "@tiptap/pm/model";
-import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
+import {
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type Transaction,
+} from "@tiptap/pm/state";
 
 const tableFixupKey = new PluginKey("markdownTableFixup");
 
@@ -13,6 +18,15 @@ export function isGfmTableSeparator(line: string): boolean {
 
 export function isGfmTableRow(line: string): boolean {
   return line.includes("|") && line.trim().length > 0;
+}
+
+/** Pipe-split column count (leading/trailing pipes optional). */
+export function gfmColumnCount(line: string): number {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  if (trimmed.length === 0) {
+    return 0;
+  }
+  return trimmed.split("|").length;
 }
 
 /** At least two cells with content — avoids converting a lone `|` mid-typing. */
@@ -46,7 +60,9 @@ export function looksLikeGfmTable(text: string): boolean {
       row !== undefined &&
       prev !== undefined &&
       isGfmTableSeparator(row) &&
-      isGfmTableRow(prev)
+      isGfmTableRow(prev) &&
+      gfmColumnCount(prev) === gfmColumnCount(row) &&
+      gfmColumnCount(prev) >= 2
     ) {
       return true;
     }
@@ -109,12 +125,19 @@ function findGfmTableParagraphRuns(doc: PmNode): ParagraphRun[] {
           sep &&
           header &&
           isGfmTableSeparator(sep.text) &&
-          isCompleteGfmTableRow(header.text)
+          isCompleteGfmTableRow(header.text) &&
+          gfmColumnCount(header.text) === gfmColumnCount(sep.text) &&
+          gfmColumnCount(header.text) >= 2
         ) {
+          const cols = gfmColumnCount(header.text);
           let end = i;
           while (end + 1 < current.length) {
             const next = current[end + 1];
-            if (!next || !isCompleteGfmTableRow(next.text)) {
+            if (
+              !next ||
+              !isCompleteGfmTableRow(next.text) ||
+              gfmColumnCount(next.text) !== cols
+            ) {
               break;
             }
             end += 1;
@@ -152,6 +175,16 @@ function findGfmTableParagraphRuns(doc: PmNode): ParagraphRun[] {
   return runs;
 }
 
+function firstTableNode(doc: PmNode): PmNode | null {
+  let table: PmNode | null = null;
+  doc.forEach((child) => {
+    if (!table && child.type.name === "table") {
+      table = child;
+    }
+  });
+  return table;
+}
+
 function replaceWithMarkdownTable(
   editor: Editor,
   tr: Transaction,
@@ -165,12 +198,30 @@ function replaceWithMarkdownTable(
   if (!node) {
     return false;
   }
-  // parse() wraps in doc; insert its children.
-  const content = node.content;
-  if (!content.size) {
+  // Only convert when re-parse actually yields a table (ENG-95).
+  const table = firstTableNode(node);
+  if (!table) {
     return false;
   }
-  tr.replaceWith(mappedFrom, mappedTo, content);
+  tr.replaceWith(mappedFrom, mappedTo, table);
+
+  // Caret into first cell so continued typing stays inside the table.
+  let cellPos: number | null = null;
+  tr.doc.nodesBetween(mappedFrom, mappedFrom + table.nodeSize, (n, pos) => {
+    if (cellPos != null) {
+      return false;
+    }
+    if (n.type.name === "tableHeader" || n.type.name === "tableCell") {
+      cellPos = pos + 1;
+      if (n.firstChild?.isTextblock) {
+        cellPos += 1;
+      }
+      return false;
+    }
+  });
+  if (cellPos != null) {
+    tr.setSelection(TextSelection.near(tr.doc.resolve(cellPos)));
+  }
   return true;
 }
 
@@ -216,7 +267,11 @@ export function markdownTableFixupPlugin(editor: Editor): Plugin {
       const replaces: BlockReplace[] = [];
 
       // Single paragraph (or hard-broken) containing a full table.
+      // Skip nested contexts — converting inside blockquotes/cells corrupts them.
       newState.doc.descendants((node, pos) => {
+        if (node.type.name === "blockquote" || node.type.name === "table") {
+          return false;
+        }
         if (node.type.name !== "paragraph") {
           return;
         }

@@ -38,6 +38,33 @@ const TABLE = `| A | B |
 | --- | --- |
 | 1 | 2 |`;
 
+const MISMATCH = `| A | B | C |
+| --- | --- |
+| 1 | 2 |`;
+
+function hardBreakParagraph(lines: string[]) {
+  const content: Array<{ type: "text"; text: string } | { type: "hardBreak" }> =
+    [];
+  lines.forEach((line, index) => {
+    if (index > 0) {
+      content.push({ type: "hardBreak" });
+    }
+    content.push({ type: "text", text: line });
+  });
+  return { type: "paragraph" as const, content };
+}
+
+function hasHardBreak(editor: Editor): boolean {
+  let found = false;
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === "hardBreak") {
+      found = true;
+      return false;
+    }
+  });
+  return found;
+}
+
 describe("looksLikeGfmTable", () => {
   it("detects a basic pipe table", () => {
     expect(looksLikeGfmTable(TABLE)).toBe(true);
@@ -46,6 +73,10 @@ describe("looksLikeGfmTable", () => {
   it("rejects non-tables", () => {
     expect(looksLikeGfmTable("| just a row |")).toBe(false);
     expect(looksLikeGfmTable("hello")).toBe(false);
+  });
+
+  it("rejects header/separator column mismatch (ENG-95)", () => {
+    expect(looksLikeGfmTable(MISMATCH)).toBe(false);
   });
 });
 
@@ -58,7 +89,7 @@ describe("markdown table fixup", () => {
     if (el instanceof HTMLElement) el.remove();
   });
 
-  function create(content = "") {
+  function create(content: string | object = "") {
     const element = document.createElement("div");
     document.body.appendChild(element);
     editor = new Editor({
@@ -88,5 +119,59 @@ describe("markdown table fixup", () => {
     expect(editor.getHTML()).toContain("<table");
     expect(editor.getHTML()).not.toMatch(/\| A \| B \|/);
     expect(md(editor)).toContain("| 1 | 2 |");
+  });
+
+  it("keeps hard breaks when column counts mismatch (ENG-95)", () => {
+    const lines = MISMATCH.split("\n");
+    editor = create({
+      type: "doc",
+      content: [hardBreakParagraph(lines)],
+    });
+    expect(editor.getHTML()).not.toContain("<table");
+    expect(hasHardBreak(editor)).toBe(true);
+    const before = editor.getText();
+    // Trigger appendTransaction.
+    editor.commands.insertContent("x");
+    editor.commands.undo();
+    expect(editor.getHTML()).not.toContain("<table");
+    expect(editor.getText()).toBe(before);
+    expect(hasHardBreak(editor)).toBe(true);
+  });
+
+  it("places caret in first cell after live conversion (ENG-95)", () => {
+    editor = create();
+    typeText(editor, "| A | B |\n| --- | --- |\n| 1 | 2 |");
+    expect(editor.getHTML()).toContain("<table");
+    expect(editor.isActive("table")).toBe(true);
+    const $from = editor.state.selection.$from;
+    let inCell = false;
+    for (let d = $from.depth; d > 0; d--) {
+      const name = $from.node(d).type.name;
+      if (name === "tableCell" || name === "tableHeader") {
+        inCell = true;
+        break;
+      }
+    }
+    expect(inCell).toBe(true);
+  });
+
+  it("does not convert pipe tables inside blockquotes (ENG-95)", () => {
+    const lines = TABLE.split("\n");
+    editor = create({
+      type: "doc",
+      content: [
+        {
+          type: "blockquote",
+          content: [hardBreakParagraph(lines)],
+        },
+      ],
+    });
+    expect(editor.getHTML()).toContain("<blockquote");
+    expect(hasHardBreak(editor)).toBe(true);
+    editor.commands.insertContent("x");
+    editor.commands.undo();
+    expect(editor.getHTML()).toContain("<blockquote");
+    expect(editor.getHTML()).not.toContain("<table");
+    expect(hasHardBreak(editor)).toBe(true);
   });
 });
