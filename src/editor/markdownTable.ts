@@ -49,7 +49,7 @@ export const TablePipeSafeText = Text.extend({
           node: PmNode,
         ) {
           // Match tiptap-markdown's text serializer (escapeHTML) then esc().
-          const text = String(node.text ?? "")
+          const text = (node.text ?? "")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;");
           withTablePipeEscaping(state, () => {
