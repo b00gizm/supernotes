@@ -26,7 +26,9 @@ impl<'a> Repository<'a> {
         note_type: NoteType,
         pinned: bool,
     ) -> DbResult<Note> {
-        let now = utc_now(self.conn)?;
+        let tx = self.conn.unchecked_transaction()?;
+        let repo = Repository::new(&tx);
+        let now = utc_now(repo.conn)?;
         let note = Note {
             id: Uuid::new_v4().to_string(),
             title: title.to_string(),
@@ -37,7 +39,7 @@ impl<'a> Repository<'a> {
             updated_at: now,
         };
 
-        self.conn.execute(
+        repo.conn.execute(
             "INSERT INTO notes (id, title, body_markdown, note_type, pinned, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
@@ -50,9 +52,10 @@ impl<'a> Repository<'a> {
                 note.updated_at,
             ],
         )?;
-        self.sync_links_from_body(&note.id, body_markdown)?;
+        repo.sync_links_from_body(&note.id, body_markdown)?;
         // Unresolved `[[…]]` / `#` / `@` at earlier saves gain rows once the target exists.
-        self.backfill_incoming_links(&note)?;
+        repo.backfill_incoming_links(&note)?;
+        tx.commit()?;
         Ok(note)
     }
 
@@ -79,9 +82,11 @@ impl<'a> Repository<'a> {
     }
 
     pub fn update_note(&self, id: &str, title: &str, body_markdown: &str) -> DbResult<Note> {
-        let previous = self.get_note(id)?;
-        let updated_at = utc_now(self.conn)?;
-        let changed = self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        let repo = Repository::new(&tx);
+        let previous = repo.get_note(id)?;
+        let updated_at = utc_now(repo.conn)?;
+        let changed = repo.conn.execute(
             "UPDATE notes
              SET title = ?1, body_markdown = ?2, updated_at = ?3
              WHERE id = ?4",
@@ -90,13 +95,15 @@ impl<'a> Repository<'a> {
         if changed == 0 {
             return Err(DbError::NotFound);
         }
-        self.sync_links_from_body(id, body_markdown)?;
+        repo.sync_links_from_body(id, body_markdown)?;
         if previous.title != title {
             // Linking notes store the display title in markdown; keep them in sync.
             // Deliberately does not bump their updated_at (recency stays theirs).
-            self.rewrite_incoming_wikilink_titles(id, &previous.title, title)?;
+            repo.rewrite_incoming_wikilink_titles(id, &previous.title, title)?;
         }
-        self.get_note(id)
+        let note = repo.get_note(id)?;
+        tx.commit()?;
+        Ok(note)
     }
 
     /// Case-insensitive title match; prefers exact case, then newest `updated_at`.
@@ -228,6 +235,18 @@ impl<'a> Repository<'a> {
         source_note_id: &str,
         target_note_ids: &[String],
     ) -> DbResult<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        Repository::new(&tx).replace_links_for_source_in_tx(source_note_id, target_note_ids)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Caller must already hold a transaction (e.g. create/update note).
+    fn replace_links_for_source_in_tx(
+        &self,
+        source_note_id: &str,
+        target_note_ids: &[String],
+    ) -> DbResult<()> {
         self.conn.execute(
             "DELETE FROM links WHERE source_note_id = ?1",
             [source_note_id],
@@ -249,7 +268,7 @@ impl<'a> Repository<'a> {
                 targets.push(note.id);
             }
         }
-        self.replace_links_for_source(source_note_id, &targets)
+        self.replace_links_for_source_in_tx(source_note_id, &targets)
     }
 
     /// When a note is created, attach link rows from existing bodies that already
@@ -904,6 +923,27 @@ mod tests {
             assert_eq!(to_project[0].source_note_id, source.id);
 
             assert!(repo.list_links_from(&source.id).unwrap().len() >= 2);
+        });
+    }
+
+    #[test]
+    fn replace_links_rolls_back_delete_when_insert_fails() {
+        with_repo(|repo| {
+            let a = repo
+                .create_note("A", "", NoteType::Regular, false)
+                .unwrap();
+            let b = repo
+                .create_note("B", "", NoteType::Regular, false)
+                .unwrap();
+            repo.create_link(&a.id, &b.id).unwrap();
+            assert_eq!(repo.list_links_from(&a.id).unwrap().len(), 1);
+
+            // FK violation on INSERT after DELETE — whole replace must roll back.
+            let err = repo.replace_links_for_source(&a.id, &["missing-target".into()]);
+            assert!(err.is_err());
+            let links = repo.list_links_from(&a.id).unwrap();
+            assert_eq!(links.len(), 1, "DELETE must not commit if INSERT fails");
+            assert_eq!(links[0].target_note_id, b.id);
         });
     }
 
