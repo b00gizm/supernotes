@@ -304,7 +304,6 @@ function App() {
   const {
     notes,
     selectedId,
-    selectedNote,
     titleDraft,
     bodyDraft,
     status,
@@ -986,7 +985,34 @@ function App() {
                 >
                   Notes <span aria-hidden="true">›</span>
                 </button>
-              ) : surface.kind === "daily" ? (
+              ) : (
+                <span />
+              )}
+              <div className="editor-toolbar-actions">
+                {saveIndicator(status)}
+                {surface.kind === "note" ? (
+                  <button
+                    type="button"
+                    className="text-button danger"
+                    onClick={() => {
+                      void deleteSelected().then(() => {
+                        setSurface({ kind: "notes" });
+                      });
+                    }}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {surface.kind === "daily" ? (
+              <div className="title-row">
+                <input
+                  className="title-input"
+                  aria-label="Note title"
+                  value={dailyDisplayTitle(titleDraft)}
+                  readOnly
+                />
                 <div
                   className="daily-nav"
                   role="group"
@@ -1024,42 +1050,17 @@ function App() {
                     </button>
                   ) : null}
                 </div>
-              ) : (
-                <span />
-              )}
-              <div className="editor-toolbar-actions">
-                {saveIndicator(status)}
-                {surface.kind === "note" ? (
-                  <button
-                    type="button"
-                    className="text-button danger"
-                    onClick={() => {
-                      void deleteSelected().then(() => {
-                        setSurface({ kind: "notes" });
-                      });
-                    }}
-                  >
-                    Delete
-                  </button>
-                ) : null}
               </div>
-            </div>
-            <input
-              className="title-input"
-              aria-label="Note title"
-              value={
-                selectedNote?.note_type === "daily"
-                  ? dailyDisplayTitle(titleDraft)
-                  : titleDraft
-              }
-              readOnly={selectedNote?.note_type === "daily"}
-              onChange={(event) => {
-                if (selectedNote?.note_type === "daily") {
-                  return;
-                }
-                setTitleDraft(event.target.value);
-              }}
-            />
+            ) : (
+              <input
+                className="title-input"
+                aria-label="Note title"
+                value={titleDraft}
+                onChange={(event) => {
+                  setTitleDraft(event.target.value);
+                }}
+              />
+            )}
             {selectedId ? (
               <NoteEditor
                 key={selectedId}

@@ -507,7 +507,7 @@ button {
  * Daily note has no breadcrumb — collapse the toolbar out of flow so the
  * title sits on the same row as the sidebar collapse control (ENG-115).
  * Keep horizontal auto margins so the toolbar stays aligned with the
- * max-width content column (otherwise daily-nav drifts left on wide panes).
+ * max-width content column.
  */
 .has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) {
   height: 0;
@@ -515,16 +515,9 @@ button {
   margin: 0 auto;
   padding: 0;
   overflow: visible;
-  justify-content: flex-start;
+  justify-content: flex-end;
   position: relative;
   z-index: 1;
-}
-
-/* Prev/next need real layout height above the title; don't collapse them. */
-.has-mac-overlay-chrome .editor-toolbar:has(.daily-nav) {
-  height: auto;
-  min-height: 1.75rem;
-  margin-bottom: var(--space-2);
 }
 
 .has-mac-overlay-chrome
@@ -539,12 +532,25 @@ button {
   gap: var(--space-3);
 }
 
-.has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) + .title-input {
+.has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) + .title-input,
+.has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) + .title-row {
   /* Match collapse control so title and hamburger share a row. */
   box-sizing: content-box;
   min-height: var(--mac-collapse-size);
   padding-top: 0;
   padding-bottom: var(--space-4);
+}
+
+.has-mac-overlay-chrome .editor-toolbar:not(:has(.breadcrumb)) + .title-input {
+  line-height: var(--mac-collapse-size);
+}
+
+.has-mac-overlay-chrome
+  .editor-toolbar:not(:has(.breadcrumb))
+  + .title-row
+  .title-input {
+  padding-top: 0;
+  padding-bottom: 0;
   line-height: var(--mac-collapse-size);
 }
 
@@ -740,7 +746,8 @@ button {
 .daily-nav {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  flex-shrink: 0;
+  gap: var(--space-1);
 }
 
 .daily-nav-btn {
@@ -762,6 +769,19 @@ button {
 
 .daily-today {
   font-size: var(--text-sm);
+  margin-left: var(--space-1);
+}
+
+/* Title + day chevrons on one row (mockup). */
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.title-row .title-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .editor-toolbar-actions {
