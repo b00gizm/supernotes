@@ -52,13 +52,18 @@
    * (logical px). :root font-size is 0.925rem, so rem titlebar math drifts.
    */
   --mac-traffic-light-y: 20px;
-  --mac-traffic-light-size: 12px;
   --mac-titlebar-height: 52px;
   --mac-collapse-size: 28px;
-  /* Center the 28px control on the same axis as the 12px traffic lights. */
+  /*
+   * tao turns trafficLightPosition.y into a titlebar container of height
+   * (16px button frame + y), and AppKit re-centers the buttons in it, so the
+   * glyph's center lands at y/2 + 8px — not y + glyph/2. Measured 17.75px
+   * on macOS 15 with y=20. ponytail: hardcodes the 16px AppKit button frame.
+   */
+  --mac-traffic-light-center-y: calc(var(--mac-traffic-light-y) / 2 + 8px);
+  /* Center the 28px control on the traffic lights' actual axis. */
   --mac-collapse-top: calc(
-    var(--mac-traffic-light-y) +
-      (var(--mac-traffic-light-size) - var(--mac-collapse-size)) / 2
+    var(--mac-traffic-light-center-y) - var(--mac-collapse-size) / 2
   );
   /* Collapsed: just clear traffic lights, then a tight gap before the control. */
   --mac-collapsed-chrome: 40px;
