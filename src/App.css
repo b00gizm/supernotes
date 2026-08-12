@@ -750,7 +750,8 @@ button {
 
 .tasks-list {
   list-style: none;
-  margin: var(--space-6) 0 0;
+  /* Keep horizontal auto from `.overview-pane > *` so the list stays centered. */
+  margin: var(--space-6) auto 0;
   padding: 0;
   display: flex;
   flex-direction: column;
