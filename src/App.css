@@ -45,6 +45,8 @@
   --radius-sm: 0.35rem;
   --radius-md: 0.55rem;
   --radius-lg: 0.7rem;
+  /* Capsule chips for #tags / @mentions (mockup 1c). */
+  --radius-pill: 999px;
 
   color: var(--text);
   background: var(--bg-app);
@@ -563,8 +565,8 @@ button {
   display: inline-flex;
   align-items: center;
   max-width: 100%;
-  padding: 0.08rem 0.4rem;
-  border-radius: 0.35rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: var(--radius-pill);
   background: var(--bg-chip);
   color: var(--text-secondary);
   font-size: var(--text-xs);
@@ -573,8 +575,8 @@ button {
 }
 
 .note-chip.is-mention {
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-chip));
-  color: color-mix(in srgb, var(--accent) 70%, var(--text));
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-main));
+  color: color-mix(in srgb, var(--accent) 82%, var(--text));
 }
 
 .breadcrumb {
@@ -750,6 +752,27 @@ button {
   color: var(--accent);
   font-weight: var(--weight-medium);
   cursor: pointer;
+}
+
+.note-editor .tiptap .wiki-link.is-tag,
+.note-editor .tiptap .wiki-link.is-mention {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.12rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-chip);
+  color: var(--text-secondary);
+  font-size: 0.92em;
+  font-weight: var(--weight-medium);
+  line-height: 1.35;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.note-editor .tiptap .wiki-link.is-mention {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-main));
+  color: color-mix(in srgb, var(--accent) 82%, var(--text));
 }
 
 .note-editor {

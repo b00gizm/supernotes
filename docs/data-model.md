@@ -29,7 +29,8 @@ round-trips to this column (see `docs/markdown.md`).
 
 ### `links`
 
-Backlink index. Rows are derived from wikilinks in note bodies (M2); not stored inside markdown.
+Backlink index. Rows are derived from `[[wikilinks]]`, `#tags`, and `@mentions`
+in note bodies (M2); not stored inside markdown.
 
 | Column           | Type                               | Notes             |
 | ---------------- | ---------------------------------- | ----------------- |
@@ -85,5 +86,5 @@ Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
 - Tauri commands: `create_note`, `get_note`, `list_notes`, `search_notes`,
   `update_note`, `set_note_pinned`, `delete_note`, `list_links_from`
   (`src-tauri/src/notes.rs`). Saving a note syncs its outbound `links` rows from
-  `[[…]]` in `body_markdown`.
+  `[[…]]` / `#tag` / `@mention` in `body_markdown`.
 - Frontend: `src/notes/` wraps those commands (`notesApi` + `useNotes` with ~500ms debounced autosave).

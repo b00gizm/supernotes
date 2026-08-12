@@ -203,10 +203,16 @@ export function NoteEditor({
           if (state.activeIndex < state.suggestions.length) {
             const note = state.suggestions[state.activeIndex];
             if (note) {
-              insertWikiLink(current, active, note.title, note.id);
+              insertWikiLink(current, active, note.title, note.id, active.kind);
             }
           } else if (state.showCreate && state.createTitle) {
-            insertWikiLink(current, active, state.createTitle, null);
+            insertWikiLink(
+              current,
+              active,
+              state.createTitle,
+              null,
+              active.kind,
+            );
           }
           setQuery(null);
           return true;
@@ -269,7 +275,7 @@ export function NoteEditor({
     if (!editor || !query) {
       return;
     }
-    insertWikiLink(editor, query, note.title, note.id);
+    insertWikiLink(editor, query, note.title, note.id, query.kind);
     setQuery(null);
   };
 
@@ -277,7 +283,7 @@ export function NoteEditor({
     if (!editor || !query || !createTitle) {
       return;
     }
-    insertWikiLink(editor, query, createTitle, null);
+    insertWikiLink(editor, query, createTitle, null, query.kind);
     setQuery(null);
   };
 

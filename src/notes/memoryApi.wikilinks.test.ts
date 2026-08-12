@@ -62,4 +62,34 @@ describe("memoryApi wikilink sync", () => {
     const source = (await api.listNotes()).find((note) => note.id === "src");
     expect(source?.body_markdown).toBe("See [[Baz]].");
   });
+
+  it("syncs and rewrites #tag / @mention like wikilinks", async () => {
+    const api = createMemoryNotesApi([
+      seed({ id: "src", title: "Source" }),
+      seed({ id: "project", title: "project" }),
+      seed({ id: "priya", title: "Priya" }),
+    ]);
+
+    await api.updateNote({
+      id: "src",
+      title: "Source",
+      body_markdown: "Track #project with @Priya and [[project]].",
+    });
+    const links = await api.listLinksFrom("src");
+    expect(links).toHaveLength(2);
+    expect(links.map((link) => link.target_note_id).sort()).toEqual([
+      "priya",
+      "project",
+    ]);
+
+    await api.updateNote({
+      id: "project",
+      title: "meridian",
+      body_markdown: "",
+    });
+    const source = (await api.listNotes()).find((note) => note.id === "src");
+    expect(source?.body_markdown).toBe(
+      "Track #meridian with @Priya and [[meridian]].",
+    );
+  });
 });

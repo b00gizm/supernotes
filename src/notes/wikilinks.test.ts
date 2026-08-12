@@ -15,6 +15,14 @@ describe("wikilinks helpers", () => {
     ).toEqual(["Weekly Review", "foo", "Bar"]);
   });
 
+  it("extracts tags and mentions into the same title list", () => {
+    expect(
+      extractWikilinkTitles(
+        "See [[project]] and #project with @Priya Sharma and user@email.com",
+      ),
+    ).toEqual(["project", "project", "Priya Sharma"]);
+  });
+
   it("rewrites matching titles only", () => {
     expect(
       rewriteWikilinkTitle(
@@ -23,6 +31,23 @@ describe("wikilinks helpers", () => {
         "Omega",
       ),
     ).toBe("[[Omega]] and [[Alpha Beta]] and [[Omega]]");
+  });
+
+  it("rewrites tags and mentions without prefix collisions", () => {
+    expect(
+      rewriteWikilinkTitle(
+        "#Alpha and @Priya Sharma and #Alpha-x and @Priya",
+        "Alpha",
+        "Omega",
+      ),
+    ).toBe("#Omega and @Priya Sharma and #Alpha-x and @Priya");
+    expect(
+      rewriteWikilinkTitle(
+        "#Alpha and @Priya Sharma and @Priya",
+        "Priya Sharma",
+        "Ada Lovelace",
+      ),
+    ).toBe("#Alpha and @Ada Lovelace and @Priya");
   });
 
   it("finds notes by title case-insensitively preferring exact case", () => {

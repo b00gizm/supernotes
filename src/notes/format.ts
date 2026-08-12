@@ -183,7 +183,7 @@ export function formatOverviewWhen(
 
 /**
  * Split the first body line so `#tags` / `@mentions` render as chips (mockup 2a).
- * ponytail: naive token scan until real tag nodes exist in M2.
+ * Overview-only; editor nodes live in `wikiLink.ts`.
  */
 export function parseSnippetParts(body: string): SnippetPart[] {
   const line = noteSnippet(body);
