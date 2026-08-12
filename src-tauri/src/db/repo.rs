@@ -1185,6 +1185,18 @@ mod tests {
         let cancelled_old = repo
             .create_task(&note.id, "Ancient", TaskState::Cancelled, None, None)
             .unwrap();
+        // Pin inbox created_at so ORDER BY created_at DESC is stable when
+        // two utc_now() calls land in the same millisecond (CI).
+        conn.execute(
+            "UPDATE tasks SET created_at = '2026-08-11T10:00:00.000Z' WHERE id = ?1",
+            [&inbox.id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE tasks SET created_at = '2026-08-12T10:00:00.000Z' WHERE id = ?1",
+            [&waiting_no_due.id],
+        )
+        .unwrap();
         // Force completed_at outside the 14-day window.
         conn.execute(
             "UPDATE tasks SET completed_at = '2026-07-01T12:00:00.000Z' WHERE id = ?1",
