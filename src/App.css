@@ -858,13 +858,12 @@ button {
   color: color-mix(in srgb, var(--accent) 82%, var(--text));
 }
 
+/* Pills already read as muted chips — no dashed underline (ENG-114). */
 .note-editor .tiptap .wiki-link.is-tag.is-unresolved,
 .note-editor .tiptap .wiki-link.is-mention.is-unresolved {
   color: var(--text-tertiary);
   background: color-mix(in srgb, var(--bg-chip) 70%, transparent);
-  text-decoration: underline dashed;
-  text-decoration-thickness: from-font;
-  text-underline-offset: 0.18em;
+  text-decoration: none;
 }
 
 .note-editor .tiptap .wiki-link.is-mention.is-unresolved {
