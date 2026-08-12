@@ -1189,18 +1189,26 @@ button {
 }
 
 /* Borderless task pills (ENG-61 / component sheet 1a): circle + title.
- * Hover/active match list rows: horizontal padding + soft rounded bg. */
+ * When mixed with checkboxes, share icon size + row rhythm; hover still washes. */
 .note-editor .tiptap .task-pill {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0.1em 0;
-  padding: 0.25em 0.6rem;
-  border-radius: var(--radius-md);
+  /* Bleed pad so the circle sits on the same left edge as checkbox glyphs. */
+  margin: 0 -0.35em;
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
   border: none;
   background: transparent;
   line-height: var(--leading-body);
   transition: background-color 120ms ease;
+}
+
+/* Blocks default to 0.65em gaps; keep task↔task / task↔checkbox tighter. */
+.note-editor .tiptap > .task-pill + .task-pill,
+.note-editor .tiptap > .task-pill + ul[data-type="taskList"],
+.note-editor .tiptap > ul[data-type="taskList"] + .task-pill {
+  margin-top: 0.2em;
 }
 
 .note-editor .tiptap .task-pill:hover,
@@ -1214,8 +1222,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 0.95rem;
+  height: 0.95rem;
   padding: 0;
   border: none;
   background: transparent;
@@ -1229,8 +1237,8 @@ button {
 }
 
 .note-editor .tiptap .task-pill-icon {
-  width: 1rem;
-  height: 1rem;
+  width: 0.95rem;
+  height: 0.95rem;
   display: block;
 }
 
