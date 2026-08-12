@@ -3,11 +3,14 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 const IMAGE_DIR: &str = "images";
 const MAX_IMAGE_BYTES: usize = 15 * 1024 * 1024;
+/// Frontend passes the file extension via this invoke header (raw body has no JSON fields).
+pub const EXTENSION_HEADER: &str = "x-supernotes-extension";
 
 fn sanitize_extension(extension: &str) -> Result<String, String> {
     let ext = extension.trim().trim_start_matches('.').to_ascii_lowercase();
@@ -38,12 +41,21 @@ pub fn validate_relative_image_path(relative: &str) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
+fn write_note_image(dir: PathBuf, bytes: Vec<u8>, ext: String) -> Result<String, String> {
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let name = format!("{}.{}", Uuid::new_v4(), ext);
+    let path = dir.join(&name);
+    fs::write(&path, &bytes).map_err(|err| err.to_string())?;
+    Ok(format!("{IMAGE_DIR}/{name}"))
+}
+
+/// Persist image bytes from a raw IPC body (avoids JSON-encoding megabyte arrays).
 #[tauri::command]
-pub fn save_note_image(
-    app: AppHandle,
-    bytes: Vec<u8>,
-    extension: String,
-) -> Result<String, String> {
+pub async fn save_note_image(app: AppHandle, request: Request<'_>) -> Result<String, String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw image body".into());
+    };
+    let bytes = bytes.clone();
     if bytes.is_empty() {
         return Err("empty image".into());
     }
@@ -51,17 +63,20 @@ pub fn save_note_image(
     if bytes.len() > MAX_IMAGE_BYTES {
         return Err("image too large".into());
     }
-    let ext = sanitize_extension(&extension)?;
+    let extension = request
+        .headers()
+        .get(EXTENSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| "missing image extension".to_string())?;
+    let ext = sanitize_extension(extension)?;
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|err| err.to_string())?;
     let dir = data_dir.join(IMAGE_DIR);
-    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
-    let name = format!("{}.{}", Uuid::new_v4(), ext);
-    let path = dir.join(&name);
-    fs::write(&path, &bytes).map_err(|err| err.to_string())?;
-    Ok(format!("{IMAGE_DIR}/{name}"))
+    tauri::async_runtime::spawn_blocking(move || write_note_image(dir, bytes, ext))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]
