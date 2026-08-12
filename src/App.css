@@ -1116,7 +1116,7 @@ button {
 }
 
 .wiki-link-suggest-title strong {
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-bold);
 }
 
 .wiki-link-suggest-return {
@@ -1586,7 +1586,7 @@ button {
 }
 
 .search-result-title strong {
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-bold);
 }
 
 .search-result-meta {
