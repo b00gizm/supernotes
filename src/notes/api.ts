@@ -47,7 +47,8 @@ const DEMO_SEED: Note[] = [
   {
     id: "demo-daily",
     title: "2026-08-12",
-    body_markdown: "[[task:demo-task-daily]] Follow up with design",
+    body_markdown:
+      "[[task:demo-task-today]] Prep standup notes\n[[task:demo-task-daily]] Follow up with design",
     note_type: "daily",
     pinned: false,
     created_at: "2026-08-12T08:00:00.000Z",
@@ -57,7 +58,7 @@ const DEMO_SEED: Note[] = [
     id: "demo-roadmap",
     title: "Meridian Q3 roadmap",
     body_markdown:
-      "[[task:demo-task-inbox]] Draft pricing brief\n[[task:demo-task-overdue]] Land design review",
+      "[[task:demo-task-inbox]] Draft pricing brief\n[[task:demo-task-overdue]] Land design review\n[[task:demo-task-next-week]] Ship pricing v2",
     note_type: "regular",
     pinned: false,
     created_at: "2026-08-10T16:00:00.000Z",
@@ -66,7 +67,8 @@ const DEMO_SEED: Note[] = [
   {
     id: "demo-pricing",
     title: "Pricing v2 draft",
-    body_markdown: "Three tiers, usage-based add-ons",
+    body_markdown:
+      "[[task:demo-task-overdue-2]] Legal review of annual terms\n\nThree tiers, usage-based add-ons",
     note_type: "regular",
     pinned: false,
     created_at: "2026-08-10T13:00:00.000Z",
@@ -75,7 +77,8 @@ const DEMO_SEED: Note[] = [
   {
     id: "demo-interview",
     title: "Interview — Priya Sharma",
-    body_markdown: "Strong on systems design, ask about tradeoffs",
+    body_markdown:
+      "[[task:demo-task-friday]] Send Priya take-home\n\nStrong on systems design, ask about tradeoffs",
     note_type: "regular",
     pinned: false,
     created_at: "2026-08-09T18:00:00.000Z",
