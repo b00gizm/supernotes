@@ -3,7 +3,12 @@ import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
-import type { Task, TaskPriority, TaskState } from "../tasks/types";
+import type {
+  CreateTaskInput,
+  Task,
+  TaskPriority,
+  TaskState,
+} from "../tasks/types";
 import { TaskPillView } from "./TaskPillView";
 
 /** Minimal surface used by tiptap-markdown node serializers. */
@@ -142,12 +147,15 @@ export type TaskPillHandlers = {
       priority?: TaskPriority | null;
     },
   ) => void;
+  /** Insert a new pending pill at `pos` (Enter-to-next-task). */
+  onInsertAfter?: (pos: number) => void;
+  onError?: (message: string) => void;
 };
 
 export type TaskPillOptions = {
   /** Note that owns new tasks created via `[]`. */
   getNoteId?: () => string | null;
-  createTask?: (input: { note_id: string; title: string }) => Promise<Task>;
+  createTask?: (input: CreateTaskInput) => Promise<Task>;
   updateTask?: (input: {
     id: string;
     title: string;
@@ -158,6 +166,7 @@ export type TaskPillOptions = {
   deleteTask?: (id: string) => Promise<void>;
   /** Hydrate state/title from DB after markdown load. */
   listTasksForNote?: (noteId: string) => Promise<Task[]>;
+  onError?: (message: string) => void;
 };
 
 /**
@@ -174,24 +183,200 @@ const taskPillInputRegex = /^\[\]\s$/;
 
 const taskPillDeleteKey = new PluginKey("taskPillDelete");
 
-function taskIdsInDoc(doc: ProseMirrorNode): Set<string> {
-  const ids = new Set<string>();
+type TaskSnapshot = {
+  title: string;
+  state: TaskState;
+  dueDate: string | null;
+  priority: TaskPriority | null;
+};
+
+function snapshotFrom(node: ProseMirrorNode): TaskSnapshot {
+  return {
+    title: String(node.attrs.title ?? ""),
+    state: parseState(String(node.attrs.state ?? "open")),
+    dueDate: typeof node.attrs.dueDate === "string" ? node.attrs.dueDate : null,
+    priority: parsePriority(node.attrs.priority),
+  };
+}
+
+function taskPillsInDoc(doc: ProseMirrorNode): Map<string, ProseMirrorNode> {
+  const pills = new Map<string, ProseMirrorNode>();
   doc.descendants((node) => {
     if (node.type.name === "taskPill") {
       const id = String(node.attrs.taskId ?? "");
       if (id) {
-        ids.add(id);
+        pills.set(id, node);
       }
     }
   });
-  return ids;
+  return pills;
+}
+
+function reportTaskError(options: TaskPillOptions, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  options.onError?.(message.trim() || "Could not save task");
+}
+
+let pendingSeq = 0;
+function nextPendingId(): string {
+  pendingSeq += 1;
+  return `pending-${String(pendingSeq)}`;
+}
+
+function findTaskPillPos(editor: Editor, taskId: string): number {
+  let foundPos = -1;
+  editor.state.doc.descendants((node, pos) => {
+    if (
+      foundPos < 0 &&
+      node.type.name === "taskPill" &&
+      node.attrs.taskId === taskId
+    ) {
+      foundPos = pos;
+    }
+  });
+  return foundPos;
+}
+
+function focusTaskPillTitle(editor: Editor, pendingId: string): void {
+  const focusTitle = () => {
+    if (editor.isDestroyed) {
+      return;
+    }
+    try {
+      const input = editor.view.dom.querySelector(
+        `.task-pill[data-autofocus="true"] .task-pill-title, [data-task-id="${CSS.escape(pendingId)}"] .task-pill-title`,
+      );
+      if (input instanceof HTMLInputElement) {
+        editor.view.dom.blur();
+        input.focus();
+      }
+    } catch {
+      // view may be unmounted in tests
+    }
+  };
+  for (const ms of [0, 16, 50, 100]) {
+    window.setTimeout(focusTitle, ms);
+  }
+}
+
+const skipDeleteByEditor = new WeakMap<Editor, Set<string>>();
+
+function skipDeleteSet(editor: Editor): Set<string> {
+  let set = skipDeleteByEditor.get(editor);
+  if (!set) {
+    set = new Set();
+    skipDeleteByEditor.set(editor, set);
+  }
+  return set;
+}
+
+function rewriteTaskPillId(editor: Editor, oldId: string, task: Task): void {
+  if (editor.isDestroyed) {
+    return;
+  }
+  const foundPos = findTaskPillPos(editor, oldId);
+  if (foundPos < 0) {
+    return;
+  }
+  const { state, view } = editor;
+  const node = state.doc.nodeAt(foundPos);
+  if (!node) {
+    return;
+  }
+  const skipDelete = skipDeleteSet(editor);
+  skipDelete.add(oldId);
+  try {
+    const tr = state.tr.setNodeMarkup(foundPos, undefined, {
+      ...node.attrs,
+      taskId: task.id,
+      title: task.title,
+      state: task.state,
+      dueDate: task.due_date,
+      priority: task.priority,
+    });
+    tr.setMeta("addToHistory", false);
+    view.dispatch(tr);
+  } finally {
+    skipDelete.delete(oldId);
+  }
+}
+
+/** Shared pending→real id swap used by `[]` and Enter-to-next-task. */
+function bindPendingTask(
+  editor: Editor,
+  options: TaskPillOptions,
+  pendingId: string,
+  noteId: string,
+): void {
+  if (!options.createTask) {
+    return;
+  }
+  void options
+    .createTask({ note_id: noteId, title: "" })
+    .then((task) => {
+      if (editor.isDestroyed) {
+        return;
+      }
+      const foundPos = findTaskPillPos(editor, pendingId);
+      if (foundPos < 0) {
+        // User deleted the placeholder — drop the orphaned DB row.
+        void options.deleteTask?.(task.id).catch(() => {});
+        return;
+      }
+      rewriteTaskPillId(editor, pendingId, task);
+    })
+    .catch((err: unknown) => {
+      reportTaskError(options, err);
+      if (editor.isDestroyed) {
+        return;
+      }
+      const foundPos = findTaskPillPos(editor, pendingId);
+      if (foundPos < 0) {
+        return;
+      }
+      const { state, view } = editor;
+      const node = state.doc.nodeAt(foundPos);
+      if (node) {
+        view.dispatch(state.tr.delete(foundPos, foundPos + node.nodeSize));
+      }
+    });
+}
+
+function insertPendingTaskPill(
+  editor: Editor,
+  options: TaskPillOptions,
+  insert: (attrs: Record<string, unknown>) => boolean,
+): void {
+  const noteId = options.getNoteId?.() ?? null;
+  if (!noteId || !options.createTask || editor.isDestroyed) {
+    return;
+  }
+  const pendingId = nextPendingId();
+  const inserted = insert({
+    taskId: pendingId,
+    title: "",
+    state: "open",
+    dueDate: null,
+    priority: null,
+    autofocus: true,
+  });
+  if (!inserted) {
+    return;
+  }
+  focusTaskPillTitle(editor, pendingId);
+  bindPendingTask(editor, options, pendingId, noteId);
 }
 
 /**
  * When a task pill node is removed from the doc, delete the DB row.
- * Decision (ENG-61): delete, do not orphan.
+ * Decision (ENG-61): delete, do not orphan. Undo recreates from a snapshot (ENG-124).
  */
-function taskPillDeletePlugin(options: TaskPillOptions): Plugin {
+function taskPillDeletePlugin(
+  options: TaskPillOptions,
+  editor: Editor,
+): Plugin {
+  // ponytail: in-memory snapshots until undo consumes them; no recycle bin.
+  const snapshots = new Map<string, TaskSnapshot>();
   return new Plugin({
     key: taskPillDeleteKey,
     appendTransaction(transactions, oldState, newState) {
@@ -201,15 +386,47 @@ function taskPillDeletePlugin(options: TaskPillOptions): Plugin {
       if (!options.deleteTask) {
         return null;
       }
-      const before = taskIdsInDoc(oldState.doc);
-      const after = taskIdsInDoc(newState.doc);
-      for (const id of before) {
-        if (after.has(id) || id.startsWith("pending-")) {
+      const skipDelete = skipDeleteSet(editor);
+      const before = taskPillsInDoc(oldState.doc);
+      const after = taskPillsInDoc(newState.doc);
+      for (const [id, node] of before) {
+        if (after.has(id) || id.startsWith("pending-") || skipDelete.has(id)) {
           continue;
         }
+        snapshots.set(id, snapshotFrom(node));
         void options.deleteTask(id).catch((err: unknown) => {
-          console.error("Failed to delete task", id, err);
+          reportTaskError(options, err);
         });
+      }
+      for (const id of after.keys()) {
+        if (before.has(id) || id.startsWith("pending-")) {
+          continue;
+        }
+        const snap = snapshots.get(id);
+        if (!snap) {
+          continue;
+        }
+        snapshots.delete(id);
+        const noteId = options.getNoteId?.() ?? null;
+        if (!noteId || !options.createTask) {
+          continue;
+        }
+        void options
+          .createTask({
+            note_id: noteId,
+            title: snap.title,
+            state: snap.state,
+            due_date: snap.dueDate,
+            priority: snap.priority,
+          })
+          .then((task) => {
+            if (task.id !== id) {
+              rewriteTaskPillId(editor, id, task);
+            }
+          })
+          .catch((err: unknown) => {
+            reportTaskError(options, err);
+          });
       }
       return null;
     },
@@ -353,111 +570,12 @@ export const TaskPill = Node.create<TaskPillOptions>({
           ) {
             return;
           }
-          const noteId = options.getNoteId?.() ?? null;
-          if (!noteId || !options.createTask) {
-            return;
-          }
-          // Placeholder id until the DB row returns — replaced in place.
-          const pendingId = `pending-${String(Date.now())}`;
-          chain()
-            .deleteRange(range)
-            .insertContent({
-              type: this.name,
-              attrs: {
-                taskId: pendingId,
-                title: "",
-                state: "open",
-                dueDate: null,
-                priority: null,
-                autofocus: true,
-              },
-            })
-            .run();
-
-          // Focus the new pill title so the user can keep typing (no extra click).
-          const focusTitle = () => {
-            if (editor.isDestroyed) {
-              return;
-            }
-            try {
-              const input = editor.view.dom.querySelector(
-                `.task-pill[data-autofocus="true"] .task-pill-title, [data-task-id="${CSS.escape(pendingId)}"] .task-pill-title`,
-              );
-              if (input instanceof HTMLInputElement) {
-                editor.view.dom.blur();
-                input.focus();
-              }
-            } catch {
-              // view may be unmounted in tests
-            }
-          };
-          for (const ms of [0, 16, 50, 100]) {
-            window.setTimeout(focusTitle, ms);
-          }
-
-          void options
-            .createTask({ note_id: noteId, title: "" })
-            .then((task) => {
-              if (editor.isDestroyed) {
-                return;
-              }
-              const { state, view } = editor;
-              let foundPos = -1;
-              state.doc.descendants((node, pos) => {
-                if (
-                  foundPos < 0 &&
-                  node.type.name === "taskPill" &&
-                  node.attrs.taskId === pendingId
-                ) {
-                  foundPos = pos;
-                }
-              });
-              if (foundPos < 0) {
-                // User deleted the placeholder — drop the orphaned DB row.
-                void options.deleteTask?.(task.id).catch(() => {});
-                return;
-              }
-              const node = state.doc.nodeAt(foundPos);
-              if (!node) {
-                return;
-              }
-              view.dispatch(
-                state.tr.setNodeMarkup(foundPos, undefined, {
-                  ...node.attrs,
-                  taskId: task.id,
-                  title: task.title,
-                  state: task.state,
-                  dueDate: task.due_date,
-                  priority: task.priority,
-                }),
-              );
-            })
-            .catch((err: unknown) => {
-              console.error("Failed to create task", err);
-              if (editor.isDestroyed) {
-                return;
-              }
-              // Remove the placeholder so the UI doesn't keep a dead pill.
-              const { state, view } = editor;
-              let foundPos = -1;
-              state.doc.descendants((node, pos) => {
-                if (
-                  foundPos < 0 &&
-                  node.type.name === "taskPill" &&
-                  node.attrs.taskId === pendingId
-                ) {
-                  foundPos = pos;
-                }
-              });
-              if (foundPos >= 0) {
-                const node = state.doc.nodeAt(foundPos);
-                if (node) {
-                  view.dispatch(
-                    state.tr.delete(foundPos, foundPos + node.nodeSize),
-                  );
-                }
-              }
-            });
+          insertPendingTaskPill(editor, options, (attrs) =>
+            chain()
+              .deleteRange(range)
+              .insertContent({ type: this.name, attrs })
+              .run(),
+          );
         },
       }),
     ];
@@ -467,7 +585,7 @@ export const TaskPill = Node.create<TaskPillOptions>({
     // Wire sync here — TipTap defers onCreate until after mount (setTimeout 0).
     // Mutate editor.storage (snapshot), not this.options (fresh each access).
     wireTaskPillHandlers(this.options, this.editor);
-    return [taskPillDeletePlugin(this.options)];
+    return [taskPillDeletePlugin(this.options, this.editor)];
   },
 
   onCreate() {
@@ -516,13 +634,21 @@ export const TaskPill = Node.create<TaskPillOptions>({
         }
       })
       .catch((err: unknown) => {
-        console.error("Failed to hydrate tasks", err);
+        reportTaskError(options, err);
       });
   },
 });
 
 function wireTaskPillHandlers(options: TaskPillOptions, editor: Editor): void {
   const bag = taskPillHandlers(editor);
+  if (options.onError) {
+    bag.onError = options.onError;
+  }
+  bag.onInsertAfter = (pos) => {
+    insertPendingTaskPill(editor, options, (attrs) =>
+      editor.chain().insertContentAt(pos, { type: "taskPill", attrs }).run(),
+    );
+  };
   bag.onSetState = (id, state) => {
     const node = findTaskNode(editor, id);
     if (!node || !options.updateTask) {
@@ -540,7 +666,7 @@ function wireTaskPillHandlers(options: TaskPillOptions, editor: Editor): void {
         priority,
       })
       .catch((err: unknown) => {
-        console.error("Failed to update task state", err);
+        reportTaskError(options, err);
       });
   };
   bag.onTitleCommit = (id, title) => {
@@ -560,7 +686,7 @@ function wireTaskPillHandlers(options: TaskPillOptions, editor: Editor): void {
         priority,
       })
       .catch((err: unknown) => {
-        console.error("Failed to update task title", err);
+        reportTaskError(options, err);
       });
   };
   bag.onMetaUpdate = (id, patch) => {
@@ -589,7 +715,7 @@ function wireTaskPillHandlers(options: TaskPillOptions, editor: Editor): void {
         priority,
       })
       .catch((err: unknown) => {
-        console.error("Failed to update task metadata", err);
+        reportTaskError(options, err);
       });
   };
 }

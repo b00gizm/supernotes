@@ -157,9 +157,12 @@ export function NoteEditor({
     left: number;
   } | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
   const dismissedFromRef = useRef<number | null>(null);
   const setImageErrorRef = useRef(setImageError);
   setImageErrorRef.current = setImageError;
+  const setTaskErrorRef = useRef(setTaskError);
+  setTaskErrorRef.current = setTaskError;
 
   const onQueryChange = (next: WikiLinkQuery | null) => {
     if (next && dismissedFromRef.current === next.from) {
@@ -222,6 +225,9 @@ export function NoteEditor({
         updateTask: (input) => tasksApi.updateTask(input),
         deleteTask: (id) => tasksApi.deleteTask(id),
         listTasksForNote: (noteId) => tasksApi.listTasksForNote(noteId),
+        onError: (message) => {
+          setTaskErrorRef.current(message);
+        },
       },
     ),
     content: markdown,
@@ -470,6 +476,11 @@ export function NoteEditor({
       {imageError ? (
         <p className="note-image-insert-error" role="alert">
           {imageError}
+        </p>
+      ) : null}
+      {taskError ? (
+        <p className="note-image-insert-error" role="alert">
+          {taskError}
         </p>
       ) : null}
       {query && popupPos && itemCount > 0 ? (
