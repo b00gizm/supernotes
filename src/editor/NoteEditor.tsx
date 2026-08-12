@@ -3,6 +3,7 @@ import type { Editor } from "@tiptap/core";
 import type { EditorView } from "@tiptap/pm/view";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { Note } from "../notes/types";
+import { highlightMatch } from "../ui/highlightMatch";
 import { rankNotesForWikiLink } from "../notes/wikilinks";
 import { noteEditorExtensions } from "./extensions";
 import { getEditorMarkdown } from "./markdown";
@@ -24,6 +25,49 @@ export type NoteEditorProps = {
   /** Navigate to an existing note or create-on-click when missing. */
   onOpenWikiLink?: (link: { title: string; noteId: string | null }) => void;
 };
+
+function IconNoteDoc() {
+  return (
+    <svg
+      className="wiki-link-suggest-icon"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
+      <path
+        d="M4.5 2.75h5.2L12.5 5.6v7.65a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-9.5a1 1 0 0 1 1-1z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.5 2.85V5.5H12.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg
+      className="wiki-link-suggest-icon"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
+      <path
+        d="M8 3.25v9.5M3.25 8h9.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 function firstImageFile(data: DataTransfer | null): File | null {
   if (!data || data.files.length === 0) {
@@ -383,28 +427,42 @@ export function NoteEditor({
           style={{ top: popupPos.top, left: popupPos.left }}
         >
           <ul className="wiki-link-suggest-list">
-            {suggestions.map((note, index) => (
-              <li key={note.id}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={index === activeIndex}
-                  className={
-                    index === activeIndex
-                      ? "wiki-link-suggest-item is-active"
-                      : "wiki-link-suggest-item"
-                  }
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    pickSuggestion(note);
-                  }}
-                >
-                  {note.title}
-                </button>
-              </li>
-            ))}
+            {suggestions.map((note, index) => {
+              const active = index === activeIndex;
+              return (
+                <li key={note.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    className={
+                      active
+                        ? "wiki-link-suggest-item is-active"
+                        : "wiki-link-suggest-item"
+                    }
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      pickSuggestion(note);
+                    }}
+                  >
+                    <IconNoteDoc />
+                    <span className="wiki-link-suggest-title">
+                      {highlightMatch(note.title, query.query)}
+                    </span>
+                    {active ? (
+                      <span
+                        className="wiki-link-suggest-return"
+                        aria-hidden="true"
+                      >
+                        ⏎
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
             {showCreate ? (
-              <li>
+              <li className="wiki-link-suggest-create-row">
                 <button
                   type="button"
                   role="option"
@@ -419,7 +477,18 @@ export function NoteEditor({
                     pickCreate();
                   }}
                 >
-                  Create “{createTitle}”
+                  <IconPlus />
+                  <span className="wiki-link-suggest-title">
+                    Create note &quot;{createTitle}&quot;
+                  </span>
+                  {activeIndex === suggestions.length ? (
+                    <span
+                      className="wiki-link-suggest-return"
+                      aria-hidden="true"
+                    >
+                      ⏎
+                    </span>
+                  ) : null}
                 </button>
               </li>
             ) : null}

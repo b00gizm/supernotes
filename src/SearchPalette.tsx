@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { formatRelativeUpdated } from "./notes/format";
 import type { Note, NoteType } from "./notes/types";
+import { highlightMatch } from "./ui/highlightMatch";
 
 export type SearchPaletteProps = {
   open: boolean;
@@ -19,26 +20,6 @@ function noteTypeLabel(type: NoteType): string {
     default:
       return "Note";
   }
-}
-
-/** Bold the first case-insensitive substring match (mockup 1j). */
-function highlightMatch(title: string, query: string): ReactNode {
-  const needle = query.trim();
-  if (!needle) {
-    return title;
-  }
-  const index = title.toLowerCase().indexOf(needle.toLowerCase());
-  if (index < 0) {
-    return title;
-  }
-  const end = index + needle.length;
-  return (
-    <>
-      {title.slice(0, index)}
-      <strong>{title.slice(index, end)}</strong>
-      {title.slice(end)}
-    </>
-  );
 }
 
 function IconSearchGlyph() {
