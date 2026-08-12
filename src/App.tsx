@@ -16,7 +16,9 @@ import {
   formatRelativeUpdated,
   groupNotesForOverview,
   noteSnippet,
+  parseDailyTitle,
   parseSnippetParts,
+  shiftDailyTitle,
   startOfLocalDay,
 } from "./notes/format";
 import { NoteEditor } from "./editor/NoteEditor";
@@ -302,7 +304,6 @@ function App() {
   const {
     notes,
     selectedId,
-    selectedNote,
     titleDraft,
     bodyDraft,
     status,
@@ -318,6 +319,8 @@ function App() {
   } = useNotes({ autoSelect: false });
 
   const [surface, setSurface] = useState<Surface>({ kind: "daily" });
+  /** Which calendar day the Daily surface is showing (`YYYY-MM-DD`). */
+  const [dailyDate, setDailyDate] = useState(() => formatDailyTitle());
   const [isNarrow, setIsNarrow] = useState(prefersNarrow);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(prefersNarrow);
   const macOverlayChrome = prefersMacOverlayChrome();
@@ -332,6 +335,8 @@ function App() {
   const selectedIdRef = useRef(selectedId);
   /** Case-insensitive titles with an in-flight createNote (ENG-97). */
   const creatingWikiTitlesRef = useRef(new Set<string>());
+  const goNavRef = useRef<(id: NavId) => void>(() => {});
+  const goDailyDeltaRef = useRef<(delta: number) => void>(() => {});
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
 
@@ -417,6 +422,50 @@ function App() {
       if (!(event.metaKey || event.ctrlKey)) {
         return;
       }
+
+      if (
+        event.shiftKey &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight")
+      ) {
+        event.preventDefault();
+        goDailyDeltaRef.current(event.key === "ArrowLeft" ? -1 : 1);
+        return;
+      }
+
+      if (!event.shiftKey) {
+        // Prefer event.code — more stable under modifiers than event.key.
+        const digit =
+          event.code === "Digit1" || event.key === "1"
+            ? "1"
+            : event.code === "Digit2" || event.key === "2"
+              ? "2"
+              : event.code === "Digit3" || event.key === "3"
+                ? "3"
+                : event.code === "Digit4" || event.key === "4"
+                  ? "4"
+                  : null;
+        if (digit === "1") {
+          event.preventDefault();
+          goNavRef.current("daily");
+          return;
+        }
+        if (digit === "2") {
+          event.preventDefault();
+          goNavRef.current("notes");
+          return;
+        }
+        if (digit === "3") {
+          event.preventDefault();
+          goNavRef.current("tasks");
+          return;
+        }
+        if (digit === "4") {
+          event.preventDefault();
+          goNavRef.current("calendar");
+          return;
+        }
+      }
+
       const key = event.key.toLowerCase();
       if (key !== "k" && key !== "o") {
         return;
@@ -435,9 +484,11 @@ function App() {
       event.preventDefault();
       setSearchOpen(true);
     };
-    window.addEventListener("keydown", onKeyDown);
+    // Capture: beat ProseMirror when the chord actually reaches the page.
+    // On macOS Tauri, Cmd+digit usually never arrives — native Go menu covers that.
+    window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDown, true);
     };
   }, []);
 
@@ -464,6 +515,8 @@ function App() {
       surface.kind === "notes" ? groupNotesForOverview(notes, dayStamp) : [],
     [surface.kind, notes, dayStamp],
   );
+  const todayTitle = formatDailyTitle(new Date(dayStamp));
+  const viewingToday = dailyDate === todayTitle;
 
   const openOverviewNote = (note: Note) => {
     setSurface({ kind: "note", id: note.id });
@@ -508,7 +561,8 @@ function App() {
     }
     dailyOpening.current = true;
     try {
-      await openDaily();
+      const date = parseDailyTitle(dailyDate) ?? new Date();
+      await openDaily(date);
     } finally {
       dailyOpening.current = false;
     }
@@ -519,19 +573,78 @@ function App() {
       return;
     }
     void ensureDaily();
-    // Bootstrap / re-sync when returning to Daily Note after notes load.
+    // Bootstrap / re-sync when returning to Daily Note or changing day.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- openDaily identity is unstable
-  }, [loading, surface.kind, notes.length]);
+  }, [loading, surface.kind, dailyDate, notes.length]);
 
   const goNav = (id: NavId) => {
     if (id === "daily") {
+      setDailyDate(formatDailyTitle(new Date(dayStamp)));
       setSurface({ kind: "daily" });
-      void ensureDaily();
       return;
     }
     setSurface({ kind: id });
     selectNote(null);
   };
+
+  const goDailyDelta = (delta: number) => {
+    setDailyDate((prev) => shiftDailyTitle(prev, delta));
+    setSurface({ kind: "daily" });
+  };
+
+  goNavRef.current = goNav;
+  goDailyDeltaRef.current = goDailyDelta;
+
+  // Native Go-menu accelerators (CmdOrCtrl+1..4 / Shift+←→). WKWebView on
+  // macOS swallows Cmd+digit before JS; the menu path still fires.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+      return;
+    }
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<string>("menu-nav", (event) => {
+          switch (event.payload) {
+            case "nav-daily":
+              goNavRef.current("daily");
+              break;
+            case "nav-notes":
+              goNavRef.current("notes");
+              break;
+            case "nav-tasks":
+              goNavRef.current("tasks");
+              break;
+            case "nav-calendar":
+              goNavRef.current("calendar");
+              break;
+            case "daily-prev":
+              goDailyDeltaRef.current(-1);
+              break;
+            case "daily-next":
+              goDailyDeltaRef.current(1);
+              break;
+            default:
+              break;
+          }
+        }),
+      )
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unlisten = fn;
+      })
+      .catch(() => {
+        // Browser preview / tests: JS keydown path only.
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const openRecent = (note: Note) => {
     setSurface({ kind: "note", id: note.id });
@@ -539,9 +652,8 @@ function App() {
   };
 
   const openFromSearch = (note: Note) => {
-    // Only today's daily belongs on the daily surface — anything else there
-    // would make ensureDaily jump back to (or create) today (ENG-80).
-    if (note.note_type === "daily" && note.title === formatDailyTitle()) {
+    if (note.note_type === "daily" && parseDailyTitle(note.title)) {
+      setDailyDate(note.title);
       setSurface({ kind: "daily" });
     } else {
       setSurface({ kind: "note", id: note.id });
@@ -893,22 +1005,62 @@ function App() {
                 ) : null}
               </div>
             </div>
-            <input
-              className="title-input"
-              aria-label="Note title"
-              value={
-                selectedNote?.note_type === "daily"
-                  ? dailyDisplayTitle(titleDraft)
-                  : titleDraft
-              }
-              readOnly={selectedNote?.note_type === "daily"}
-              onChange={(event) => {
-                if (selectedNote?.note_type === "daily") {
-                  return;
-                }
-                setTitleDraft(event.target.value);
-              }}
-            />
+            {surface.kind === "daily" ? (
+              <div className="title-row">
+                <input
+                  className="title-input"
+                  aria-label="Note title"
+                  value={dailyDisplayTitle(titleDraft)}
+                  readOnly
+                />
+                <div
+                  className="daily-nav"
+                  role="group"
+                  aria-label="Daily navigation"
+                >
+                  <button
+                    type="button"
+                    className="daily-nav-btn"
+                    aria-label="Previous day"
+                    onClick={() => {
+                      goDailyDelta(-1);
+                    }}
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className="daily-nav-btn"
+                    aria-label="Next day"
+                    onClick={() => {
+                      goDailyDelta(1);
+                    }}
+                  >
+                    ›
+                  </button>
+                  {!viewingToday ? (
+                    <button
+                      type="button"
+                      className="text-button daily-today"
+                      onClick={() => {
+                        setDailyDate(todayTitle);
+                      }}
+                    >
+                      Today
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <input
+                className="title-input"
+                aria-label="Note title"
+                value={titleDraft}
+                onChange={(event) => {
+                  setTitleDraft(event.target.value);
+                }}
+              />
+            )}
             {selectedId ? (
               <NoteEditor
                 key={selectedId}

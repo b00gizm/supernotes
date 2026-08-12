@@ -212,6 +212,13 @@ export function dailyDisplayTitle(title: string): string {
   return date ? formatDailyDisplayTitle(date) : title;
 }
 
+/** Shift a canonical daily title by `deltaDays` (local calendar). */
+export function shiftDailyTitle(title: string, deltaDays: number): string {
+  const date = parseDailyTitle(title) ?? new Date();
+  date.setDate(date.getDate() + deltaDays);
+  return formatDailyTitle(date);
+}
+
 export type OverviewGroupId = "pinned" | "today" | "yesterday" | "earlier";
 
 export type OverviewGroup = {

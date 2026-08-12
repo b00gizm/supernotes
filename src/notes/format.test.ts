@@ -10,6 +10,7 @@ import {
   parseBacklinkSnippetParts,
   parseDailyTitle,
   parseSnippetParts,
+  shiftDailyTitle,
 } from "./format";
 import type { Note } from "./types";
 
@@ -124,6 +125,13 @@ describe("parseDailyTitle", () => {
     expect(parseDailyTitle("2026-08-10")).toEqual(new Date(2026, 7, 10));
     expect(parseDailyTitle("2026-02-30")).toBeNull();
     expect(parseDailyTitle("Monday, Aug 10")).toBeNull();
+  });
+});
+
+describe("shiftDailyTitle", () => {
+  it("moves by local calendar days", () => {
+    expect(shiftDailyTitle("2026-08-10", -1)).toBe("2026-08-09");
+    expect(shiftDailyTitle("2026-08-10", 1)).toBe("2026-08-11");
   });
 });
 

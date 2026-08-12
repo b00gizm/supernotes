@@ -572,4 +572,48 @@ describe("App shell", () => {
     expect(daily?.title).toBe(formatDailyTitle());
     expect(daily?.title).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
+
+  it("prev/next walks days and Today jumps back (ENG-60)", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Previous day" }));
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(yesterday),
+    );
+    expect(screen.getByRole("button", { name: "Today" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Today" }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Today" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Cmd+2 opens Notes and Cmd+1 returns to today's daily (ENG-60)", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    await user.keyboard("{Meta>}2{/Meta}");
+    expect(
+      await screen.findByRole("region", { name: "Notes overview" }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Meta>}1{/Meta}");
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
+    expect(screen.getByRole("button", { name: "Daily Note" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
 });
