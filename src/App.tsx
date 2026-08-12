@@ -23,6 +23,7 @@ import {
 } from "./notes/format";
 import { NoteEditor } from "./editor/NoteEditor";
 import { Backlinks } from "./notes/Backlinks";
+import { DueSection } from "./tasks/DueSection";
 import { TasksView } from "./tasks/TasksView";
 import type { Task } from "./tasks/types";
 import {
@@ -1087,6 +1088,13 @@ function App() {
                 onFocusedTask={() => {
                   setFocusTaskId(null);
                 }}
+              />
+            ) : null}
+            {selectedId && surface.kind === "daily" ? (
+              <DueSection
+                date={dailyDate}
+                notes={notes}
+                onOpenTask={openTaskSource}
               />
             ) : null}
             {selectedId ? (

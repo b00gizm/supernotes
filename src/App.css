@@ -1081,6 +1081,7 @@ button {
   overflow: auto;
 }
 
+.due-section,
 .backlinks {
   flex: 0 0 auto;
   max-height: 40%;
@@ -1088,6 +1089,20 @@ button {
   margin-top: var(--space-6);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border-subtle);
+}
+
+.due-heading {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.due-list {
+  margin: 0;
+  overflow: visible;
 }
 
 .backlinks-heading {

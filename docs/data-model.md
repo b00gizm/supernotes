@@ -58,6 +58,12 @@ First-class task entities referenced from notes (M4). Editor pills store the tas
 | `updated_at`   | TEXT            |                                                   |
 | `completed_at` | TEXT NULL       | set when entering `done` / `cancelled`            |
 
+Daily notes render a live **Due** section (not stored in `body_markdown`) for
+open/waiting tasks with `due_date` on or before that day's title. Overdue
+tasks roll forward until resolved. The query is always current: resolving a
+task drops it from past daily notes too (not a historical snapshot). See
+`docs/markdown.md`.
+
 ### `calendar_events`
 
 Local-only events (M5). Optional `task_id` links a time block to a task.
@@ -94,6 +100,7 @@ Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
   `[[…]]` / `#tag` / `@mention` in `body_markdown` (skips `[[task:…]]`).
 - Frontend: `src/notes/` wraps note/link commands (`notesApi` + `useNotes` with
   ~500ms debounced autosave). `src/tasks/` wraps task commands (`tasksApi`) and
-  the Inbox / Upcoming / Complete overview (`TasksView`). Editor task pills
-  create/update/delete rows immediately; note markdown still autosaves the
-  `[[task:id]]` reference.
+  the Inbox / Upcoming / Complete overview (`TasksView`). Daily notes render a
+  Due query section from `list_tasks(upcoming)` filtered to `due_date <=` that
+  day. Editor task pills create/update/delete rows immediately; note markdown
+  still autosaves the `[[task:id]]` reference.

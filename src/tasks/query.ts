@@ -32,6 +32,34 @@ export function isTaskOverdue(task: Task, today: string): boolean {
   return task.due_date < today;
 }
 
+/**
+ * Daily-note Due query (ENG-64): dated, not Done/Cancelled, due on or before
+ * `date`. Live query — resolving a task drops it from every day's section.
+ */
+export function tasksDueOnOrBefore(tasks: Task[], date: string): Task[] {
+  return tasks
+    .filter((task) => {
+      if (task.state === "done" || task.state === "cancelled") {
+        return false;
+      }
+      if (!task.due_date) {
+        return false;
+      }
+      return task.due_date <= date;
+    })
+    .sort((a, b) => {
+      const due = (a.due_date ?? "").localeCompare(b.due_date ?? "");
+      if (due !== 0) {
+        return due;
+      }
+      const priority = priorityRank(a.priority) - priorityRank(b.priority);
+      if (priority !== 0) {
+        return priority;
+      }
+      return a.created_at.localeCompare(b.created_at);
+    });
+}
+
 function completeCutoff(today: string): string {
   // ponytail: completed_at is UTC ISO; window uses the UTC calendar prefix
   // against local `today`. Upgrade: convert to local date first.

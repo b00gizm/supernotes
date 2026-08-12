@@ -4,6 +4,7 @@ import {
   groupUpcomingTasks,
   isTaskOverdue,
   priorityRank,
+  tasksDueOnOrBefore,
 } from "./query";
 import type { Task } from "./types";
 
@@ -139,6 +140,52 @@ describe("task query helpers (ENG-63)", () => {
     expect(groups[2]?.label).toMatch(/^Tomorrow /);
     expect(groups[4]?.label).toMatch(/^Next week /);
     expect(groups[5]?.label).toBe("Aug 24 – 30");
+  });
+
+  it("rolls unresolved due tasks onto later days and drops terminal ones", () => {
+    const tasks = [
+      task({ id: "mon", title: "Monday due", due_date: "2026-08-10" }),
+      task({
+        id: "waiting",
+        title: "Waiting overdue",
+        state: "waiting",
+        due_date: "2026-08-09",
+      }),
+      task({ id: "tue", title: "Tuesday due", due_date: "2026-08-11" }),
+      task({
+        id: "done",
+        title: "Resolved",
+        state: "done",
+        due_date: "2026-08-10",
+        completed_at: "2026-08-10T12:00:00.000Z",
+      }),
+      task({
+        id: "cancelled",
+        title: "Cancelled",
+        state: "cancelled",
+        due_date: "2026-08-10",
+        completed_at: "2026-08-10T12:00:00.000Z",
+      }),
+      task({ id: "inbox", title: "No due" }),
+    ];
+
+    expect(tasksDueOnOrBefore(tasks, "2026-08-09").map((t) => t.id)).toEqual([
+      "waiting",
+    ]);
+    expect(tasksDueOnOrBefore(tasks, "2026-08-10").map((t) => t.id)).toEqual([
+      "waiting",
+      "mon",
+    ]);
+    expect(tasksDueOnOrBefore(tasks, "2026-08-11").map((t) => t.id)).toEqual([
+      "waiting",
+      "mon",
+      "tue",
+    ]);
+    expect(tasksDueOnOrBefore(tasks, "2026-08-12").map((t) => t.id)).toEqual([
+      "waiting",
+      "mon",
+      "tue",
+    ]);
   });
 
   it("labels later weeks that span months with both month names", () => {
