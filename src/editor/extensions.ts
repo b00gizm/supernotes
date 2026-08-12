@@ -219,14 +219,13 @@ function markdownItMark(md: MarkdownItLike): void {
       return false;
     }
 
-    if (!silent) {
-      const open = state.push("mark_open", "mark", 1);
-      open.markup = "==";
-      const text = state.push("text", "", 0);
-      text.content = state.src.slice(contentStart, close);
-      const end = state.push("mark_close", "mark", -1);
-      end.markup = "==";
-    }
+    // `silent` already returned above — always emit tokens here.
+    const open = state.push("mark_open", "mark", 1);
+    open.markup = "==";
+    const text = state.push("text", "", 0);
+    text.content = state.src.slice(contentStart, close);
+    const end = state.push("mark_close", "mark", -1);
+    end.markup = "==";
     state.pos = close + 2;
     return true;
   });

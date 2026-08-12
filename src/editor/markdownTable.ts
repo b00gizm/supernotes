@@ -206,21 +206,22 @@ function replaceWithMarkdownTable(
   tr.replaceWith(mappedFrom, mappedTo, table);
 
   // Caret into first cell so continued typing stays inside the table.
-  let cellPos: number | null = null;
+  // Object bag: callback assignment isn't visible to control-flow analysis on `let`.
+  const found = { cellPos: null as number | null };
   tr.doc.nodesBetween(mappedFrom, mappedFrom + table.nodeSize, (n, pos) => {
-    if (cellPos != null) {
+    if (found.cellPos != null) {
       return false;
     }
     if (n.type.name === "tableHeader" || n.type.name === "tableCell") {
-      cellPos = pos + 1;
+      found.cellPos = pos + 1;
       if (n.firstChild?.isTextblock) {
-        cellPos += 1;
+        found.cellPos += 1;
       }
       return false;
     }
   });
-  if (cellPos != null) {
-    tr.setSelection(TextSelection.near(tr.doc.resolve(cellPos)));
+  if (found.cellPos != null) {
+    tr.setSelection(TextSelection.near(tr.doc.resolve(found.cellPos)));
   }
   return true;
 }
