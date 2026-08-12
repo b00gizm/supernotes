@@ -230,6 +230,8 @@ export const TaskPill = Node.create<TaskPillOptions>({
       state: { default: "open" },
       dueDate: { default: null },
       priority: { default: null },
+      // Runtime only — set on `[]` create so the title input grabs focus.
+      autofocus: { default: false },
     };
   },
 
@@ -278,7 +280,16 @@ export const TaskPill = Node.create<TaskPillOptions>({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(TaskPillView);
+    return ReactNodeViewRenderer(TaskPillView, {
+      // Keep key events inside the title input (don't let PM steal them).
+      stopEvent: ({ event }) => {
+        const target = event.target;
+        return (
+          target instanceof HTMLInputElement &&
+          target.classList.contains("task-pill-title")
+        );
+      },
+    });
   },
 
   addStorage() {
@@ -334,9 +345,31 @@ export const TaskPill = Node.create<TaskPillOptions>({
                 state: "open",
                 dueDate: null,
                 priority: null,
+                autofocus: true,
               },
             })
             .run();
+
+          // Focus the new pill title so the user can keep typing (no extra click).
+          const focusTitle = () => {
+            if (editor.isDestroyed) {
+              return;
+            }
+            try {
+              const input = editor.view.dom.querySelector(
+                `.task-pill[data-autofocus="true"] .task-pill-title, [data-task-id="${CSS.escape(pendingId)}"] .task-pill-title`,
+              );
+              if (input instanceof HTMLInputElement) {
+                editor.view.dom.blur();
+                input.focus();
+              }
+            } catch {
+              // view may be unmounted in tests
+            }
+          };
+          for (const ms of [0, 16, 50, 100]) {
+            window.setTimeout(focusTitle, ms);
+          }
 
           void options
             .createTask({ note_id: noteId, title: "" })

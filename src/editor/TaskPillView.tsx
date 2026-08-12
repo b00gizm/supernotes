@@ -91,6 +91,7 @@ export function TaskPillView({
   const state = parseState(node.attrs.state);
   const title = String(node.attrs.title ?? "");
   const taskId = String(node.attrs.taskId ?? "");
+  const wantsFocus = Boolean(node.attrs.autofocus);
   const [draft, setDraft] = useState(title);
   const inputRef = useRef<HTMLInputElement>(null);
   const handlers = taskPillHandlers(editor);
@@ -99,13 +100,47 @@ export function TaskPillView({
     setDraft(title);
   }, [title]);
 
+  // `[]` create sets autofocus; keep claiming focus across TipTap's post-rule
+  // editor focus and the pending→real id attr swap. Don't clear autofocus here
+  // via updateAttributes — that transaction refocuses the editor.
+  useEffect(() => {
+    if (!wantsFocus) {
+      return;
+    }
+    const focus = () => {
+      const input = inputRef.current;
+      if (!input) {
+        return;
+      }
+      try {
+        editor.view.dom.blur();
+      } catch {
+        // ignore
+      }
+      input.focus();
+    };
+    focus();
+    const timers = [0, 16, 50, 100].map((ms) => window.setTimeout(focus, ms));
+    return () => {
+      for (const id of timers) {
+        window.clearTimeout(id);
+      }
+    };
+  }, [wantsFocus, taskId, editor]);
+
+  const clearAutofocus = () => {
+    if (wantsFocus) {
+      updateAttributes({ autofocus: false });
+    }
+  };
+
   const commitTitle = (next: string) => {
     const trimmed = next.replace(/\s+/g, " ").trimStart();
     if (trimmed === title) {
       setDraft(title);
       return;
     }
-    updateAttributes({ title: trimmed });
+    updateAttributes({ title: trimmed, autofocus: false });
     if (taskId) {
       handlers.onTitleCommit?.(taskId, trimmed);
     }
@@ -127,6 +162,7 @@ export function TaskPillView({
       data-type="task-pill"
       data-task-id={taskId || undefined}
       data-state={state}
+      data-autofocus={wantsFocus ? "true" : undefined}
       data-drag-handle
     >
       <button
@@ -152,9 +188,11 @@ export function TaskPillView({
         aria-label="Task title"
         placeholder="Task"
         onChange={(event) => {
+          clearAutofocus();
           setDraft(event.target.value);
         }}
         onBlur={() => {
+          clearAutofocus();
           commitTitle(draft);
         }}
         onKeyDown={(event) => {

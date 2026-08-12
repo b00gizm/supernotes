@@ -1,7 +1,11 @@
 import { Editor } from "@tiptap/core";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryTasksApi } from "../tasks/memoryApi";
 import type { Task } from "../tasks/types";
+import { NoteEditor } from "./NoteEditor";
 import { noteEditorExtensions } from "./extensions";
 import { getEditorMarkdown } from "./markdown";
 import { taskPillHandlers } from "./taskPill";
@@ -74,6 +78,26 @@ describe("task pill (ENG-61)", () => {
     });
     expect(ed.getHTML()).toContain('data-type="task-pill"');
     expect(ed.isActive("taskItem")).toBe(false);
+  });
+
+  it("focuses the title input after typing []", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(NoteEditor, {
+        markdown: "",
+        onChange: () => {},
+        currentNoteId: "note-focus",
+      }),
+    );
+    const textbox = await screen.findByRole("textbox", { name: "Note body" });
+    await user.click(textbox);
+    // user-event: `[[` → literal `[`, then `]` and space → `[] `.
+    await user.keyboard("[[] ");
+    await waitFor(() => {
+      const input = textbox.querySelector(".task-pill-title");
+      expect(input).toBeInstanceOf(HTMLInputElement);
+      expect(document.activeElement).toBe(input);
+    });
   });
 
   it("parses and serializes [[task:id]] Title", () => {

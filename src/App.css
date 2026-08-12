@@ -1188,14 +1188,15 @@ button {
   min-width: 0;
 }
 
-/* Borderless task pills (ENG-61 / component sheet 1a): circle + title, hover soft bg. */
+/* Borderless task pills (ENG-61 / component sheet 1a): circle + title.
+ * Hover/active match list rows: horizontal padding + soft rounded bg. */
 .note-editor .tiptap .task-pill {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0.15em -0.35em;
-  padding: 0.15em 0.35em;
-  border-radius: var(--radius-sm);
+  margin: 0.1em 0;
+  padding: 0.25em 0.6rem;
+  border-radius: var(--radius-md);
   border: none;
   background: transparent;
   line-height: var(--leading-body);
@@ -1203,8 +1204,9 @@ button {
 }
 
 .note-editor .tiptap .task-pill:hover,
-.note-editor .tiptap .task-pill.is-selected {
-  background: color-mix(in srgb, var(--bg-chip) 70%, transparent);
+.note-editor .tiptap .task-pill.is-selected,
+.note-editor .tiptap .task-pill:focus-within {
+  background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
 }
 
 .note-editor .tiptap .task-pill-toggle {
