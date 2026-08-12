@@ -45,9 +45,19 @@ function isTauriRuntime(): boolean {
 
 const DEMO_SEED: Note[] = [
   {
+    id: "demo-daily",
+    title: "2026-08-12",
+    body_markdown: "[[task:demo-task-daily]] Follow up with design",
+    note_type: "daily",
+    pinned: false,
+    created_at: "2026-08-12T08:00:00.000Z",
+    updated_at: "2026-08-12T08:00:00.000Z",
+  },
+  {
     id: "demo-roadmap",
     title: "Meridian Q3 roadmap",
-    body_markdown: "Ship pricing v2, land two design reviews",
+    body_markdown:
+      "[[task:demo-task-inbox]] Draft pricing brief\n[[task:demo-task-overdue]] Land design review",
     note_type: "regular",
     pinned: false,
     created_at: "2026-08-10T16:00:00.000Z",
@@ -74,7 +84,7 @@ const DEMO_SEED: Note[] = [
   {
     id: "demo-sync",
     title: "Pricing sync",
-    body_markdown: "Decided to keep the free tier for now",
+    body_markdown: "[[task:demo-task-meeting]] Send recap to team",
     note_type: "meeting",
     pinned: false,
     created_at: "2026-08-09T15:00:00.000Z",
@@ -83,7 +93,7 @@ const DEMO_SEED: Note[] = [
   {
     id: "demo-weekly",
     title: "Weekly review",
-    body_markdown: "Shipped the importer; survey still open",
+    body_markdown: "[[task:demo-task-done]] Ship the importer",
     note_type: "regular",
     pinned: false,
     created_at: "2026-08-07T18:00:00.000Z",
