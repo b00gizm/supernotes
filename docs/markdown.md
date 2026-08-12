@@ -100,3 +100,17 @@ distinct pill node:
 - Deleting the pill in the editor **deletes** the task row (not orphaned).
 - State / due / priority live in SQLite; on load, pills hydrate from the
   `tasks` table.
+
+## Daily Due section (ENG-64)
+
+Daily notes render a **Due** section below the editor (same idea as Backlinks:
+query UI, never written into `body_markdown`).
+
+- Lists tasks whose `due_date` is on or before that daily note's date and
+  whose state is not `done` / `cancelled` (open and waiting both appear).
+- Overdue tasks roll forward onto later daily notes until resolved.
+- The section is always the **live** query for that date, not a snapshot:
+  resolving a task removes it from every day's Due list, including past days.
+- Hidden when the query is empty.
+- Each row links to the task's source note. The circle marks the task done;
+  ··· / right-click opens the metadata popover.

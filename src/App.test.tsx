@@ -7,6 +7,7 @@ import {
   formatDailyDisplayTitle,
   formatDailyTitle,
   dailyDisplayTitle,
+  shiftDailyTitle,
 } from "./notes/format";
 import { createMemoryNotesApi } from "./notes/memoryApi";
 import type { TasksApi } from "./tasks/api";
@@ -88,6 +89,9 @@ describe("App shell", () => {
 
     const title = formatDailyDisplayTitle();
     expect(await screen.findByLabelText("Note title")).toHaveValue(title);
+    expect(
+      screen.queryByRole("region", { name: "Due" }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens Tasks overview with Inbox / Upcoming / Complete", async () => {
@@ -725,6 +729,163 @@ describe("App shell", () => {
     );
     expect(
       screen.queryByRole("button", { name: "Today" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("rolls unresolved due tasks onto later daily notes and hides when empty (ENG-64)", async () => {
+    const user = userEvent.setup();
+    const today = formatDailyTitle();
+    const monday = shiftDailyTitle(today, -2);
+    const sunday = shiftDailyTitle(today, -3);
+    const stamp = "2026-08-10T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "src",
+        title: "Project plan",
+        body_markdown: "[[task:t-due]] Ship pricing",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    tasksApiRef.current = createMemoryTasksApi([
+      {
+        id: "t-due",
+        note_id: "src",
+        title: "Ship pricing",
+        state: "open",
+        due_date: monday,
+        priority: "high",
+        created_at: stamp,
+        updated_at: stamp,
+        completed_at: null,
+      },
+      {
+        id: "t-future",
+        note_id: "src",
+        title: "Later work",
+        state: "open",
+        due_date: shiftDailyTitle(today, 3),
+        priority: null,
+        created_at: stamp,
+        updated_at: stamp,
+        completed_at: null,
+      },
+      {
+        id: "t-done",
+        note_id: "src",
+        title: "Already done",
+        state: "done",
+        due_date: monday,
+        priority: null,
+        created_at: stamp,
+        updated_at: stamp,
+        completed_at: stamp,
+      },
+    ]);
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    const dueToday = await screen.findByRole("region", { name: "Due" });
+    expect(within(dueToday).getByText("Ship pricing")).toBeInTheDocument();
+    expect(within(dueToday).getByText("Project plan")).toBeInTheDocument();
+    expect(within(dueToday).queryByText("Later work")).not.toBeInTheDocument();
+    expect(
+      within(dueToday).queryByText("Already done"),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      dailyDisplayTitle(shiftDailyTitle(today, -1)),
+    );
+    expect(
+      within(await screen.findByRole("region", { name: "Due" })).getByText(
+        "Ship pricing",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      dailyDisplayTitle(monday),
+    );
+    expect(
+      within(await screen.findByRole("region", { name: "Due" })).getByText(
+        "Ship pricing",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      dailyDisplayTitle(sunday),
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: "Due" }),
+      ).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Next day" }));
+    const dueMonday = await screen.findByRole("region", { name: "Due" });
+    await user.click(
+      within(dueMonday).getByRole("button", { name: "Mark task done" }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: "Due" }),
+      ).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Next day" }));
+    await screen.findByLabelText("Note title");
+    expect(
+      screen.queryByRole("region", { name: "Due" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("links Due rows to the source note and omits the section on regular notes", async () => {
+    const user = userEvent.setup();
+    const today = formatDailyTitle();
+    const stamp = "2026-08-10T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "src",
+        title: "Project plan",
+        body_markdown: "",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    tasksApiRef.current = createMemoryTasksApi([
+      {
+        id: "t-due",
+        note_id: "src",
+        title: "Ship pricing",
+        state: "waiting",
+        due_date: today,
+        priority: null,
+        created_at: stamp,
+        updated_at: stamp,
+        completed_at: null,
+      },
+    ]);
+
+    render(<App />);
+    const due = await screen.findByRole("region", { name: "Due" });
+    await user.click(within(due).getByRole("button", { name: "Task details" }));
+    expect(
+      screen.getByRole("dialog", { name: /Ship pricing/ }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.click(within(due).getByRole("button", { name: /Ship pricing/ }));
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Project plan",
+    );
+    expect(
+      screen.queryByRole("region", { name: "Due" }),
     ).not.toBeInTheDocument();
   });
 
