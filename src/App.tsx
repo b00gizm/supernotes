@@ -304,6 +304,8 @@ function App() {
   const dailyOpening = useRef(false);
   const notesRef = useRef(notes);
   const selectedIdRef = useRef(selectedId);
+  /** Case-insensitive titles with an in-flight createNote (ENG-97). */
+  const creatingWikiTitlesRef = useRef(new Set<string>());
   notesRef.current = notes;
   selectedIdRef.current = selectedId;
 
@@ -532,15 +534,24 @@ function App() {
       openFromSearch(existing);
       return;
     }
+    const key = link.title.trim().toLowerCase();
+    if (!key || creatingWikiTitlesRef.current.has(key)) {
+      return;
+    }
+    creatingWikiTitlesRef.current.add(key);
     // Create-on-click: title = link text, empty body (ENG-56).
     // Leave the daily surface first — otherwise ensureDaily re-selects today
     // when createNote bumps notes.length (one-frame race).
     setSurface({ kind: "note", id: "" });
-    void createNote(link.title).then((created) => {
-      if (created) {
-        openFromSearch(created);
-      }
-    });
+    void createNote(link.title)
+      .then((created) => {
+        if (created) {
+          openFromSearch(created);
+        }
+      })
+      .finally(() => {
+        creatingWikiTitlesRef.current.delete(key);
+      });
   };
 
   const activeNav: NavId | null =

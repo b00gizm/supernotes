@@ -1102,6 +1102,12 @@ button {
   font-size: var(--text-xs);
 }
 
+.note-editor .note-image-insert-error {
+  margin: var(--space-2) 0 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
 /* lowlight / highlight.js token colors — light + dark via currentColor mix */
 .note-editor .tiptap .hljs-comment,
 .note-editor .tiptap .hljs-quote {
