@@ -50,6 +50,30 @@ describe("wikilinks helpers", () => {
     ).toBe("#Alpha and @Ada Lovelace and @Priya");
   });
 
+  it("rewrites matching titles case-insensitively like resolution", () => {
+    expect(
+      rewriteWikilinkTitle(
+        "See [[weekly review]] and #Project with @sam",
+        "Weekly Review",
+        "Done",
+      ),
+    ).toBe("See [[Done]] and #Project with @sam");
+    expect(
+      rewriteWikilinkTitle("#Project and [[project]]", "project", "meridian"),
+    ).toBe("#meridian and [[meridian]]");
+    expect(rewriteWikilinkTitle("Ask @Sam please", "sam", "Priya")).toBe(
+      "Ask @Priya please",
+    );
+  });
+
+  it("extract parity fixture matches Rust (unclosed [[ continues)", async () => {
+    const cases = (await import("./fixtures/wikilink-extract-parity.json"))
+      .default as Array<{ body: string; titles: string[] }>;
+    for (const { body, titles } of cases) {
+      expect(extractWikilinkTitles(body)).toEqual(titles);
+    }
+  });
+
   it("finds notes by title case-insensitively preferring exact case", () => {
     const notes = [
       { title: "foo", id: "1" },

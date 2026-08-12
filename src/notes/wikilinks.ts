@@ -21,19 +21,19 @@ export function extractWikilinkTitles(body: string): string[] {
     if (body.startsWith(WIKI_OPEN, i)) {
       const start = i + WIKI_OPEN.length;
       const close = body.indexOf(WIKI_CLOSE, start);
-      if (close < 0) {
-        break;
-      }
-      i = close + WIKI_CLOSE.length;
-      const title = body.slice(start, close).trim();
-      if (!title || title.includes("\n")) {
+      // Unclosed `[[`: skip one char and keep scanning (same as Rust / rewrite).
+      if (close >= 0) {
+        i = close + WIKI_CLOSE.length;
+        const title = body.slice(start, close).trim();
+        if (!title || title.includes("\n")) {
+          continue;
+        }
+        if (title.length >= 5 && title.slice(0, 5).toLowerCase() === "task:") {
+          continue;
+        }
+        titles.push(title);
         continue;
       }
-      if (title.length >= 5 && title.slice(0, 5).toLowerCase() === "task:") {
-        continue;
-      }
-      titles.push(title);
-      continue;
     }
 
     if (body.charAt(i) === "#" && !isWordyBefore(body, i)) {
@@ -62,9 +62,9 @@ export function extractWikilinkTitles(body: string): string[] {
 }
 
 /**
- * Replace `[[oldTitle]]` / `#old` / `@old` with the new title when the inner
- * title matches exactly (trimmed). Tag/mention forms rewrite only when both
- * titles still fit that syntax (otherwise leave the shorthand unchanged).
+ * Replace `[[oldTitle]]` / `#old` / `@old` when the inner title matches
+ * case-insensitively (same as link resolution). Tag/mention forms rewrite only
+ * when both titles still fit that syntax (otherwise leave the shorthand unchanged).
  */
 export function rewriteWikilinkTitle(
   body: string,
@@ -74,6 +74,7 @@ export function rewriteWikilinkTitle(
   if (oldTitle === newTitle) {
     return body;
   }
+  const oldLower = oldTitle.toLowerCase();
   const rewriteTag = TAG_TITLE.test(oldTitle) && TAG_TITLE.test(newTitle);
   const rewriteMention =
     MENTION_TITLE.test(oldTitle) && MENTION_TITLE.test(newTitle);
@@ -85,7 +86,7 @@ export function rewriteWikilinkTitle(
       const close = body.indexOf(WIKI_CLOSE, start);
       if (close >= 0) {
         const raw = body.slice(start, close);
-        if (raw.trim() === oldTitle) {
+        if (raw.trim().toLowerCase() === oldLower) {
           out += `${WIKI_OPEN}${newTitle}${WIKI_CLOSE}`;
           i = close + WIKI_CLOSE.length;
           continue;
@@ -95,7 +96,7 @@ export function rewriteWikilinkTitle(
 
     if (rewriteTag && body.charAt(i) === "#" && !isWordyBefore(body, i)) {
       const match = body.slice(i + 1).match(/^([\w-]+)/);
-      if (match?.[1] === oldTitle) {
+      if (match?.[1]?.toLowerCase() === oldLower) {
         out += `#${newTitle}`;
         i += 1 + match[1].length;
         continue;
@@ -106,7 +107,7 @@ export function rewriteWikilinkTitle(
       const match = body
         .slice(i + 1)
         .match(/^([A-Za-z][\w-]*(?: [A-Z][\w-]*)?)/);
-      if (match?.[1] === oldTitle) {
+      if (match?.[1]?.toLowerCase() === oldLower) {
         out += `@${newTitle}`;
         i += 1 + match[1].length;
         continue;

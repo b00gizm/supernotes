@@ -118,7 +118,8 @@ pub fn extract_wikilink_titles(body: &str) -> Vec<String> {
     titles
 }
 
-/// Replace `[[old]]` / `#old` / `@old` when the captured title matches exactly.
+/// Replace `[[old]]` / `#old` / `@old` when the captured title matches
+/// case-insensitively (same as `find_note_by_title` / SQLite `LOWER`).
 /// Tag/mention shorthand rewrites only when both titles still fit that syntax.
 pub fn rewrite_wikilink_title(body: &str, old_title: &str, new_title: &str) -> String {
     if old_title == new_title {
@@ -134,7 +135,7 @@ pub fn rewrite_wikilink_title(body: &str, old_title: &str, new_title: &str) -> S
             let start = i + 2;
             if let Some(rel) = body[start..].find("]]") {
                 let raw = &body[start..start + rel];
-                if raw.trim() == old_title {
+                if raw.trim().eq_ignore_ascii_case(old_title) {
                     out.push_str("[[");
                     out.push_str(new_title);
                     out.push_str("]]");
@@ -146,7 +147,7 @@ pub fn rewrite_wikilink_title(body: &str, old_title: &str, new_title: &str) -> S
 
         if rewrite_tag && bytes[i] == b'#' && !is_wordy_before(bytes, i) {
             if let Some(title) = scan_tag_title(body, i + 1) {
-                if title == old_title {
+                if title.eq_ignore_ascii_case(old_title) {
                     out.push('#');
                     out.push_str(new_title);
                     i += 1 + title.len();
@@ -157,7 +158,7 @@ pub fn rewrite_wikilink_title(body: &str, old_title: &str, new_title: &str) -> S
 
         if rewrite_mention && bytes[i] == b'@' && !is_wordy_before(bytes, i) {
             if let Some(title) = scan_mention_title(body, i + 1) {
-                if title == old_title {
+                if title.eq_ignore_ascii_case(old_title) {
                     out.push('@');
                     out.push_str(new_title);
                     i += 1 + title.len();
@@ -214,5 +215,46 @@ mod tests {
             rewrite_wikilink_title(body, "Priya Sharma", "Ada Lovelace"),
             "#Alpha and @Ada Lovelace and #Alpha-x and @Priya"
         );
+    }
+
+    #[test]
+    fn rewrite_matches_case_insensitively_like_resolution() {
+        assert_eq!(
+            rewrite_wikilink_title(
+                "See [[weekly review]] and #Project with @sam",
+                "Weekly Review",
+                "Done"
+            ),
+            "See [[Done]] and #Project with @sam"
+        );
+        assert_eq!(
+            rewrite_wikilink_title("#Project and [[project]]", "project", "meridian"),
+            "#meridian and [[meridian]]"
+        );
+        assert_eq!(
+            rewrite_wikilink_title("Ask @Sam please", "sam", "Priya"),
+            "Ask @Priya please"
+        );
+    }
+
+    #[test]
+    fn extract_parity_fixture_matches_ts() {
+        #[derive(serde::Deserialize)]
+        struct Case {
+            body: String,
+            titles: Vec<String>,
+        }
+        let cases: Vec<Case> = serde_json::from_str(include_str!(
+            "../../../src/notes/fixtures/wikilink-extract-parity.json"
+        ))
+        .expect("parity fixture");
+        for case in cases {
+            assert_eq!(
+                extract_wikilink_titles(&case.body),
+                case.titles,
+                "body={:?}",
+                case.body
+            );
+        }
     }
 }
