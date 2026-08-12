@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type { NotesApi } from "./notes/api";
-import { formatDailyTitle } from "./notes/format";
+import { formatDailyDisplayTitle, formatDailyTitle } from "./notes/format";
 import { createMemoryNotesApi } from "./notes/memoryApi";
 
 const apiRef: { current: NotesApi } = {
@@ -20,6 +20,7 @@ vi.mock("./notes/api", async () => {
       searchNotes: (query: string) => apiRef.current.searchNotes(query),
       createNote: (input: Parameters<NotesApi["createNote"]>[0]) =>
         apiRef.current.createNote(input),
+      getOrCreateDaily: (date: string) => apiRef.current.getOrCreateDaily(date),
       updateNote: (input: Parameters<NotesApi["updateNote"]>[0]) =>
         apiRef.current.updateNote(input),
       setPinned: (id: string, pinned: boolean) =>
@@ -51,7 +52,7 @@ describe("App shell", () => {
       "true",
     );
 
-    const title = formatDailyTitle();
+    const title = formatDailyDisplayTitle();
     expect(await screen.findByLabelText("Note title")).toHaveValue(title);
   });
 
@@ -283,13 +284,14 @@ describe("App shell", () => {
   it("shows a dirty-only save dot instead of Unsaved/Saved text (ENG-114)", async () => {
     const user = userEvent.setup();
     render(<App />);
-    const title = await screen.findByLabelText("Note title");
+    await screen.findByLabelText("Note title");
     expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
     expect(screen.queryByText("Saved")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Unsaved changes")).not.toBeInTheDocument();
 
-    await user.clear(title);
-    await user.type(title, "Edited daily");
+    // Daily titles are read-only (ENG-59); dirty via body instead.
+    const body = await screen.findByLabelText("Note body");
+    await user.type(body, "Edited daily");
     expect(await screen.findByLabelText("Unsaved changes")).toBeInTheDocument();
     expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
   });
@@ -435,7 +437,9 @@ describe("App shell", () => {
     });
 
     render(<App />);
-    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
     await screen.findByLabelText("Note body");
 
     const personLink = await waitFor(() => {
@@ -492,7 +496,9 @@ describe("App shell", () => {
       });
 
     render(<App />);
-    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
     const personLink = await waitFor(() => {
       const el = document.querySelector('.wiki-link[data-title="Person"]');
       expect(el).toBeTruthy();
@@ -537,7 +543,9 @@ describe("App shell", () => {
     ]);
 
     render(<App />);
-    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
 
     await user.click(screen.getByRole("button", { name: /^Other note\b/ }));
     expect(await screen.findByLabelText("Note title")).toHaveValue(
@@ -546,9 +554,22 @@ describe("App shell", () => {
 
     const nav = screen.getByRole("navigation", { name: "Primary" });
     await user.click(within(nav).getByRole("button", { name: "Daily Note" }));
-    expect(await screen.findByLabelText("Note title")).toHaveValue(dailyTitle);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
     expect(
       screen.queryByRole("button", { name: "Back to Notes" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("stores daily titles as YYYY-MM-DD and shows the display form (ENG-59)", async () => {
+    render(<App />);
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      formatDailyDisplayTitle(),
+    );
+    const notes = await apiRef.current.listNotes();
+    const daily = notes.find((note) => note.note_type === "daily");
+    expect(daily?.title).toBe(formatDailyTitle());
+    expect(daily?.title).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });

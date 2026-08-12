@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { NotesApi } from "./api";
 import { notesApi as defaultNotesApi } from "./api";
-import { byUpdatedAtDesc } from "./format";
+import { byUpdatedAtDesc, formatDailyTitle } from "./format";
 import type { CreateNoteInput, Note } from "./types";
 
 export const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -341,6 +341,49 @@ export function useNotes(options: UseNotesOptions = {}) {
     }
   };
 
+  /** Open (or lazily create) the daily note for `date` (local calendar day). */
+  const openDaily = async (date: Date = new Date()) => {
+    const title = formatDailyTitle(date);
+    const existing = notesRef.current.find(
+      (note) => note.note_type === "daily" && note.title === title,
+    );
+    if (existing) {
+      if (selectedIdRef.current !== existing.id) {
+        // Flush before switching away from a dirty draft.
+        if (selectedIdRef.current && statusRef.current === "dirty") {
+          await persistDraftRef.current({
+            id: selectedIdRef.current,
+            title: titleDraftRef.current,
+            body: bodyDraftRef.current,
+          });
+        }
+        applySelection(existing);
+      }
+      return existing;
+    }
+    setError(null);
+    try {
+      if (selectedIdRef.current && statusRef.current === "dirty") {
+        await persistDraftRef.current({
+          id: selectedIdRef.current,
+          title: titleDraftRef.current,
+          body: bodyDraftRef.current,
+        });
+      }
+      const note = await apiRef.current.getOrCreateDaily(title);
+      const withoutDup = notesRef.current.filter((item) => item.id !== note.id);
+      const next = [note, ...withoutDup].sort(byUpdatedAtDesc);
+      notesRef.current = next;
+      setNotes(next);
+      saveGeneration.current += 1;
+      applySelection(note);
+      return note;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  };
+
   const deleteSelected = async () => {
     const id = selectedIdRef.current;
     if (!id) {
@@ -427,6 +470,7 @@ export function useNotes(options: UseNotesOptions = {}) {
     setTitleDraft,
     setBodyDraft,
     createNote,
+    openDaily,
     deleteSelected,
     setPinned,
     refresh,

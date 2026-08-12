@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   backlinkSnippet,
+  formatDailyDisplayTitle,
   formatDailyTitle,
   formatOverviewWhen,
   formatRelativeUpdated,
   groupNotesForOverview,
   noteSnippet,
   parseBacklinkSnippetParts,
+  parseDailyTitle,
   parseSnippetParts,
 } from "./format";
 import type { Note } from "./types";
@@ -104,10 +106,24 @@ describe("parseBacklinkSnippetParts", () => {
 });
 
 describe("formatDailyTitle", () => {
-  it("formats like the daily note mockup", () => {
-    expect(formatDailyTitle(new Date("2026-08-10T12:00:00.000Z"))).toBe(
-      "Monday, Aug 10",
+  it("uses YYYY-MM-DD for the local calendar day", () => {
+    expect(formatDailyTitle(new Date(2026, 7, 10))).toBe("2026-08-10");
+  });
+});
+
+describe("formatDailyDisplayTitle", () => {
+  it("formats like ENG-59 display convention", () => {
+    expect(formatDailyDisplayTitle(new Date(2026, 7, 10))).toBe(
+      "Monday, Aug 10 2026",
     );
+  });
+});
+
+describe("parseDailyTitle", () => {
+  it("round-trips valid titles and rejects garbage", () => {
+    expect(parseDailyTitle("2026-08-10")).toEqual(new Date(2026, 7, 10));
+    expect(parseDailyTitle("2026-02-30")).toBeNull();
+    expect(parseDailyTitle("Monday, Aug 10")).toBeNull();
   });
 });
 

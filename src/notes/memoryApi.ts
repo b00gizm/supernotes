@@ -87,6 +87,14 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
         created_at: stamp,
         updated_at: stamp,
       };
+      if (
+        note.note_type === "daily" &&
+        notes.some(
+          (item) => item.note_type === "daily" && item.title === note.title,
+        )
+      ) {
+        return Promise.reject(new Error("daily title already exists"));
+      }
       notes = [note, ...notes];
       syncLinksFromBody(note.id, note.body_markdown);
       // Late targets: bodies that already mention this title get a link row.
@@ -117,6 +125,19 @@ export function createMemoryNotesApi(seed: Note[] = []): NotesApi {
         }
       }
       return Promise.resolve(note);
+    },
+    async getOrCreateDaily(date: string) {
+      const title = date.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(title)) {
+        return Promise.reject(new Error("daily date must be YYYY-MM-DD"));
+      }
+      const existing = notes.find(
+        (note) => note.note_type === "daily" && note.title === title,
+      );
+      if (existing) {
+        return existing;
+      }
+      return this.createNote({ title, note_type: "daily" });
     },
     updateNote(input: UpdateNoteInput) {
       const current = notes.find((item) => item.id === input.id);

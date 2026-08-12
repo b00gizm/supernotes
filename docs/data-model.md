@@ -17,15 +17,18 @@ SQLite is the source of truth. The database file is `supernotes.sqlite3` in the 
 Core note document. `body_markdown` is the canonical content; the TipTap editor
 round-trips to this column (see `docs/markdown.md`).
 
-| Column          | Type    | Notes                                              |
-| --------------- | ------- | -------------------------------------------------- |
-| `id`            | TEXT PK | UUID                                               |
-| `title`         | TEXT    |                                                    |
-| `body_markdown` | TEXT    | default `''`                                       |
-| `note_type`     | TEXT    | `regular` \| `daily` \| `meeting`                  |
-| `pinned`        | INTEGER | `0`/`1`, default `0` (Notes overview Pinned group) |
-| `created_at`    | TEXT    |                                                    |
-| `updated_at`    | TEXT    |                                                    |
+| Column          | Type    | Notes                                                      |
+| --------------- | ------- | ---------------------------------------------------------- |
+| `id`            | TEXT PK | UUID                                                       |
+| `title`         | TEXT    | For `daily`, canonical `YYYY-MM-DD` (unique among dailies) |
+| `body_markdown` | TEXT    | default `''`                                               |
+| `note_type`     | TEXT    | `regular` \| `daily` \| `meeting`                          |
+| `pinned`        | INTEGER | `0`/`1`, default `0` (Notes overview Pinned group)         |
+| `created_at`    | TEXT    |                                                            |
+| `updated_at`    | TEXT    |                                                            |
+
+Unique index `notes_daily_title_uidx` enforces one daily note per calendar day
+(title). Display formatting (`Sunday, Aug 10 2026`) is frontend-only.
 
 ### `links`
 
@@ -83,8 +86,8 @@ Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
 ## Access layer
 
 - Rust: `src-tauri/src/db/` — open/migrate, models, `Repository` CRUD.
-- Tauri commands: `create_note`, `get_note`, `list_notes`, `search_notes`,
-  `update_note`, `set_note_pinned`, `delete_note`, `list_links_from`
-  (`src-tauri/src/notes.rs`). Saving a note syncs its outbound `links` rows from
-  `[[…]]` / `#tag` / `@mention` in `body_markdown`.
+- Tauri commands: `create_note`, `get_or_create_daily_note`, `get_note`,
+  `list_notes`, `search_notes`, `update_note`, `set_note_pinned`, `delete_note`,
+  `list_links_from` (`src-tauri/src/notes.rs`). Saving a note syncs its outbound
+  `links` rows from `[[…]]` / `#tag` / `@mention` in `body_markdown`.
 - Frontend: `src/notes/` wraps those commands (`notesApi` + `useNotes` with ~500ms debounced autosave).

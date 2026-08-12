@@ -59,6 +59,41 @@ impl<'a> Repository<'a> {
         Ok(note)
     }
 
+    /// Canonical daily title is `YYYY-MM-DD`. Returns the existing note or creates it.
+    pub fn get_or_create_daily(&self, date: &str) -> DbResult<Note> {
+        let date = date.trim();
+        if !is_daily_title(date) {
+            return Err(DbError::Invalid(format!(
+                "daily date must be YYYY-MM-DD, got {date:?}"
+            )));
+        }
+        if let Some(existing) = self.find_daily_by_title(date)? {
+            return Ok(existing);
+        }
+        match self.create_note(date, "", NoteType::Daily, false) {
+            Ok(note) => Ok(note),
+            Err(DbError::Sqlite(rusqlite::Error::SqliteFailure(info, _)))
+                if info.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                self.find_daily_by_title(date)?.ok_or(DbError::NotFound)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn find_daily_by_title(&self, title: &str) -> DbResult<Option<Note>> {
+        self.conn
+            .query_row(
+                "SELECT id, title, body_markdown, note_type, pinned, created_at, updated_at
+                 FROM notes
+                 WHERE note_type = 'daily' AND title = ?1",
+                [title],
+                map_note,
+            )
+            .optional()
+            .map_err(DbError::from)
+    }
+
     pub fn get_note(&self, id: &str) -> DbResult<Note> {
         self.conn
             .query_row(
@@ -625,6 +660,33 @@ fn like_contains_pattern(query: &str) -> String {
     escaped
 }
 
+fn is_daily_title(title: &str) -> bool {
+    let bytes = title.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return false;
+    }
+    let Ok(year) = title[0..4].parse::<i32>() else {
+        return false;
+    };
+    let Ok(month) = title[5..7].parse::<u32>() else {
+        return false;
+    };
+    let Ok(day) = title[8..10].parse::<u32>() else {
+        return false;
+    };
+    if !(1..=12).contains(&month) {
+        return false;
+    }
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        _ => return false,
+    };
+    (1..=max_day).contains(&day)
+}
+
 fn map_note(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     let note_type: String = row.get(3)?;
     Ok(Note {
@@ -745,6 +807,23 @@ mod tests {
 
             repo.delete_note(&created.id).unwrap();
             assert!(matches!(repo.get_note(&created.id), Err(DbError::NotFound)));
+        });
+    }
+
+    #[test]
+    fn get_or_create_daily_is_idempotent_and_unique() {
+        with_repo(|repo| {
+            let daily = repo.get_or_create_daily("2026-08-10").unwrap();
+            assert_eq!(daily.note_type, NoteType::Daily);
+            assert_eq!(daily.title, "2026-08-10");
+            let again = repo.get_or_create_daily("2026-08-10").unwrap();
+            assert_eq!(again.id, daily.id);
+            assert!(repo.get_or_create_daily("Aug 10").is_err());
+            assert!(
+                repo.create_note("2026-08-10", "", NoteType::Daily, false)
+                    .is_err(),
+                "unique daily title enforced"
+            );
         });
     }
 

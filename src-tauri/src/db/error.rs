@@ -10,6 +10,8 @@ pub enum DbError {
     Migration(String),
     #[error("not found")]
     NotFound,
+    #[error("{0}")]
+    Invalid(String),
 }
 
 pub type DbResult<T> = Result<T, DbError>;
