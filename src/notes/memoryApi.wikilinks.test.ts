@@ -63,6 +63,38 @@ describe("memoryApi wikilink sync", () => {
     expect(source?.body_markdown).toBe("See [[Baz]].");
   });
 
+  it("rewrites differently-cased wikilinks on rename (ENG-92)", async () => {
+    const api = createMemoryNotesApi([
+      seed({
+        id: "src",
+        title: "Source",
+        body_markdown: "See [[weekly review]] and #Project.",
+      }),
+      seed({ id: "wr", title: "Weekly review" }),
+      seed({ id: "proj", title: "project" }),
+    ]);
+    await api.updateNote({
+      id: "src",
+      title: "Source",
+      body_markdown: "See [[weekly review]] and #Project.",
+    });
+    expect(
+      (await api.listLinksFrom("src")).map((l) => l.target_note_id).sort(),
+    ).toEqual(["proj", "wr"]);
+
+    await api.updateNote({
+      id: "wr",
+      title: "Monthly review",
+      body_markdown: "",
+    });
+    await api.updateNote({ id: "proj", title: "meridian", body_markdown: "" });
+    const source = (await api.listNotes()).find((note) => note.id === "src");
+    expect(source?.body_markdown).toBe("See [[Monthly review]] and #meridian.");
+    expect(
+      (await api.listLinksFrom("src")).map((l) => l.target_note_id).sort(),
+    ).toEqual(["proj", "wr"]);
+  });
+
   it("syncs and rewrites #tag / @mention like wikilinks", async () => {
     const api = createMemoryNotesApi([
       seed({ id: "src", title: "Source" }),
