@@ -26,6 +26,13 @@ pub struct UpdateNoteInput {
 }
 
 #[tauri::command]
+pub fn get_or_create_daily_note(state: State<'_, Db>, date: String) -> Result<Note, String> {
+    state
+        .with_conn(|conn| Repository::new(conn).get_or_create_daily(&date))
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub fn create_note(state: State<'_, Db>, input: CreateNoteInput) -> Result<Note, String> {
     state
         .with_conn(|conn| {

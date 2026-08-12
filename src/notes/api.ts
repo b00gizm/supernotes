@@ -7,6 +7,8 @@ export type NotesApi = {
   listNotes: () => Promise<Note[]>;
   searchNotes: (query: string) => Promise<Note[]>;
   createNote: (input: CreateNoteInput) => Promise<Note>;
+  /** Lazy daily note for `YYYY-MM-DD`; idempotent. */
+  getOrCreateDaily: (date: string) => Promise<Note>;
   updateNote: (input: UpdateNoteInput) => Promise<Note>;
   /** Metadata toggle; does not touch updated_at. */
   setPinned: (id: string, pinned: boolean) => Promise<Note>;
@@ -19,6 +21,8 @@ const tauriNotesApi: NotesApi = {
   listNotes: () => invoke<Note[]>("list_notes"),
   searchNotes: (query) => invoke<Note[]>("search_notes", { query }),
   createNote: (input) => invoke<Note>("create_note", { input }),
+  getOrCreateDaily: (date) =>
+    invoke<Note>("get_or_create_daily_note", { date }),
   updateNote: (input) => invoke<Note>("update_note", { input }),
   setPinned: (id, pinned) => invoke<Note>("set_note_pinned", { id, pinned }),
   deleteNote: async (id) => {

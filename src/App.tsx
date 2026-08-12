@@ -10,6 +10,7 @@ import {
 import { SearchPalette } from "./SearchPalette";
 import { notesApi } from "./notes/api";
 import {
+  dailyDisplayTitle,
   formatDailyTitle,
   formatOverviewWhen,
   formatRelativeUpdated,
@@ -301,6 +302,7 @@ function App() {
   const {
     notes,
     selectedId,
+    selectedNote,
     titleDraft,
     bodyDraft,
     status,
@@ -310,6 +312,7 @@ function App() {
     setTitleDraft,
     setBodyDraft,
     createNote,
+    openDaily,
     deleteSelected,
     setPinned,
   } = useNotes({ autoSelect: false });
@@ -503,19 +506,9 @@ function App() {
     if (dailyOpening.current) {
       return;
     }
-    const title = formatDailyTitle();
-    const existing = notesRef.current.find(
-      (note) => note.note_type === "daily" && note.title === title,
-    );
-    if (existing) {
-      if (selectedIdRef.current !== existing.id) {
-        selectNote(existing.id);
-      }
-      return;
-    }
     dailyOpening.current = true;
     try {
-      await createNote(title, { note_type: "daily" });
+      await openDaily();
     } finally {
       dailyOpening.current = false;
     }
@@ -527,7 +520,7 @@ function App() {
     }
     void ensureDaily();
     // Bootstrap / re-sync when returning to Daily Note after notes load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- select/create are unstable identities
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openDaily identity is unstable
   }, [loading, surface.kind, notes.length]);
 
   const goNav = (id: NavId) => {
@@ -903,8 +896,16 @@ function App() {
             <input
               className="title-input"
               aria-label="Note title"
-              value={titleDraft}
+              value={
+                selectedNote?.note_type === "daily"
+                  ? dailyDisplayTitle(titleDraft)
+                  : titleDraft
+              }
+              readOnly={selectedNote?.note_type === "daily"}
               onChange={(event) => {
+                if (selectedNote?.note_type === "daily") {
+                  return;
+                }
                 setTitleDraft(event.target.value);
               }}
             />

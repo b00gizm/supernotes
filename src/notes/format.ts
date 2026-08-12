@@ -172,13 +172,44 @@ export function parseBacklinkSnippetParts(
   return parts;
 }
 
-/** Daily note title matching mockup (`Monday, Aug 10`). */
+/** Canonical daily note title (`2026-08-10`), local calendar day. */
 export function formatDailyTitle(date: Date = new Date()): string {
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${String(year)}-${month}-${day}`;
+}
+
+/** Display form for a daily note (`Sunday, Aug 10 2026`). */
+export function formatDailyDisplayTitle(date: Date = new Date()): string {
+  const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  return `${weekday}, ${month} ${String(date.getDate())} ${String(date.getFullYear())}`;
+}
+
+/** Parse a canonical daily title into a local Date, or null if invalid. */
+export function parseDailyTitle(title: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(title.trim());
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+export function dailyDisplayTitle(title: string): string {
+  const date = parseDailyTitle(title);
+  return date ? formatDailyDisplayTitle(date) : title;
 }
 
 export type OverviewGroupId = "pinned" | "today" | "yesterday" | "earlier";
