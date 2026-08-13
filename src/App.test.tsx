@@ -258,11 +258,13 @@ describe("App shell", () => {
     expect(screen.queryByLabelText("Note title")).not.toBeInTheDocument();
 
     const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    const pinnedSection = within(sidebar).getByRole("region", {
+      name: "Pinned",
+    });
     expect(
-      within(sidebar).getByRole("region", { name: "Pinned" }),
-    ).toBeInTheDocument();
-    expect(
-      within(sidebar).getByRole("button", { name: /Meridian Q3 roadmap/ }),
+      within(pinnedSection).getByRole("button", {
+        name: /Meridian Q3 roadmap/,
+      }),
     ).toBeInTheDocument();
 
     const pinnedRow = within(overview).getByRole("button", {
