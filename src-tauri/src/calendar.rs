@@ -173,4 +173,47 @@ mod tests {
             .unwrap();
         assert_eq!(created.task_id.as_deref(), Some(task.id.as_str()));
     }
+
+    #[test]
+    fn delete_event_unlinks_but_keeps_the_task() {
+        let db = Db::open_in_memory().unwrap();
+        let task = db
+            .with_conn(|conn| {
+                let repo = Repository::new(conn);
+                let note = repo.create_note("Tasks", "", NoteType::Regular, false)?;
+                repo.create_task(&note.id, "Focus", TaskState::Open, None, None)
+            })
+            .unwrap();
+        let created = db
+            .with_conn(|conn| {
+                Repository::new(conn).create_calendar_event(
+                    "Focus block",
+                    "2026-08-10T16:00:00.000Z",
+                    "2026-08-10T16:15:00.000Z",
+                    Some(&task.id),
+                )
+            })
+            .unwrap();
+        let moved = db
+            .with_conn(|conn| {
+                Repository::new(conn).update_calendar_event(
+                    &created.id,
+                    "Focus block",
+                    "2026-08-10T18:00:00.000Z",
+                    "2026-08-10T19:00:00.000Z",
+                    Some(&task.id),
+                )
+            })
+            .unwrap();
+        assert_eq!(moved.task_id.as_deref(), Some(task.id.as_str()));
+        assert_eq!(moved.start, "2026-08-10T18:00:00.000Z");
+
+        db.with_conn(|conn| Repository::new(conn).delete_calendar_event(&created.id))
+            .unwrap();
+        let kept = db
+            .with_conn(|conn| Repository::new(conn).get_task(&task.id))
+            .unwrap();
+        assert_eq!(kept.title, "Focus");
+        assert_eq!(kept.state, TaskState::Open);
+    }
 }

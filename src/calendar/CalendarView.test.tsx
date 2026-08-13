@@ -15,6 +15,7 @@ import type { CalendarApi } from "./api";
 import { createMemoryCalendarApi } from "./api";
 import { CalendarView } from "./CalendarView";
 import { minutesToIso } from "./layout";
+import { encodeTaskDrag } from "./taskDrag";
 
 const calRef: { current: CalendarApi } = {
   current: createMemoryCalendarApi(),
@@ -99,6 +100,68 @@ const overdue: Task = {
   completed_at: null,
 };
 
+const inbox: Task = {
+  id: "t-inbox",
+  note_id: "n1",
+  title: "Beatport kündigen",
+  state: "open",
+  due_date: null,
+  priority: null,
+  created_at: "2026-08-10T00:00:00.000Z",
+  updated_at: "2026-08-10T00:00:00.000Z",
+  completed_at: null,
+};
+
+function mockGridRect() {
+  const grid = document.querySelector(".cal-grid");
+  expect(grid).toBeTruthy();
+  vi.spyOn(grid as HTMLElement, "getBoundingClientRect").mockReturnValue({
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    right: 700,
+    bottom: 24 * 48,
+    width: 700,
+    height: 24 * 48,
+    toJSON: () => ({}),
+  });
+  return grid as HTMLElement;
+}
+
+function dataTransfer(payload = "") {
+  const store: Record<string, string> = {};
+  if (payload) {
+    store["text/plain"] = payload;
+  }
+  return {
+    dropEffect: "copy",
+    effectAllowed: "copy" as const,
+    setData(type: string, value: string) {
+      store[type] = value;
+    },
+    getData(type: string) {
+      return store[type] ?? "";
+    },
+  };
+}
+
+function fireDrag(
+  node: Element,
+  type: "dragstart" | "dragover" | "drop" | "dragend",
+  transfer: ReturnType<typeof dataTransfer>,
+  clientY: number,
+) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: 80,
+    clientY,
+  });
+  Object.defineProperty(event, "dataTransfer", { value: transfer });
+  node.dispatchEvent(event);
+}
+
 function renderCalendar(onOpenDaily = vi.fn(), onOpenTask = vi.fn()) {
   return render(
     <CalendarView
@@ -122,7 +185,7 @@ describe("CalendarView (ENG-65)", () => {
         created_at: "2026-08-10T00:00:00.000Z",
       },
     ]);
-    tasksRef.current = createMemoryTasksApi([overdue]);
+    tasksRef.current = createMemoryTasksApi([overdue, inbox]);
   });
 
   it("renders the week grid", async () => {
@@ -197,21 +260,9 @@ describe("CalendarView (ENG-65)", () => {
   it("creates an event by dragging on the week grid", async () => {
     renderCalendar();
     await screen.findAllByText("Standup");
-    const grid = document.querySelector(".cal-grid");
+    mockGridRect();
     const col = document.querySelector('[data-day="2026-08-11"]');
-    expect(grid).toBeTruthy();
     expect(col).toBeTruthy();
-    vi.spyOn(grid as HTMLElement, "getBoundingClientRect").mockReturnValue({
-      x: 0,
-      y: 0,
-      top: 0,
-      left: 0,
-      right: 700,
-      bottom: 24 * 48,
-      width: 700,
-      height: 24 * 48,
-      toJSON: () => ({}),
-    });
     fireEvent.mouseDown(col as HTMLElement, { button: 0, clientY: 10 * 48 });
     fireEvent.mouseMove(window, { clientY: 11 * 48 });
     fireEvent.mouseUp(window, { clientY: 11 * 48 });
@@ -224,5 +275,160 @@ describe("CalendarView (ENG-65)", () => {
     expect(untitled).toHaveLength(1);
     const listed = await calRef.current.listEvents();
     expect(listed.length).toBeGreaterThan(1);
+  });
+});
+
+describe("CalendarView time blocking (ENG-66)", () => {
+  beforeEach(() => {
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "standup",
+        title: "Standup",
+        start: minutesToIso(TODAY, 9 * 60 + 30),
+        end: minutesToIso(TODAY, 9 * 60 + 45),
+        task_id: null,
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    tasksRef.current = createMemoryTasksApi([overdue, inbox]);
+  });
+
+  it("lists unscheduled inbox tasks in the calendar sidebar", async () => {
+    renderCalendar();
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Inbox tasks",
+    });
+    expect(within(sidebar).getByText("Beatport kündigen")).toBeInTheDocument();
+    expect(within(sidebar).queryByText("Survey → beta list")).toBeNull();
+  });
+
+  it("schedules an inbox task onto the grid and hides it from the sidebar", async () => {
+    renderCalendar();
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Inbox tasks",
+    });
+    const row = sidebar.querySelector('[data-task-id="t-inbox"]');
+    expect(row).toBeTruthy();
+    mockGridRect();
+    const col = document.querySelector('[data-day="2026-08-10"]');
+    expect(col).toBeTruthy();
+    const transfer = dataTransfer(encodeTaskDrag("t-inbox"));
+    fireDrag(row as HTMLElement, "dragstart", transfer, 18 * 48);
+    fireDrag(col as HTMLElement, "dragover", transfer, 18 * 48);
+    fireDrag(col as HTMLElement, "drop", transfer, 18 * 48);
+    await waitFor(() => {
+      expect(
+        within(sidebar).queryByText("Beatport kündigen"),
+      ).not.toBeInTheDocument();
+    });
+    const listed = await calRef.current.listEvents();
+    const linked = listed.find((item) => item.task_id === "t-inbox");
+    expect(linked).toBeTruthy();
+    expect(linked?.title).toBe("Beatport kündigen");
+    expect(
+      Date.parse(linked?.end ?? "") - Date.parse(linked?.start ?? ""),
+    ).toBe(15 * 60_000);
+    expect(transfer.getData("text/plain")).toBe(encodeTaskDrag("t-inbox"));
+  });
+
+  it("persists a resize and a move", async () => {
+    renderCalendar();
+    await screen.findAllByText("Standup");
+    mockGridRect();
+    const resize = screen.getByRole("button", { name: "Resize Standup" });
+    fireEvent.mouseDown(resize, { button: 0, clientY: 9.75 * 48 });
+    fireEvent.mouseMove(window, { clientY: 11 * 48 });
+    fireEvent.mouseUp(window);
+    await waitFor(async () => {
+      const listed = await calRef.current.listEvents();
+      const standup = listed.find((item) => item.id === "standup");
+      expect(standup?.end).toBe(minutesToIso(TODAY, 11 * 60));
+    });
+
+    const hit = document.querySelector(".cal-event-hit");
+    expect(hit).toBeTruthy();
+    fireEvent.mouseDown(hit as HTMLElement, { button: 0, clientY: 9.5 * 48 });
+    fireEvent.mouseMove(window, { clientY: 10.5 * 48 });
+    fireEvent.mouseUp(window);
+    await waitFor(async () => {
+      const listed = await calRef.current.listEvents();
+      const standup = listed.find((item) => item.id === "standup");
+      expect(standup?.start).toBe(minutesToIso(TODAY, 10 * 60 + 30));
+      expect(standup?.end).toBe(minutesToIso(TODAY, 12 * 60));
+    });
+  });
+
+  it("marks a linked event done without deleting the task", async () => {
+    const user = userEvent.setup();
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "block",
+        title: "Beatport kündigen",
+        start: minutesToIso(TODAY, 18 * 60),
+        end: minutesToIso(TODAY, 19 * 60),
+        task_id: "t-inbox",
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    renderCalendar();
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Inbox tasks",
+    });
+    await waitFor(() => {
+      expect(
+        within(sidebar).queryByText("Beatport kündigen"),
+      ).not.toBeInTheDocument();
+    });
+    const chip = document.querySelector(".cal-event.is-task");
+    expect(chip).toBeTruthy();
+    await user.click(
+      within(chip as HTMLElement).getByRole("button", {
+        name: "Mark task done",
+      }),
+    );
+    await waitFor(() => {
+      expect(document.querySelector(".cal-event.is-done")).toBeTruthy();
+    });
+    const task = await tasksRef.current.getTask("t-inbox");
+    expect(task.state).toBe("done");
+  });
+
+  it("deletes the linked event and restores an open task to the inbox", async () => {
+    const user = userEvent.setup();
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "block",
+        title: "Beatport kündigen",
+        start: minutesToIso(TODAY, 18 * 60),
+        end: minutesToIso(TODAY, 19 * 60),
+        task_id: "t-inbox",
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    renderCalendar();
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Inbox tasks",
+    });
+    await waitFor(() => {
+      expect(
+        within(sidebar).queryByText("Beatport kündigen"),
+      ).not.toBeInTheDocument();
+    });
+    const hit = document.querySelector(".cal-event.is-task .cal-event-hit");
+    expect(hit).toBeTruthy();
+    mockGridRect();
+    fireEvent.mouseDown(hit as HTMLElement, { button: 0, clientY: 18 * 48 });
+    fireEvent.mouseUp(window);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(
+        within(sidebar).getByText("Beatport kündigen"),
+      ).toBeInTheDocument();
+    });
+    const listed = await calRef.current.listEvents();
+    expect(listed.some((item) => item.id === "block")).toBe(false);
+    const kept = await tasksRef.current.getTask("t-inbox");
+    expect(kept.title).toBe("Beatport kündigen");
+    expect(kept.state).toBe("open");
   });
 });
