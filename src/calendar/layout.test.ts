@@ -70,7 +70,9 @@ describe("calendar layout (ENG-65)", () => {
   it("formats clocks and durations", () => {
     expect(formatClock(9 * 60 + 30)).toBe("9:30");
     expect(formatClock(16 * 60)).toBe("16:00");
+    expect(formatClock(14 * 60 + 5.816666666666666)).toBe("14:05");
     expect(formatTimeInput(9 * 60 + 30)).toBe("09:30");
+    expect(formatTimeInput(14 * 60 + 5.816666666666666)).toBe("14:05");
     expect(parseTimeInput("09:30")).toBe(9 * 60 + 30);
     expect(parseTimeInput("25:00")).toBeNull();
     expect(

@@ -73,7 +73,7 @@ export function weekHeading(weekStart: string): {
   };
 }
 
-/** Agenda card title: `Monday, Aug 10`. */
+/** Agenda heading: `Monday, Aug 10`. */
 export function agendaHeading(ymd: string): string {
   const date = parseDailyTitle(ymd);
   if (!date) {
@@ -104,14 +104,14 @@ export function snapMinutes(mins: number, step: number = SNAP_MINUTES): number {
 }
 
 export function formatClock(mins: number): string {
-  const wrapped = ((mins % (24 * 60)) + 24 * 60) % (24 * 60);
+  const wrapped = Math.floor(((mins % (24 * 60)) + 24 * 60) % (24 * 60));
   const hours = Math.floor(wrapped / 60);
   const minutes = wrapped % 60;
   return `${String(hours)}:${String(minutes).padStart(2, "0")}`;
 }
 
 export function formatTimeInput(mins: number): string {
-  const wrapped = ((mins % (24 * 60)) + 24 * 60) % (24 * 60);
+  const wrapped = Math.floor(((mins % (24 * 60)) + 24 * 60) % (24 * 60));
   const hours = Math.floor(wrapped / 60);
   const minutes = wrapped % 60;
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;

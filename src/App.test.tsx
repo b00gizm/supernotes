@@ -212,8 +212,9 @@ describe("App shell", () => {
     expect(
       within(pane).getByRole("button", { name: "Open today's daily note" }),
     ).toBeInTheDocument();
+    expect(within(pane).getByRole("tab", { name: "Week" })).toBeInTheDocument();
     expect(
-      within(pane).getByRole("complementary", { name: "Agenda" }),
+      within(pane).getByRole("tab", { name: "Agenda" }),
     ).toBeInTheDocument();
     expect(within(pane).getByLabelText("Week navigation")).toBeInTheDocument();
 

@@ -116,7 +116,7 @@ describe("CalendarView (ENG-65)", () => {
     tasksRef.current = createMemoryTasksApi([overdue]);
   });
 
-  it("renders the week grid, agenda card, and daily-note control", async () => {
+  it("renders the week grid and daily-note control", async () => {
     renderCalendar();
     const pane = await screen.findByRole("region", { name: "Calendar" });
     expect(within(pane).getByText("August 2026")).toBeInTheDocument();
@@ -124,9 +124,13 @@ describe("CalendarView (ENG-65)", () => {
     expect(
       within(pane).getByRole("button", { name: "Open today's daily note" }),
     ).toBeInTheDocument();
+    expect(within(pane).getByRole("tab", { name: "Week" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(
-      within(pane).getByRole("complementary", { name: "Agenda" }),
-    ).toBeInTheDocument();
+      within(pane).queryByRole("region", { name: "Agenda" }),
+    ).not.toBeInTheDocument();
     expect(await within(pane).findAllByText("Standup")).not.toHaveLength(0);
     expect(
       await within(pane).findAllByText("Survey → beta list"),
@@ -161,6 +165,15 @@ describe("CalendarView (ENG-65)", () => {
     const user = userEvent.setup();
     renderCalendar();
     await screen.findAllByText("Standup");
+    await user.click(screen.getByRole("tab", { name: "Agenda" }));
+    expect(screen.getByRole("tab", { name: "Agenda" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("region", { name: "Agenda" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Week" }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add event" }));
     const title = await screen.findByLabelText("Event title");
     await user.type(title, "Pricing sync");
@@ -208,7 +221,7 @@ describe("CalendarView (ENG-65)", () => {
     fireEvent.mouseMove(window, { clientY: 11 * 48 });
     fireEvent.mouseUp(window, { clientY: 11 * 48 });
     await waitFor(() => {
-      expect(screen.getAllByLabelText("Event title").length).toBeGreaterThan(0);
+      expect(screen.getAllByLabelText("Event title")).toHaveLength(1);
     });
     const listed = await calRef.current.listEvents();
     expect(listed.length).toBeGreaterThan(1);

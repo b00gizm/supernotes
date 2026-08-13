@@ -108,4 +108,4 @@ Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
   Due query section from `list_tasks(upcoming)` filtered to `due_date <=` that
   day. Editor task pills create/update/delete rows immediately; note markdown
   still autosaves the `[[task:id]]` reference. `src/calendar/` wraps event
-  commands (`calendarApi`) and the week grid + agenda panel (`CalendarView`).
+  commands (`calendarApi`) and the week grid / agenda views (`CalendarView`).
