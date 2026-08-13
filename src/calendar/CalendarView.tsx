@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -39,7 +38,7 @@ import {
   weekRangeIso,
   weekdayShort,
 } from "./layout";
-import { decodeTaskDrag, encodeTaskDrag, scheduledTaskIds } from "./taskDrag";
+import { scheduledTaskIds } from "./taskDrag";
 import type { CalendarEvent } from "./types";
 
 export type CalendarViewProps = {
@@ -133,10 +132,24 @@ function timesToIso(
 
 function dayFromPoint(clientX: number, clientY: number): string | null {
   const node = document.elementFromPoint(clientX, clientY);
-  if (!(node instanceof Element)) {
-    return null;
+  if (node instanceof Element) {
+    const fromNode = node.closest("[data-day]")?.getAttribute("data-day");
+    if (fromNode) {
+      return fromNode;
+    }
   }
-  return node.closest("[data-day]")?.getAttribute("data-day") ?? null;
+  for (const col of document.querySelectorAll("[data-day]")) {
+    const rect = col.getBoundingClientRect();
+    if (
+      clientX >= rect.left &&
+      clientX < rect.right &&
+      clientY >= rect.top &&
+      clientY < rect.bottom
+    ) {
+      return col.getAttribute("data-day");
+    }
+  }
+  return null;
 }
 
 function overlayDrag(
@@ -764,78 +777,67 @@ export function CalendarView({
     window.addEventListener("mouseup", onUp);
   };
 
-  const onTaskDragStart = (task: Task, event: ReactDragEvent) => {
-    draggingTaskRef.current = task.id;
-    event.dataTransfer.setData("text/plain", encodeTaskDrag(task.id));
-    event.dataTransfer.effectAllowed = "copy";
-  };
-
-  const onTaskDragEnd = () => {
-    draggingTaskRef.current = null;
-    if (dragRef.current?.kind === "drop") {
-      dragRef.current = null;
-      setDrag(null);
-    }
-  };
-
-  const onGridDragOver = (day: string, event: ReactDragEvent) => {
-    const taskId =
-      draggingTaskRef.current ??
-      decodeTaskDrag(event.dataTransfer.getData("text/plain"));
-    if (!taskId || scheduledIds.has(taskId)) {
+  const beginInboxDrag = (task: Task, event: ReactMouseEvent) => {
+    if (event.button !== 0) {
       return;
     }
     event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-    const startMin = gridMinutes(event.clientY);
-    if (startMin === null) {
-      return;
-    }
-    const live = dragRef.current;
-    if (
-      live &&
-      live.kind === "drop" &&
-      live.day === day &&
-      live.startMin === startMin
-    ) {
-      return;
-    }
-    const next: DragState = { kind: "drop", day, startMin };
-    dragRef.current = next;
-    setDrag(next);
-  };
-
-  const onGridDrop = (day: string, event: ReactDragEvent) => {
-    const taskId =
-      decodeTaskDrag(event.dataTransfer.getData("text/plain")) ??
-      draggingTaskRef.current;
-    const preview = dragRef.current?.kind === "drop" ? dragRef.current : null;
-    draggingTaskRef.current = null;
+    draggingTaskRef.current = task.id;
+    movedRef.current = false;
     dragRef.current = null;
     setDrag(null);
-    if (!taskId) {
-      return;
-    }
-    event.preventDefault();
-    const task = tasks.find((item) => item.id === taskId);
-    const startMin =
-      gridMinutes(event.clientY) ??
-      (preview?.day === day ? preview.startMin : null);
-    if (!task || startMin === null) {
-      return;
-    }
-    void scheduleTask(task, day, startMin);
-  };
+    setEdit(null);
 
-  const onGridDragLeave = (event: ReactDragEvent) => {
-    const related = event.relatedTarget;
-    if (related instanceof Node && event.currentTarget.contains(related)) {
-      return;
-    }
-    if (dragRef.current?.kind === "drop") {
+    const onMove = (move: MouseEvent) => {
+      const day = dayFromPoint(move.clientX, move.clientY);
+      const startMin = gridMinutes(move.clientY);
+      if (!day || startMin === null) {
+        if (dragRef.current?.kind === "drop") {
+          dragRef.current = null;
+          setDrag(null);
+        }
+        return;
+      }
+      movedRef.current = true;
+      const live = dragRef.current;
+      if (
+        live &&
+        live.kind === "drop" &&
+        live.day === day &&
+        live.startMin === startMin
+      ) {
+        return;
+      }
+      const updated: DragState = { kind: "drop", day, startMin };
+      dragRef.current = updated;
+      setDrag(updated);
+    };
+    const onUp = (up: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const taskId = draggingTaskRef.current;
+      draggingTaskRef.current = null;
+      const live = dragRef.current;
       dragRef.current = null;
       setDrag(null);
-    }
+      if (!movedRef.current) {
+        const note = noteById.get(task.note_id);
+        if (note) {
+          onOpenTask(task, note);
+        }
+        return;
+      }
+      const day =
+        live?.kind === "drop" ? live.day : dayFromPoint(up.clientX, up.clientY);
+      const startMin =
+        live?.kind === "drop" ? live.startMin : gridMinutes(up.clientY);
+      if (!taskId || !day || startMin === null) {
+        return;
+      }
+      void scheduleTask(task, day, startMin);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
 
   const beginEdit = (
@@ -1125,13 +1127,6 @@ export function CalendarView({
                       onMouseDown={(event) => {
                         onGridMouseDown(day, event);
                       }}
-                      onDragOver={(event) => {
-                        onGridDragOver(day, event);
-                      }}
-                      onDrop={(event) => {
-                        onGridDrop(day, event);
-                      }}
-                      onDragLeave={onGridDragLeave}
                     >
                       {laid.map((segment) => {
                         const top = (segment.startMin / 60) * HOUR_HEIGHT;
@@ -1400,15 +1395,8 @@ export function CalendarView({
         )}
         <InboxSidebar
           tasks={inboxTasks}
-          onDragStart={onTaskDragStart}
-          onDragEnd={onTaskDragEnd}
+          onPointerDrag={beginInboxDrag}
           onToggle={toggleTask}
-          onOpen={(task) => {
-            const note = noteById.get(task.note_id);
-            if (note) {
-              onOpenTask(task, note);
-            }
-          }}
         />
         {edit ? (
           <EventFields
@@ -1429,16 +1417,12 @@ export function CalendarView({
 
 function InboxSidebar({
   tasks,
-  onDragStart,
-  onDragEnd,
+  onPointerDrag,
   onToggle,
-  onOpen,
 }: {
   tasks: Task[];
-  onDragStart: (task: Task, event: ReactDragEvent) => void;
-  onDragEnd: () => void;
+  onPointerDrag: (task: Task, event: ReactMouseEvent) => void;
   onToggle: (task: Task) => void;
-  onOpen: (task: Task) => void;
 }) {
   return (
     <aside className="cal-inbox" aria-label="Inbox tasks">
@@ -1452,15 +1436,7 @@ function InboxSidebar({
         <ul className="cal-inbox-list">
           {tasks.map((task) => (
             <li key={task.id}>
-              <div
-                className="cal-inbox-row"
-                draggable
-                data-task-id={task.id}
-                onDragStart={(event) => {
-                  onDragStart(task, event);
-                }}
-                onDragEnd={onDragEnd}
-              >
+              <div className="cal-inbox-row" data-task-id={task.id}>
                 <button
                   type="button"
                   className="cal-inbox-toggle"
@@ -1468,7 +1444,6 @@ function InboxSidebar({
                     task.state === "done" ? "Mark task open" : "Mark task done"
                   }
                   onMouseDown={(event) => {
-                    event.preventDefault();
                     event.stopPropagation();
                   }}
                   onClick={() => {
@@ -1480,8 +1455,8 @@ function InboxSidebar({
                 <button
                   type="button"
                   className="cal-inbox-main"
-                  onClick={() => {
-                    onOpen(task);
+                  onMouseDown={(event) => {
+                    onPointerDrag(task, event);
                   }}
                 >
                   <span className="cal-inbox-task-title">

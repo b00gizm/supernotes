@@ -15,7 +15,6 @@ import type { CalendarApi } from "./api";
 import { createMemoryCalendarApi } from "./api";
 import { CalendarView } from "./CalendarView";
 import { minutesToIso } from "./layout";
-import { encodeTaskDrag } from "./taskDrag";
 
 const calRef: { current: CalendarApi } = {
   current: createMemoryCalendarApi(),
@@ -127,39 +126,6 @@ function mockGridRect() {
     toJSON: () => ({}),
   });
   return grid as HTMLElement;
-}
-
-function dataTransfer(payload = "") {
-  const store: Record<string, string> = {};
-  if (payload) {
-    store["text/plain"] = payload;
-  }
-  return {
-    dropEffect: "copy",
-    effectAllowed: "copy" as const,
-    setData(type: string, value: string) {
-      store[type] = value;
-    },
-    getData(type: string) {
-      return store[type] ?? "";
-    },
-  };
-}
-
-function fireDrag(
-  node: Element,
-  type: "dragstart" | "dragover" | "drop" | "dragend",
-  transfer: ReturnType<typeof dataTransfer>,
-  clientY: number,
-) {
-  const event = new MouseEvent(type, {
-    bubbles: true,
-    cancelable: true,
-    clientX: 80,
-    clientY,
-  });
-  Object.defineProperty(event, "dataTransfer", { value: transfer });
-  node.dispatchEvent(event);
 }
 
 function renderCalendar(onOpenDaily = vi.fn(), onOpenTask = vi.fn()) {
@@ -307,15 +273,21 @@ describe("CalendarView time blocking (ENG-66)", () => {
     const sidebar = await screen.findByRole("complementary", {
       name: "Inbox tasks",
     });
-    const row = sidebar.querySelector('[data-task-id="t-inbox"]');
+    const row = sidebar.querySelector(
+      '[data-task-id="t-inbox"] .cal-inbox-main',
+    );
     expect(row).toBeTruthy();
     mockGridRect();
     const col = document.querySelector('[data-day="2026-08-10"]');
     expect(col).toBeTruthy();
-    const transfer = dataTransfer(encodeTaskDrag("t-inbox"));
-    fireDrag(row as HTMLElement, "dragstart", transfer, 18 * 48);
-    fireDrag(col as HTMLElement, "dragover", transfer, 18 * 48);
-    fireDrag(col as HTMLElement, "drop", transfer, 18 * 48);
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(col);
+    fireEvent.mouseDown(row as HTMLElement, {
+      button: 0,
+      clientX: 80,
+      clientY: 18 * 48,
+    });
+    fireEvent.mouseMove(window, { clientX: 80, clientY: 18 * 48 });
+    fireEvent.mouseUp(window, { clientX: 80, clientY: 18 * 48 });
     await waitFor(() => {
       expect(
         within(sidebar).queryByText("Beatport kündigen"),
@@ -328,7 +300,6 @@ describe("CalendarView time blocking (ENG-66)", () => {
     expect(
       Date.parse(linked?.end ?? "") - Date.parse(linked?.start ?? ""),
     ).toBe(15 * 60_000);
-    expect(transfer.getData("text/plain")).toBe(encodeTaskDrag("t-inbox"));
   });
 
   it("persists a resize and a move", async () => {

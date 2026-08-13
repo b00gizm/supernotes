@@ -1,20 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  decodeTaskDrag,
-  encodeTaskDrag,
-  scheduledTaskIds,
-  TASK_DRAG_PREFIX,
-} from "./taskDrag";
+import { scheduledTaskIds } from "./taskDrag";
 import type { CalendarEvent } from "./types";
 
-describe("task drag payload (ENG-66)", () => {
-  it("round-trips a task id and rejects other text", () => {
-    expect(encodeTaskDrag("t-1")).toBe(`${TASK_DRAG_PREFIX}t-1`);
-    expect(decodeTaskDrag(encodeTaskDrag("t-1"))).toBe("t-1");
-    expect(decodeTaskDrag("t-1")).toBeNull();
-    expect(decodeTaskDrag(TASK_DRAG_PREFIX)).toBeNull();
-  });
-
+describe("scheduledTaskIds (ENG-66)", () => {
   it("collects linked task ids so scheduled inbox rows can hide", () => {
     const events: CalendarEvent[] = [
       {

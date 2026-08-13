@@ -2459,6 +2459,7 @@ button {
   min-width: 0;
   border-radius: var(--radius-md);
   cursor: grab;
+  user-select: none;
 }
 
 .cal-inbox-row:hover {
