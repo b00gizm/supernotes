@@ -2847,22 +2847,6 @@ button {
   color: var(--text);
 }
 
-.cal-agenda-foot {
-  margin: var(--space-3) 0 0;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-}
-
-.cal-agenda-link {
-  color: var(--accent);
-  font-size: inherit;
-  font-weight: var(--weight-medium);
-  text-decoration: underline;
-  text-underline-offset: 0.12em;
-}
-
 @media (max-width: 720px) {
   /* Icon rail instead of stacking the full sidebar above the note (ENG-114). */
   .app-shell,

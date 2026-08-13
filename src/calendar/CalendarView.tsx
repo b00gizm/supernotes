@@ -869,18 +869,6 @@ export function CalendarView({
             >
               Add event
             </button>
-
-            <p className="cal-agenda-foot">
-              <button
-                type="button"
-                className="cal-agenda-link"
-                onClick={() => {
-                  onOpenDaily(selectedDay);
-                }}
-              >
-                Open {agendaHeading(selectedDay)}
-              </button>
-            </p>
           </section>
         )}
         {edit ? (
