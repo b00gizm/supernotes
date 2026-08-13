@@ -222,7 +222,13 @@ export function CalendarView({
   }, [loadTasks]);
 
   useEffect(
-    () => subscribeCalendarChanged(() => void loadEvents()),
+    () =>
+      subscribeCalendarChanged(() => {
+        if (creatingRef.current) {
+          return;
+        }
+        void loadEvents();
+      }),
     [loadEvents],
   );
   useEffect(() => subscribeTasksChanged(() => void loadTasks()), [loadTasks]);
@@ -334,9 +340,14 @@ export function CalendarView({
         start: times.start,
         end: times.end,
       });
-      setEvents((prev) =>
-        [...prev, created].sort((a, b) => a.start.localeCompare(b.start)),
-      );
+      setEvents((prev) => {
+        if (prev.some((item) => item.id === created.id)) {
+          return prev;
+        }
+        return [...prev, created].sort((a, b) =>
+          a.start.localeCompare(b.start),
+        );
+      });
       setSelectedDay(day);
       setEdit({
         id: created.id,

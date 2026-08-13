@@ -29,14 +29,23 @@ vi.mock("./api", async () => {
   return {
     ...actual,
     calendarApi: {
-      createEvent: (input: Parameters<CalendarApi["createEvent"]>[0]) =>
-        calRef.current.createEvent(input),
+      createEvent: async (input: Parameters<CalendarApi["createEvent"]>[0]) => {
+        const event = await calRef.current.createEvent(input);
+        actual.emitCalendarChanged();
+        return event;
+      },
       getEvent: (id: string) => calRef.current.getEvent(id),
       listEvents: (from?: string, to?: string) =>
         calRef.current.listEvents(from, to),
-      updateEvent: (input: Parameters<CalendarApi["updateEvent"]>[0]) =>
-        calRef.current.updateEvent(input),
-      deleteEvent: (id: string) => calRef.current.deleteEvent(id),
+      updateEvent: async (input: Parameters<CalendarApi["updateEvent"]>[0]) => {
+        const event = await calRef.current.updateEvent(input);
+        actual.emitCalendarChanged();
+        return event;
+      },
+      deleteEvent: async (id: string) => {
+        await calRef.current.deleteEvent(id);
+        actual.emitCalendarChanged();
+      },
     },
   };
 });
@@ -209,6 +218,10 @@ describe("CalendarView (ENG-65)", () => {
     await waitFor(() => {
       expect(screen.getAllByLabelText("Event title")).toHaveLength(1);
     });
+    const untitled = [...document.querySelectorAll(".cal-event-title")].filter(
+      (node) => node.textContent === "Untitled",
+    );
+    expect(untitled).toHaveLength(1);
     const listed = await calRef.current.listEvents();
     expect(listed.length).toBeGreaterThan(1);
   });

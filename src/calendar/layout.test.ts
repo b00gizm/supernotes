@@ -128,6 +128,17 @@ describe("calendar layout (ENG-65)", () => {
     expect(byId.c?.cols).toBe(1);
   });
 
+  it("does not paint the same event id twice", () => {
+    const ymd = "2026-08-10";
+    const a = event({
+      id: "dup",
+      start: minutesToIso(ymd, 16 * 60),
+      end: minutesToIso(ymd, 17 * 60),
+    });
+    const laid = layoutDayEvents([a, a], ymd);
+    expect(laid).toHaveLength(1);
+  });
+
   it("layouts 50 events without dropping any", () => {
     const ymd = "2026-08-10";
     const events = Array.from({ length: 50 }, (_, index) => {

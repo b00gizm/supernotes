@@ -186,6 +186,7 @@ export function layoutDayEvents(
   events: CalendarEvent[],
   ymd: string,
 ): DaySegment[] {
+  const seen = new Set<string>();
   const segments = events
     .map((event) => {
       const clip = eventSegmentOnDay(event, ymd);
@@ -195,6 +196,13 @@ export function layoutDayEvents(
       return { event, startMin: clip.startMin, endMin: clip.endMin };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null)
+    .filter((item) => {
+      if (seen.has(item.event.id)) {
+        return false;
+      }
+      seen.add(item.event.id);
+      return true;
+    })
     .sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
 
   const laid: DaySegment[] = [];

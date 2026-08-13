@@ -2674,6 +2674,16 @@ button {
   font: inherit;
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
+  outline: none;
+  box-shadow: none;
+}
+
+.cal-event-title-input:focus {
+  border-bottom-color: color-mix(
+    in srgb,
+    var(--accent) 50%,
+    var(--border-subtle)
+  );
 }
 
 .cal-event-times {
@@ -2693,6 +2703,11 @@ button {
   background: var(--bg-main);
   color: var(--text);
   font-size: var(--text-sm);
+  outline: none;
+}
+
+.cal-event-times input[type="time"]:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
 }
 
 .cal-event-times input[type="time"]::-webkit-calendar-picker-indicator {
