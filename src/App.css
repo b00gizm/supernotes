@@ -1809,7 +1809,7 @@ button {
 
 .task-meta-cal-grid button {
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   font: inherit;
