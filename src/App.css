@@ -2562,17 +2562,13 @@ button {
 
 .cal-grid {
   position: relative;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent,
-    transparent calc(var(--cal-hour) - 1px),
-    color-mix(in srgb, var(--border-subtle) 80%, transparent) var(--cal-hour)
-  );
 }
 
 .cal-hours {
   display: flex;
   flex-direction: column;
+  z-index: 1;
+  background: var(--bg-main);
 }
 
 .cal-hour {
@@ -2582,7 +2578,9 @@ button {
 .cal-hour-label {
   position: absolute;
   top: -0.55em;
-  right: 0.35rem;
+  right: 0.45rem;
+  padding: 0 0.2rem;
+  background: var(--bg-main);
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
@@ -2593,10 +2591,20 @@ button {
   border-left: 1px solid
     color-mix(in srgb, var(--border-subtle) 70%, transparent);
   cursor: crosshair;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent calc(var(--cal-hour) - 1px),
+    color-mix(in srgb, var(--border-subtle) 80%, transparent) var(--cal-hour)
+  );
+}
+
+.cal-hours + .cal-day-col {
+  border-left: 0;
 }
 
 .cal-day-col.is-selected {
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 .cal-event {
