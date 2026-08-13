@@ -2402,27 +2402,6 @@ button {
   gap: var(--space-3);
 }
 
-.cal-daily-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-}
-
-.cal-daily-btn:hover {
-  background: color-mix(in srgb, var(--bg-sidebar-hover) 80%, transparent);
-}
-
-.cal-daily-icon {
-  width: 0.95rem;
-  height: 0.95rem;
-}
-
 .cal-body {
   display: flex;
   gap: var(--space-5);

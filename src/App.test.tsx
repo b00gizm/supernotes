@@ -209,9 +209,6 @@ describe("App shell", () => {
     await user.click(within(nav).getByRole("button", { name: "Calendar" }));
 
     const pane = await screen.findByRole("region", { name: "Calendar" });
-    expect(
-      within(pane).getByRole("button", { name: "Open today's daily note" }),
-    ).toBeInTheDocument();
     expect(within(pane).getByRole("tab", { name: "Week" })).toBeInTheDocument();
     expect(
       within(pane).getByRole("tab", { name: "Agenda" }),

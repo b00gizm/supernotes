@@ -116,14 +116,11 @@ describe("CalendarView (ENG-65)", () => {
     tasksRef.current = createMemoryTasksApi([overdue]);
   });
 
-  it("renders the week grid and daily-note control", async () => {
+  it("renders the week grid", async () => {
     renderCalendar();
     const pane = await screen.findByRole("region", { name: "Calendar" });
     expect(within(pane).getByText("August 2026")).toBeInTheDocument();
     expect(within(pane).getByText("Aug 10 – 16")).toBeInTheDocument();
-    expect(
-      within(pane).getByRole("button", { name: "Open today's daily note" }),
-    ).toBeInTheDocument();
     expect(within(pane).getByRole("tab", { name: "Week" })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -135,17 +132,6 @@ describe("CalendarView (ENG-65)", () => {
     expect(
       await within(pane).findAllByText("Survey → beta list"),
     ).not.toHaveLength(0);
-  });
-
-  it("opens today's daily note from the header button", async () => {
-    const user = userEvent.setup();
-    const onOpenDaily = vi.fn();
-    renderCalendar(onOpenDaily);
-    await screen.findAllByText("Standup");
-    await user.click(
-      screen.getByRole("button", { name: "Open today's daily note" }),
-    );
-    expect(onOpenDaily).toHaveBeenCalledWith(TODAY);
   });
 
   it("opens the daily note from a day header", async () => {

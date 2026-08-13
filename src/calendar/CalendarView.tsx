@@ -91,27 +91,6 @@ function priorityName(dot: string): string {
   return "Priority P3";
 }
 
-function IconDoc() {
-  return (
-    <svg className="cal-daily-icon" viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M4.5 2.75h5.2L12.5 5.6v7.65a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-9.5a1 1 0 0 1 1-1z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M9.5 2.85V5.5H12.3M5.5 8.25h5M5.5 10.75h3.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 function timesToIso(
   ymd: string,
   startMin: number,
@@ -567,17 +546,6 @@ export function CalendarView({
               </button>
             ) : null}
           </div>
-          <button
-            type="button"
-            className="cal-daily-btn"
-            aria-label="Open today's daily note"
-            onClick={() => {
-              onOpenDaily(today);
-            }}
-          >
-            <IconDoc />
-            Daily note
-          </button>
         </div>
       </div>
 
