@@ -202,6 +202,34 @@ describe("App shell", () => {
     );
   });
 
+  it("opens Calendar week + agenda and day headers jump to the daily note", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    await user.click(within(nav).getByRole("button", { name: "Calendar" }));
+
+    const pane = await screen.findByRole("region", { name: "Calendar" });
+    expect(within(pane).getByRole("tab", { name: "Week" })).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("tab", { name: "Agenda" }),
+    ).toBeInTheDocument();
+    expect(within(pane).getByLabelText("Week navigation")).toBeInTheDocument();
+
+    const headers = within(pane).getAllByRole("button", {
+      name: /Open daily note for /,
+    });
+    expect(headers.length).toBe(7);
+    const monday = headers.at(0);
+    if (!monday) {
+      throw new Error("expected a day header");
+    }
+    await user.click(monday);
+    expect(await screen.findByLabelText("Note title")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Calendar" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens Notes overview with Pinned/Today groups and pin action", async () => {
     const user = userEvent.setup();
     const now = new Date();

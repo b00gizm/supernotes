@@ -23,6 +23,7 @@ import {
 } from "./notes/format";
 import { NoteEditor } from "./editor/NoteEditor";
 import { Backlinks } from "./notes/Backlinks";
+import { CalendarView } from "./calendar/CalendarView";
 import { DueSection } from "./tasks/DueSection";
 import { TasksView } from "./tasks/TasksView";
 import { tasksApi } from "./tasks/api";
@@ -1048,10 +1049,16 @@ function App() {
         ) : null}
 
         {surface.kind === "calendar" ? (
-          <section className="placeholder-pane" aria-label="Calendar">
-            <h1 className="pane-title">Calendar</h1>
-            <p className="muted">Calendar arrives in a later milestone.</p>
-          </section>
+          <CalendarView
+            today={todayTitle}
+            notes={notes}
+            onOpenDaily={(ymd) => {
+              setDailyDate(ymd);
+              setSurface({ kind: "daily" });
+              setFocusTaskId(null);
+            }}
+            onOpenTask={openTaskSource}
+          />
         ) : null}
 
         {showEditor ? (
