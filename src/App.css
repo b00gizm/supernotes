@@ -311,6 +311,25 @@ button {
   white-space: nowrap;
 }
 
+.sidebar-pinned {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: var(--space-5);
+  padding: 0 var(--space-1);
+  /* ponytail: cap so a long pin list doesn't eat Recent; virtualize if this becomes a dump. */
+  max-height: 40%;
+}
+
+.sidebar-section-label {
+  padding: 0.2rem 0.6rem;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .sidebar-recent {
   display: flex;
   flex-direction: column;
@@ -461,6 +480,7 @@ button {
 }
 
 .app-shell.is-sidebar-collapsed .nav-item-label,
+.app-shell.is-sidebar-collapsed .sidebar-pinned,
 .app-shell.is-sidebar-collapsed .sidebar-recent,
 .app-shell.is-sidebar-collapsed .search-hint-label,
 .app-shell.is-sidebar-collapsed .search-chip {
@@ -1029,6 +1049,28 @@ button {
   align-items: center;
   gap: var(--space-3);
   margin-left: auto;
+}
+
+.editor-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.editor-pin:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.editor-pin.is-pinned {
+  color: var(--accent);
+}
+
+.editor-pin .pin-icon {
+  width: 1rem;
+  height: 1rem;
 }
 
 .context-menu {

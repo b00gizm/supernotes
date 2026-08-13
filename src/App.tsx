@@ -246,13 +246,13 @@ function IconChevron({ expanded }: { expanded: boolean }) {
   );
 }
 
-function IconPin() {
+function IconPin({ filled = false }: { filled?: boolean }) {
   // Lucide "pin" icon (top-down thumbtack).
   return (
     <svg
       className="pin-icon"
       viewBox="0 0 24 24"
-      fill="none"
+      fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
@@ -262,6 +262,43 @@ function IconPin() {
       <path d="M12 17v5" />
       <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
     </svg>
+  );
+}
+
+function SidebarNoteRow({
+  note,
+  title,
+  body,
+  selected,
+  onOpen,
+}: {
+  note: Note;
+  title: string;
+  body: string;
+  selected: boolean;
+  onOpen: (note: Note) => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        className={selected ? "recent-item is-selected" : "recent-item"}
+        onClick={() => {
+          onOpen(note);
+        }}
+      >
+        <span className="recent-title-row">
+          {note.note_type === "meeting" ? <IconWaveform /> : null}
+          <span className="recent-title">{title || "Untitled"}</span>
+        </span>
+        <span className="recent-meta">
+          <span className="recent-when">
+            {formatRelativeUpdated(note.updated_at)}
+          </span>
+          <span className="recent-snippet">{noteSnippet(body)}</span>
+        </span>
+      </button>
+    </li>
   );
 }
 
@@ -501,7 +538,9 @@ function App() {
 
   // Recent is a glance list, not the full corpus (search owns findability).
   const nonDailyNotes = notes.filter((note) => note.note_type !== "daily");
+  const pinnedNotes = nonDailyNotes.filter((note) => note.pinned);
   const recentNotes = nonDailyNotes.slice(0, 12);
+  const selectedNote = notes.find((note) => note.id === selectedId) ?? null;
 
   // Local-day stamp so the Today/Yesterday buckets roll over at midnight
   // without a reload (ENG-84).
@@ -826,6 +865,24 @@ function App() {
           })}
         </nav>
 
+        {pinnedNotes.length > 0 ? (
+          <div className="sidebar-pinned" role="region" aria-label="Pinned">
+            <div className="sidebar-section-label">Pinned</div>
+            <ul className="recent-list">
+              {pinnedNotes.map((note) => (
+                <SidebarNoteRow
+                  key={note.id}
+                  note={note}
+                  title={note.id === selectedId ? titleDraft : note.title}
+                  body={note.id === selectedId ? bodyDraft : note.body_markdown}
+                  selected={surface.kind === "note" && note.id === selectedId}
+                  onOpen={openRecent}
+                />
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="sidebar-recent">
           <button
             type="button"
@@ -846,44 +903,18 @@ function App() {
               ) : recentNotes.length === 0 ? (
                 <li className="recent-empty">No recent notes</li>
               ) : (
-                recentNotes.map((note) => {
-                  const title =
-                    note.id === selectedId ? titleDraft : note.title;
-                  const body =
-                    note.id === selectedId ? bodyDraft : note.body_markdown;
-                  const selected =
-                    surface.kind === "note" && note.id === selectedId;
-                  return (
-                    <li key={note.id}>
-                      <button
-                        type="button"
-                        className={
-                          selected ? "recent-item is-selected" : "recent-item"
-                        }
-                        onClick={() => {
-                          openRecent(note);
-                        }}
-                      >
-                        <span className="recent-title-row">
-                          {note.note_type === "meeting" ? (
-                            <IconWaveform />
-                          ) : null}
-                          <span className="recent-title">
-                            {title || "Untitled"}
-                          </span>
-                        </span>
-                        <span className="recent-meta">
-                          <span className="recent-when">
-                            {formatRelativeUpdated(note.updated_at)}
-                          </span>
-                          <span className="recent-snippet">
-                            {noteSnippet(body)}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })
+                recentNotes.map((note) => (
+                  <SidebarNoteRow
+                    key={note.id}
+                    note={note}
+                    title={note.id === selectedId ? titleDraft : note.title}
+                    body={
+                      note.id === selectedId ? bodyDraft : note.body_markdown
+                    }
+                    selected={surface.kind === "note" && note.id === selectedId}
+                    onOpen={openRecent}
+                  />
+                ))
               )}
             </ul>
           ) : null}
@@ -1043,6 +1074,23 @@ function App() {
               )}
               <div className="editor-toolbar-actions">
                 {saveIndicator(status)}
+                {surface.kind === "note" && selectedNote ? (
+                  <button
+                    type="button"
+                    className={
+                      selectedNote.pinned
+                        ? "editor-pin is-pinned"
+                        : "editor-pin"
+                    }
+                    aria-pressed={selectedNote.pinned}
+                    aria-label={selectedNote.pinned ? "Unpin note" : "Pin note"}
+                    onClick={() => {
+                      void setPinned(selectedNote.id, !selectedNote.pinned);
+                    }}
+                  >
+                    <IconPin filled={selectedNote.pinned} />
+                  </button>
+                ) : null}
                 {surface.kind === "note" ? (
                   <button
                     type="button"
