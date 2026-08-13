@@ -734,6 +734,7 @@ export function CalendarView({
                   >
                     <span className="cal-now-dot" />
                     <span className="cal-now-label">{formatClock(nowMin)}</span>
+                    <span className="cal-now-line" />
                   </div>
                 ) : null}
               </div>
@@ -793,7 +794,7 @@ export function CalendarView({
                       <span className="cal-now-label">
                         {formatClock(nowMin)}
                       </span>
-                      <span className="cal-agenda-now-line" />
+                      <span className="cal-now-line" />
                     </li>,
                   );
                 }
@@ -844,7 +845,7 @@ export function CalendarView({
                 <li key="now-end" className="cal-agenda-now">
                   <span className="cal-now-dot" />
                   <span className="cal-now-label">{formatClock(nowMin)}</span>
-                  <span className="cal-agenda-now-line" />
+                  <span className="cal-now-line" />
                 </li>
               ) : null}
             </ol>

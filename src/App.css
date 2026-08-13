@@ -2722,26 +2722,36 @@ button {
   z-index: 2;
   display: flex;
   align-items: center;
+  gap: 0.3rem;
   pointer-events: none;
-  border-top: 1.5px solid var(--danger);
+  transform: translateY(-50%);
 }
 
 .cal-now-dot {
-  width: 0.45rem;
-  height: 0.45rem;
-  margin-left: 2.85rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: 2.55rem;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: var(--danger);
-  transform: translate(-50%, -50%);
 }
 
 .cal-now-label {
-  margin-left: 0.25rem;
+  flex: 0 0 auto;
+  padding: 0.08rem 0.2rem;
+  background: var(--bg-main);
   color: var(--danger);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
-  transform: translateY(-50%);
+  line-height: 1.15;
+}
+
+.cal-now-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 1.5px;
+  background: var(--danger);
 }
 
 .cal-agenda {
@@ -2818,16 +2828,11 @@ button {
 
 .cal-agenda-now .cal-now-dot {
   margin-left: 0;
-  transform: none;
 }
 
 .cal-agenda-now .cal-now-label {
-  transform: none;
-}
-
-.cal-agenda-now-line {
-  flex: 1;
-  border-top: 1.5px solid var(--danger);
+  background: transparent;
+  padding: 0;
 }
 
 .cal-agenda-add {
