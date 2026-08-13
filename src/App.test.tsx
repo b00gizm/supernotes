@@ -93,6 +93,16 @@ describe("App shell", () => {
     expect(
       screen.queryByRole("region", { name: "Due" }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Pin note" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Unpin note" }),
+    ).not.toBeInTheDocument();
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(
+      within(sidebar).queryByRole("region", { name: "Pinned" }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens Tasks overview with Inbox / Upcoming / Complete", async () => {
@@ -247,6 +257,14 @@ describe("App shell", () => {
     expect(within(overview).getByText("#meridian")).toBeInTheDocument();
     expect(screen.queryByLabelText("Note title")).not.toBeInTheDocument();
 
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(
+      within(sidebar).getByRole("region", { name: "Pinned" }),
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole("button", { name: /Meridian Q3 roadmap/ }),
+    ).toBeInTheDocument();
+
     const pinnedRow = within(overview).getByRole("button", {
       name: /Meridian Q3 roadmap/,
     });
@@ -259,6 +277,9 @@ describe("App shell", () => {
     await user.click(unpin);
     expect(
       within(overview).queryByRole("region", { name: "Pinned" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(sidebar).queryByRole("region", { name: "Pinned" }),
     ).not.toBeInTheDocument();
   });
 
@@ -291,6 +312,48 @@ describe("App shell", () => {
     expect(
       within(overview).getByRole("region", { name: "Pinned" }),
     ).toBeInTheDocument();
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(
+      within(sidebar).getByRole("region", { name: "Pinned" }),
+    ).toBeInTheDocument();
+  });
+
+  it("pins a note from the editor toolbar", async () => {
+    const user = userEvent.setup();
+    const todayIso = new Date().toISOString();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "t1",
+        title: "Interview — Priya Sharma",
+        body_markdown: "Notes",
+        note_type: "regular",
+        pinned: false,
+        created_at: todayIso,
+        updated_at: todayIso,
+      },
+    ]);
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(
+      within(sidebar).queryByRole("region", { name: "Pinned" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      within(sidebar).getByRole("button", { name: /Interview/ }),
+    );
+    const pin = await screen.findByRole("button", { name: "Pin note" });
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    await user.click(pin);
+
+    expect(
+      within(sidebar).getByRole("region", { name: "Pinned" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unpin note" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("shows Notes breadcrumb on regular notes, not daily notes", async () => {
