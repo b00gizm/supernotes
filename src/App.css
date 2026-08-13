@@ -617,6 +617,12 @@ button {
   flex-wrap: wrap;
 }
 
+.tasks-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .tasks-filter {
   display: inline-flex;
   align-items: center;
@@ -770,6 +776,10 @@ button {
   color: inherit;
   text-align: left;
   font: inherit;
+}
+
+.tasks-row-main:disabled {
+  cursor: default;
 }
 
 .tasks-row-title {
@@ -1486,7 +1496,7 @@ button {
 }
 
 .note-editor .tiptap .task-pill:hover,
-.note-editor .tiptap .task-pill.is-selected,
+.note-editor .tiptap.ProseMirror-focused .task-pill.is-selected,
 .note-editor .tiptap .task-pill:focus-within,
 .note-editor .tiptap .task-pill.is-task-focus {
   background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
@@ -1625,7 +1635,7 @@ button {
 }
 
 .note-editor .tiptap .task-pill:hover .task-pill-meta,
-.note-editor .tiptap .task-pill.is-selected .task-pill-meta,
+.note-editor .tiptap.ProseMirror-focused .task-pill.is-selected .task-pill-meta,
 .note-editor .tiptap .task-pill:focus-within .task-pill-meta,
 .note-editor .tiptap .task-pill-meta:focus-visible {
   opacity: 1;
@@ -1799,7 +1809,7 @@ button {
 
 .task-meta-cal-grid button {
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -2216,6 +2226,13 @@ button {
 }
 
 .search-type-icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.search-result .task-pill-icon {
   width: 1rem;
   height: 1rem;
   flex: 0 0 auto;

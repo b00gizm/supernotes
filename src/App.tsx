@@ -25,6 +25,7 @@ import { NoteEditor } from "./editor/NoteEditor";
 import { Backlinks } from "./notes/Backlinks";
 import { DueSection } from "./tasks/DueSection";
 import { TasksView } from "./tasks/TasksView";
+import { tasksApi } from "./tasks/api";
 import type { Task } from "./tasks/types";
 import {
   isSearchKpiMode,
@@ -331,10 +332,12 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const [kpiMode] = useState(() => isSearchKpiMode());
   const [kpiResult, setKpiResult] = useState<SearchKpiResult | null>(null);
   const [lastSearchMs, setLastSearchMs] = useState<number | null>(null);
   const dailyOpening = useRef(false);
+  const creatingTaskRef = useRef(false);
   const notesRef = useRef(notes);
   const selectedIdRef = useRef(selectedId);
   /** Case-insensitive titles with an in-flight createNote (ENG-97). */
@@ -675,6 +678,40 @@ function App() {
     openFromSearch(note, task.id);
   };
 
+  const createTaskFromView = () => {
+    if (creatingTaskRef.current) {
+      return;
+    }
+    creatingTaskRef.current = true;
+    setTaskActionError(null);
+    void (async () => {
+      try {
+        const daily = await openDaily(new Date(dayStamp));
+        if (!daily) {
+          return;
+        }
+        const task = await tasksApi.createTask({
+          note_id: daily.id,
+          title: "",
+        });
+        const base = daily.body_markdown.trimEnd();
+        setBodyDraft(
+          base ? `${base}\n[[task:${task.id}]]` : `[[task:${task.id}]]`,
+          daily.id,
+        );
+        setFocusTaskId(task.id);
+        setDailyDate(daily.title);
+        setSurface({ kind: "daily" });
+      } catch (err) {
+        setTaskActionError(
+          err instanceof Error ? err.message : "Could not create task",
+        );
+      } finally {
+        creatingTaskRef.current = false;
+      }
+    })();
+  };
+
   const createFromSearch = (title: string) => {
     // Leave daily before notes.length bumps so ensureDaily can't steal selection.
     setSurface({ kind: "note", id: "" });
@@ -975,6 +1012,7 @@ function App() {
             notes={notes}
             today={formatDailyTitle(new Date(dayStamp))}
             onOpenTask={openTaskSource}
+            onCreateTask={createTaskFromView}
           />
         ) : null}
 
@@ -1112,9 +1150,9 @@ function App() {
           <p className="muted pane-loading">Loading…</p>
         ) : null}
 
-        {error ? (
+        {error || taskActionError ? (
           <p className="error-banner" role="alert">
-            {error}
+            {error ?? taskActionError}
           </p>
         ) : null}
 
@@ -1154,6 +1192,8 @@ function App() {
           setSearchOpen(false);
         }}
         searchNotes={timedSearchNotes}
+        searchTasks={tasksApi.searchTasks}
+        notes={notes}
         onOpenNote={openFromSearch}
         onCreateNote={createFromSearch}
       />

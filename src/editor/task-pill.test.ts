@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryTasksApi } from "../tasks/memoryApi";
+import { tasksApi as browserTasksApi } from "../tasks/api";
 import type { Task } from "../tasks/types";
 import { NoteEditor } from "./NoteEditor";
 import { noteEditorExtensions } from "./extensions";
@@ -42,6 +43,7 @@ describe("task pill (ENG-61)", () => {
     noteId?: string;
     tasks?: ReturnType<typeof createMemoryTasksApi>;
     seed?: Task[];
+    content?: string;
   }) {
     const tasksApi = opts?.tasks ?? createMemoryTasksApi(opts?.seed ?? []);
     const noteId = opts?.noteId ?? "note-1";
@@ -59,7 +61,7 @@ describe("task pill (ENG-61)", () => {
           listTasksForNote: (id) => tasksApi.listTasksForNote(id),
         },
       ),
-      content: "",
+      content: opts?.content ?? "",
     });
     editor.commands.focus("end");
     return { editor, tasksApi };
@@ -249,6 +251,163 @@ describe("task pill (ENG-61)", () => {
       const task = await tasksApi.getTask("t-meta");
       expect(task.due_date).toBeNull();
       expect(task.priority).toBeNull();
+    });
+  });
+
+  it("shows an alert when createTask fails (ENG-119)", async () => {
+    const spy = vi
+      .spyOn(browserTasksApi, "createTask")
+      .mockRejectedValue(new Error("disk full"));
+    const user = userEvent.setup();
+    try {
+      render(
+        createElement(NoteEditor, {
+          markdown: "",
+          onChange: () => {},
+          currentNoteId: "note-err",
+        }),
+      );
+      const textbox = await screen.findByRole("textbox", { name: "Note body" });
+      await user.click(textbox);
+      await user.keyboard("[[] ");
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("disk full");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("Enter after a titled pill creates the next task (ENG-123)", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(NoteEditor, {
+        markdown: "",
+        onChange: () => {},
+        currentNoteId: "note-enter",
+      }),
+    );
+    const textbox = await screen.findByRole("textbox", { name: "Note body" });
+    await user.click(textbox);
+    await user.keyboard("[[] ");
+    await waitFor(() => {
+      const input = textbox.querySelector(".task-pill-title");
+      expect(input).toBeInstanceOf(HTMLInputElement);
+      expect(document.activeElement).toBe(input);
+    });
+    await user.keyboard("One{Enter}");
+    await waitFor(() => {
+      const pills = textbox.querySelectorAll(".task-pill");
+      expect(pills).toHaveLength(2);
+      const titles = textbox.querySelectorAll(".task-pill-title");
+      expect(titles).toHaveLength(2);
+      expect(document.activeElement).toBe(titles[1]);
+    });
+  });
+
+  it("undo after deleting a pill restores a DB row (ENG-124)", async () => {
+    const seed: Task[] = [
+      {
+        id: "t-undo",
+        note_id: "note-1",
+        title: "Bring back",
+        state: "waiting",
+        due_date: "2026-08-20",
+        priority: "high",
+        created_at: "2026-08-12T00:00:00.000Z",
+        updated_at: "2026-08-12T00:00:00.000Z",
+        completed_at: null,
+      },
+    ];
+    // Seed as initial content so delete is its own history step (setContent
+    // + delete otherwise collapse into one undo group).
+    const { editor: ed, tasksApi: api } = create({
+      seed,
+      content: "[[task:t-undo]] Bring back",
+    });
+    expect(ed.getHTML()).toContain("t-undo");
+
+    ed.commands.selectAll();
+    ed.commands.deleteSelection();
+    await vi.waitFor(async () => {
+      const listed = await api.listTasksForNote("note-1");
+      expect(listed).toHaveLength(0);
+    });
+
+    expect(ed.commands.undo()).toBe(true);
+    expect(ed.getHTML()).toContain("task-pill");
+    await vi.waitFor(async () => {
+      const listed = await api.listTasksForNote("note-1");
+      expect(listed.length).toBeGreaterThanOrEqual(1);
+      expect(listed.some((task) => task.title === "Bring back")).toBe(true);
+    });
+  });
+
+  it("blurring an empty title deletes the pill", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(NoteEditor, {
+        markdown: "",
+        onChange: () => {},
+        currentNoteId: "note-empty",
+      }),
+    );
+    const textbox = await screen.findByRole("textbox", { name: "Note body" });
+    await user.click(textbox);
+    await user.keyboard("[[] ");
+    const input = await waitFor(() => {
+      const el = textbox.querySelector(".task-pill-title");
+      expect(el).toBeInstanceOf(HTMLInputElement);
+      expect(document.activeElement).toBe(el);
+      return el as HTMLInputElement;
+    });
+    await user.type(input, "x");
+    await user.clear(input);
+    input.blur();
+    await waitFor(() => {
+      expect(textbox.querySelector(".task-pill")).toBeNull();
+    });
+  });
+
+  it("Backspace on an empty title deletes the pill", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(NoteEditor, {
+        markdown: "",
+        onChange: () => {},
+        currentNoteId: "note-backspace",
+      }),
+    );
+    const textbox = await screen.findByRole("textbox", { name: "Note body" });
+    await user.click(textbox);
+    await user.keyboard("[[] ");
+    const input = await waitFor(() => {
+      const el = textbox.querySelector(".task-pill-title");
+      expect(el).toBeInstanceOf(HTMLInputElement);
+      expect(document.activeElement).toBe(el);
+      return el as HTMLInputElement;
+    });
+    await user.type(input, "x");
+    await user.clear(input);
+    expect(document.activeElement).toBe(input);
+    await user.keyboard("{Backspace}");
+    await waitFor(() => {
+      expect(textbox.querySelector(".task-pill")).toBeNull();
+    });
+  });
+
+  it("does not select a leading task pill when the note opens", async () => {
+    render(
+      createElement(NoteEditor, {
+        markdown: "[[task:t-lead]] First task\n\nBody",
+        onChange: () => {},
+        currentNoteId: "note-lead",
+      }),
+    );
+    const textbox = await screen.findByRole("textbox", { name: "Note body" });
+    await waitFor(() => {
+      const el = textbox.querySelector(".task-pill");
+      expect(el).toBeInstanceOf(HTMLElement);
+      expect(el).not.toHaveClass("is-selected");
     });
   });
 });

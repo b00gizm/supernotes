@@ -2,7 +2,7 @@ import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { dueChip } from "../tasks/due";
-import { priorityDotClass } from "../tasks/priority";
+import { PRIORITY_SEGMENTS, priorityDotClass } from "../tasks/priority";
 import { TaskMetaPopover } from "../tasks/TaskMetaPopover";
 import { TaskStateIcon } from "../tasks/TaskStateIcon";
 import type { Task, TaskPriority, TaskState } from "../tasks/types";
@@ -51,10 +51,18 @@ export function TaskPillView({
     null,
   );
   const inputRef = useRef<HTMLInputElement>(null);
+  const blurTimer = useRef<number | null>(null);
   const handlers = taskPillHandlers(editor);
   const terminal = state === "done" || state === "cancelled";
   const chip = dueChip(dueDate, undefined, { terminal });
   const dot = priorityDotClass(priority);
+  const priorityLabel = PRIORITY_SEGMENTS.find((segment) =>
+    segment.values.includes(priority),
+  );
+  const priorityName =
+    priorityLabel && priorityLabel.tone !== "none"
+      ? `Priority ${priorityLabel.label}`
+      : null;
 
   useEffect(() => {
     setDraft(title);
@@ -88,10 +96,42 @@ export function TaskPillView({
     };
   }, [wantsFocus, taskId, editor]);
 
+  useEffect(() => {
+    return () => {
+      if (blurTimer.current !== null) {
+        window.clearTimeout(blurTimer.current);
+      }
+    };
+  }, []);
+
   const clearAutofocus = () => {
     if (wantsFocus) {
       updateAttributes({ autofocus: false });
     }
+  };
+
+  const deleteThisPill = () => {
+    if (editor.isDestroyed) {
+      return;
+    }
+    let pos: number | undefined;
+    try {
+      pos = typeof getPos === "function" ? getPos() : undefined;
+    } catch {
+      return;
+    }
+    if (typeof pos !== "number") {
+      return;
+    }
+    const current = editor.state.doc.nodeAt(pos);
+    if (!current || current.type.name !== "taskPill") {
+      return;
+    }
+    editor
+      .chain()
+      .deleteRange({ from: pos, to: pos + current.nodeSize })
+      .focus()
+      .run();
   };
 
   const commitTitle = (next: string) => {
@@ -154,7 +194,11 @@ export function TaskPillView({
       <button
         type="button"
         className="task-pill-toggle"
-        aria-label={state === "done" ? "Mark task open" : "Mark task done"}
+        aria-label={
+          state === "done"
+            ? "Mark task open (done)"
+            : `Mark task done (${state})`
+        }
         contentEditable={false}
         onMouseDown={(event) => {
           event.preventDefault();
@@ -177,23 +221,65 @@ export function TaskPillView({
           clearAutofocus();
           setDraft(event.target.value);
         }}
+        onFocus={() => {
+          if (blurTimer.current !== null) {
+            window.clearTimeout(blurTimer.current);
+            blurTimer.current = null;
+          }
+        }}
         onBlur={() => {
-          clearAutofocus();
-          commitTitle(draft);
+          const empty = draft.trim() === "";
+          // Autofocus reclaim (TipTap steals focus after `[]`) must not cancel.
+          const delay = wantsFocus ? 150 : 0;
+          if (blurTimer.current !== null) {
+            window.clearTimeout(blurTimer.current);
+          }
+          blurTimer.current = window.setTimeout(() => {
+            blurTimer.current = null;
+            if (editor.isDestroyed) {
+              return;
+            }
+            if (inputRef.current === document.activeElement) {
+              return;
+            }
+            if (empty) {
+              deleteThisPill();
+              return;
+            }
+            commitTitle(draft);
+          }, delay);
         }}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
+            if (event.shiftKey) {
+              commitTitle(draft);
+              const pos = typeof getPos === "function" ? getPos() : null;
+              if (typeof pos === "number") {
+                editor
+                  .chain()
+                  .focus()
+                  .setTextSelection(pos + node.nodeSize)
+                  .createParagraphNear()
+                  .run();
+              }
+              return;
+            }
+            if (draft.trim() === "") {
+              deleteThisPill();
+              return;
+            }
             commitTitle(draft);
             const pos = typeof getPos === "function" ? getPos() : null;
             if (typeof pos === "number") {
-              editor
-                .chain()
-                .focus()
-                .setTextSelection(pos + node.nodeSize)
-                .createParagraphNear()
-                .run();
+              handlers.onInsertAfter?.(pos + node.nodeSize);
             }
+          } else if (
+            (event.key === "Backspace" || event.key === "Delete") &&
+            draft.trim() === ""
+          ) {
+            event.preventDefault();
+            deleteThisPill();
           } else if (event.key === "Escape") {
             event.preventDefault();
             setDraft(title);
@@ -209,10 +295,12 @@ export function TaskPillView({
           {chip.label}
         </span>
       ) : null}
-      {dot ? (
+      {dot && priorityName ? (
         <span
           className={`task-priority-dot ${dot}`}
-          aria-hidden="true"
+          title={priorityName}
+          aria-label={priorityName}
+          role="img"
           contentEditable={false}
         />
       ) : null}

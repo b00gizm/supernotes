@@ -101,6 +101,7 @@ describe("task query helpers (ENG-63)", () => {
     ];
 
     expect(filterTasks(tasks, "inbox", "2026-08-12").map((t) => t.id)).toEqual([
+      "waiting",
       "inbox",
     ]);
     expect(

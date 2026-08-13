@@ -3,12 +3,14 @@ import {
   useEffect,
   useMemo,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { formatDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { tasksApi } from "./api";
+import { subscribeTasksChanged } from "./events";
 import { filterTasks, groupUpcomingTasks } from "./query";
 import { TaskMetaPopover, type TaskMetaPatch } from "./TaskMetaPopover";
 import { TaskRow } from "./TaskRow";
@@ -18,6 +20,7 @@ export type TasksViewProps = {
   notes: Note[];
   today?: string;
   onOpenTask: (task: Task, note: Note) => void;
+  onCreateTask: () => void;
 };
 
 const FILTERS: Array<{ id: TaskListFilter; label: string }> = [
@@ -40,6 +43,7 @@ export function TasksView({
   notes,
   today: todayProp,
   onOpenTask,
+  onCreateTask,
 }: TasksViewProps) {
   const today = todayProp ?? formatDailyTitle();
   const [filter, setFilter] = useState<TaskListFilter>("inbox");
@@ -69,6 +73,8 @@ export function TasksView({
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => subscribeTasksChanged(() => void reload(true)), [reload]);
 
   const noteById = useMemo(
     () => new Map(notes.map((note) => [note.id, note])),
@@ -157,7 +163,7 @@ export function TasksView({
     body = (
       <p className="muted">
         {filter === "inbox"
-          ? "Inbox is empty."
+          ? "Inbox is empty. Type [] at the start of a line in a note."
           : filter === "upcoming"
             ? "No upcoming tasks."
             : "No completed tasks in the last 14 days."}
@@ -203,22 +209,70 @@ export function TasksView({
         <div className="overview-title-row">
           <h1 className="pane-title">Tasks</h1>
         </div>
-        <div className="tasks-filter" role="tablist" aria-label="Task views">
-          {FILTERS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={filter === item.id}
-              className={`tasks-filter-tab${filter === item.id ? " is-active" : ""}`}
-              onClick={() => {
-                setFilter(item.id);
-                setPopover(null);
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="tasks-header-actions">
+          <div
+            className="tasks-filter"
+            role="tablist"
+            aria-label="Task views"
+            onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
+              if (
+                event.key !== "ArrowLeft" &&
+                event.key !== "ArrowRight" &&
+                event.key !== "Home" &&
+                event.key !== "End"
+              ) {
+                return;
+              }
+              const index = FILTERS.findIndex((item) => item.id === filter);
+              if (index < 0) {
+                return;
+              }
+              event.preventDefault();
+              const nextIndex =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? FILTERS.length - 1
+                    : event.key === "ArrowRight"
+                      ? (index + 1) % FILTERS.length
+                      : (index - 1 + FILTERS.length) % FILTERS.length;
+              const next = FILTERS[nextIndex];
+              if (!next) {
+                return;
+              }
+              setFilter(next.id);
+              setPopover(null);
+              const tabs =
+                event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  '[role="tab"]',
+                );
+              tabs[nextIndex]?.focus();
+            }}
+          >
+            {FILTERS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                tabIndex={filter === item.id ? 0 : -1}
+                aria-selected={filter === item.id}
+                className={`tasks-filter-tab${filter === item.id ? " is-active" : ""}`}
+                onClick={() => {
+                  setFilter(item.id);
+                  setPopover(null);
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="new-note-button"
+            onClick={onCreateTask}
+          >
+            + New task
+          </button>
         </div>
       </div>
 

@@ -1,15 +1,22 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { formatRelativeUpdated } from "./notes/format";
 import type { Note, NoteType } from "./notes/types";
+import { TaskStateIcon } from "./tasks/TaskStateIcon";
+import type { Task } from "./tasks/types";
 import { highlightMatch } from "./ui/highlightMatch";
 
 export type SearchPaletteProps = {
   open: boolean;
   onClose: () => void;
   searchNotes: (query: string) => Promise<Note[]>;
-  onOpenNote: (note: Note) => void;
+  searchTasks: (query: string) => Promise<Task[]>;
+  notes: Note[];
+  onOpenNote: (note: Note, taskId?: string | null) => void;
   onCreateNote: (title: string) => void;
 };
+
+type SearchHit =
+  { kind: "note"; note: Note } | { kind: "task"; task: Task; note: Note };
 
 function noteTypeLabel(type: NoteType): string {
   switch (type) {
@@ -87,6 +94,8 @@ export function SearchPalette({
   open,
   onClose,
   searchNotes,
+  searchTasks,
+  notes,
   onOpenNote,
   onCreateNote,
 }: SearchPaletteProps) {
@@ -94,22 +103,40 @@ export function SearchPalette({
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Note[]>([]);
+  const [noteHits, setNoteHits] = useState<Note[]>([]);
+  const [taskHits, setTaskHits] = useState<Task[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [searching, setSearching] = useState(false);
 
+  const visibleTaskHits = useMemo(() => {
+    const byId = new Map(notes.map((note) => [note.id, note]));
+    return taskHits.flatMap((task) => {
+      const note = byId.get(task.note_id);
+      return note ? [{ task, note }] : [];
+    });
+  }, [taskHits, notes]);
+
+  const hits: SearchHit[] = [
+    ...noteHits.map((note) => ({ kind: "note" as const, note })),
+    ...visibleTaskHits.map(({ task, note }) => ({
+      kind: "task" as const,
+      task,
+      note,
+    })),
+  ];
+
   const createTitle = query.trim() || "Untitled";
   const createLabel = `+ Create note '${createTitle}'`;
-  const itemCount = results.length + 1;
-  const createIndex = results.length;
+  const itemCount = hits.length + 1;
+  const createIndex = hits.length;
 
   const queryRef = useRef(query);
-  const resultsRef = useRef(results);
+  const hitsRef = useRef(hits);
   const activeIndexRef = useRef(activeIndex);
   const createIndexRef = useRef(createIndex);
   const itemCountRef = useRef(itemCount);
   queryRef.current = query;
-  resultsRef.current = results;
+  hitsRef.current = hits;
   activeIndexRef.current = activeIndex;
   createIndexRef.current = createIndex;
   itemCountRef.current = itemCount;
@@ -124,7 +151,8 @@ export function SearchPalette({
       return;
     }
     setQuery("");
-    setResults([]);
+    setNoteHits([]);
+    setTaskHits([]);
     setActiveIndex(0);
     const handle = window.setTimeout(() => {
       inputRef.current?.focus();
@@ -140,12 +168,17 @@ export function SearchPalette({
     }
     let cancelled = false;
     setSearching(true);
-    void searchNotes(query).then(
-      (notes) => {
+    const notesPromise = searchNotes(query);
+    const tasksPromise = query.trim()
+      ? searchTasks(query).catch(() => [] as Task[])
+      : Promise.resolve([] as Task[]);
+    void Promise.all([notesPromise, tasksPromise]).then(
+      ([foundNotes, foundTasks]) => {
         if (cancelled) {
           return;
         }
-        setResults(notes);
+        setNoteHits(foundNotes);
+        setTaskHits(foundTasks);
         setActiveIndex(0);
         setSearching(false);
       },
@@ -155,7 +188,8 @@ export function SearchPalette({
         if (cancelled) {
           return;
         }
-        setResults([]);
+        setNoteHits([]);
+        setTaskHits([]);
         setActiveIndex(0);
         setSearching(false);
       },
@@ -163,7 +197,7 @@ export function SearchPalette({
     return () => {
       cancelled = true;
     };
-  }, [open, query, searchNotes]);
+  }, [open, query, searchNotes, searchTasks]);
 
   useEffect(() => {
     if (!open) {
@@ -209,9 +243,12 @@ export function SearchPalette({
           onClose();
           return;
         }
-        const note = resultsRef.current[index];
-        if (note) {
-          onOpenNote(note);
+        const hit = hitsRef.current[index];
+        if (hit?.kind === "note") {
+          onOpenNote(hit.note);
+          onClose();
+        } else if (hit?.kind === "task") {
+          onOpenNote(hit.note, hit.task.id);
           onClose();
         }
       }
@@ -248,11 +285,11 @@ export function SearchPalette({
             ref={inputRef}
             id={inputId}
             className="search-input"
-            aria-label="Search notes"
+            aria-label="Search notes and tasks"
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={`${listId}-item-${String(activeIndex)}`}
-            placeholder="Search notes…"
+            placeholder="Search notes and tasks…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -262,14 +299,50 @@ export function SearchPalette({
         </div>
 
         <ul id={listId} className="search-results" role="listbox">
-          {results.map((note, index) => {
+          {hits.map((hit, index) => {
             const active = index === activeIndex;
-            const when = formatRelativeUpdated(note.updated_at);
-            const meta = when
-              ? `${noteTypeLabel(note.note_type)} · ${when}`
-              : noteTypeLabel(note.note_type);
+            if (hit.kind === "note") {
+              const note = hit.note;
+              const when = formatRelativeUpdated(note.updated_at);
+              const meta = when
+                ? `${noteTypeLabel(note.note_type)} · ${when}`
+                : noteTypeLabel(note.note_type);
+              return (
+                <li key={note.id} role="presentation">
+                  <button
+                    type="button"
+                    id={`${listId}-item-${String(index)}`}
+                    role="option"
+                    aria-selected={active}
+                    className={
+                      active ? "search-result is-active" : "search-result"
+                    }
+                    onMouseEnter={() => {
+                      setActiveIndex(index);
+                    }}
+                    onClick={() => {
+                      onOpenNote(note);
+                      onClose();
+                    }}
+                  >
+                    <TypeIcon type={note.note_type} />
+                    <span className="search-result-title">
+                      {highlightMatch(note.title || "Untitled", query)}
+                    </span>
+                    <span className="search-result-meta">{meta}</span>
+                    {active ? (
+                      <span className="search-result-return" aria-hidden="true">
+                        ⏎
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            }
+            const { task, note } = hit;
+            const meta = `Task · ${note.title.trim() || "Untitled"}`;
             return (
-              <li key={note.id} role="presentation">
+              <li key={`task:${task.id}`} role="presentation">
                 <button
                   type="button"
                   id={`${listId}-item-${String(index)}`}
@@ -282,13 +355,16 @@ export function SearchPalette({
                     setActiveIndex(index);
                   }}
                   onClick={() => {
-                    onOpenNote(note);
+                    onOpenNote(note, task.id);
                     onClose();
                   }}
                 >
-                  <TypeIcon type={note.note_type} />
+                  <TaskStateIcon state={task.state} />
                   <span className="search-result-title">
-                    {highlightMatch(note.title || "Untitled", query)}
+                    {highlightMatch(
+                      task.title.trim() || "Untitled task",
+                      query,
+                    )}
                   </span>
                   <span className="search-result-meta">{meta}</span>
                   {active ? (
@@ -300,9 +376,9 @@ export function SearchPalette({
               </li>
             );
           })}
-          {results.length === 0 && !searching ? (
+          {hits.length === 0 && !searching ? (
             <li className="search-empty" role="presentation">
-              No matching notes
+              No matching notes or tasks
             </li>
           ) : null}
           <li className="search-create-row" role="presentation">

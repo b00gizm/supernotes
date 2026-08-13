@@ -37,6 +37,13 @@ describe("tauri task IPC arg keys (ENG-61)", () => {
     });
   });
 
+  it("searchTasks passes query for Tauri 2", async () => {
+    const { tasksApi } = await import("./api");
+    await tasksApi.searchTasks("milk");
+
+    expect(invoke).toHaveBeenCalledWith("search_tasks", { query: "milk" });
+  });
+
   it("createTask/updateTask pass snake_case fields inside input", async () => {
     const { tasksApi } = await import("./api");
     await tasksApi.createTask({ note_id: "note-1", title: "Buy milk" });

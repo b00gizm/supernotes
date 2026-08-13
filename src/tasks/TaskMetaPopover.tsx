@@ -104,6 +104,28 @@ export function TaskMetaPopover({
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !node) {
+        return;
+      }
+      const focusable = Array.from(
+        node.querySelectorAll<HTMLElement>("button"),
+      );
+      if (focusable.length === 0) {
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey) {
+        if (active === first || !node.contains(active)) {
+          event.preventDefault();
+          last?.focus();
+        }
+      } else if (active === last || !node.contains(active)) {
+        event.preventDefault();
+        first?.focus();
       }
     };
     const onPointer = (event: MouseEvent) => {
@@ -130,6 +152,42 @@ export function TaskMetaPopover({
     const date = parseDailyTitle(month) ?? new Date();
     date.setMonth(date.getMonth() + delta);
     setMonth(monthCursorFrom(todayYmd(date)));
+  };
+
+  const onCalKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight" &&
+      event.key !== "ArrowUp" &&
+      event.key !== "ArrowDown"
+    ) {
+      return;
+    }
+    const buttons = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        "button[role='gridcell']",
+      ),
+    );
+    const index = buttons.indexOf(event.target as HTMLButtonElement);
+    if (index < 0 || buttons.length === 0) {
+      return;
+    }
+    const cols = 7;
+    let next = index;
+    if (event.key === "ArrowLeft") {
+      next = (index - 1 + buttons.length) % buttons.length;
+    } else if (event.key === "ArrowRight") {
+      next = (index + 1) % buttons.length;
+    } else if (event.key === "ArrowUp") {
+      next = index - cols;
+    } else {
+      next = index + cols;
+    }
+    if (next < 0 || next >= buttons.length) {
+      return;
+    }
+    event.preventDefault();
+    buttons[next]?.focus();
   };
 
   const onGroupKeyDown = (
@@ -270,7 +328,12 @@ export function TaskMetaPopover({
               <span key={day}>{day}</span>
             ))}
           </div>
-          <div className="task-meta-cal-grid" role="grid" aria-label="Calendar">
+          <div
+            className="task-meta-cal-grid"
+            role="grid"
+            aria-label="Calendar"
+            onKeyDown={onCalKeyDown}
+          >
             {cells.map((day, index) =>
               day ? (
                 <button
