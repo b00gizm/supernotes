@@ -1,9 +1,14 @@
+mod calendar;
 pub mod db;
 mod media;
 mod menu_nav;
 mod notes;
 mod tasks;
 
+use calendar::{
+    create_calendar_event, delete_calendar_event, get_calendar_event, list_calendar_events,
+    update_calendar_event,
+};
 use db::Db;
 use media::{resolve_note_image_path, save_note_image};
 use notes::{
@@ -47,6 +52,11 @@ pub fn run() {
             search_tasks,
             update_task,
             delete_task,
+            create_calendar_event,
+            get_calendar_event,
+            list_calendar_events,
+            update_calendar_event,
+            delete_calendar_event,
             save_note_image,
             resolve_note_image_path
         ])

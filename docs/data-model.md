@@ -96,11 +96,16 @@ Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
   `list_notes`, `search_notes`, `update_note`, `set_note_pinned`, `delete_note`,
   `list_links_from`, `list_links_to` (`src-tauri/src/notes.rs`); `create_task`,
   `get_task`, `list_tasks`, `list_tasks_for_note`, `update_task`, `delete_task`
-  (`src-tauri/src/tasks.rs`). Saving a note syncs its outbound `links` rows from
-  `[[…]]` / `#tag` / `@mention` in `body_markdown` (skips `[[task:…]]`).
+  (`src-tauri/src/tasks.rs`); `create_calendar_event`, `get_calendar_event`,
+  `list_calendar_events`, `update_calendar_event`, `delete_calendar_event`
+  (`src-tauri/src/calendar.rs`). `list_calendar_events` takes optional `from` /
+  `to` ISO instants and returns events overlapping that window. Saving a note
+  syncs its outbound `links` rows from `[[…]]` / `#tag` / `@mention` in
+  `body_markdown` (skips `[[task:…]]`).
 - Frontend: `src/notes/` wraps note/link commands (`notesApi` + `useNotes` with
   ~500ms debounced autosave). `src/tasks/` wraps task commands (`tasksApi`) and
   the Inbox / Upcoming / Complete overview (`TasksView`). Daily notes render a
   Due query section from `list_tasks(upcoming)` filtered to `due_date <=` that
   day. Editor task pills create/update/delete rows immediately; note markdown
-  still autosaves the `[[task:id]]` reference.
+  still autosaves the `[[task:id]]` reference. `src/calendar/` wraps event
+  commands (`calendarApi`) and the week grid + agenda panel (`CalendarView`).

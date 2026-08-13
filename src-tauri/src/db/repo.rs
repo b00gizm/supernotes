@@ -543,6 +543,7 @@ impl<'a> Repository<'a> {
         end: &str,
         task_id: Option<&str>,
     ) -> DbResult<CalendarEvent> {
+        validate_event_range(start, end)?;
         let event = CalendarEvent {
             id: Uuid::new_v4().to_string(),
             title: title.to_string(),
@@ -578,13 +579,20 @@ impl<'a> Repository<'a> {
             .ok_or(DbError::NotFound)
     }
 
-    pub fn list_calendar_events(&self) -> DbResult<Vec<CalendarEvent>> {
+    /// Overlapping window: `start < to AND end > from`. Omit either bound to skip it.
+    pub fn list_calendar_events(
+        &self,
+        from: Option<&str>,
+        to: Option<&str>,
+    ) -> DbResult<Vec<CalendarEvent>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, start, \"end\", task_id, created_at
              FROM calendar_events
+             WHERE (?1 IS NULL OR start < ?1)
+               AND (?2 IS NULL OR \"end\" > ?2)
              ORDER BY start ASC",
         )?;
-        let rows = stmt.query_map([], map_calendar_event)?;
+        let rows = stmt.query_map(params![to, from], map_calendar_event)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
@@ -596,6 +604,7 @@ impl<'a> Repository<'a> {
         end: &str,
         task_id: Option<&str>,
     ) -> DbResult<CalendarEvent> {
+        validate_event_range(start, end)?;
         let changed = self.conn.execute(
             "UPDATE calendar_events
              SET title = ?1, start = ?2, \"end\" = ?3, task_id = ?4
@@ -809,6 +818,20 @@ fn map_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         updated_at: row.get(7)?,
         completed_at: row.get(8)?,
     })
+}
+
+fn validate_event_range(start: &str, end: &str) -> DbResult<()> {
+    if start.is_empty() || end.is_empty() {
+        return Err(DbError::Invalid(
+            "event start and end are required".to_string(),
+        ));
+    }
+    if end <= start {
+        return Err(DbError::Invalid(
+            "event end must be after start".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn map_calendar_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<CalendarEvent> {
@@ -1285,7 +1308,24 @@ mod tests {
                 .unwrap();
             assert_eq!(updated.start, "2026-08-10T10:00:00.000Z");
             assert!(updated.task_id.is_none());
-            assert_eq!(repo.list_calendar_events().unwrap().len(), 1);
+            assert_eq!(repo.list_calendar_events(None, None).unwrap().len(), 1);
+            assert_eq!(
+                repo.list_calendar_events(
+                    Some("2026-08-10T10:00:00.000Z"),
+                    Some("2026-08-10T11:00:00.000Z"),
+                )
+                .unwrap()
+                .len(),
+                1
+            );
+            assert!(
+                repo.list_calendar_events(
+                    Some("2026-08-10T12:00:00.000Z"),
+                    Some("2026-08-10T13:00:00.000Z"),
+                )
+                .unwrap()
+                .is_empty()
+            );
 
             repo.delete_calendar_event(&created.id).unwrap();
             assert!(matches!(
