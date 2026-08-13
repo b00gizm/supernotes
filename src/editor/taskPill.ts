@@ -1,7 +1,12 @@
 import { mergeAttributes, Node, InputRule } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import {
+  NodeSelection,
+  Plugin,
+  PluginKey,
+  TextSelection,
+} from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import type {
   CreateTaskInput,
@@ -235,6 +240,27 @@ function findTaskPillPos(editor: Editor, taskId: string): number {
     }
   });
   return foundPos;
+}
+
+/** Opening a note must not NodeSelect a leading pill (looks "active"). */
+function clearLeadingTaskPillSelection(editor: Editor): void {
+  if (editor.isDestroyed) {
+    return;
+  }
+  const { selection, doc } = editor.state;
+  if (
+    !(selection instanceof NodeSelection) ||
+    selection.node.type.name !== "taskPill"
+  ) {
+    return;
+  }
+  const next = TextSelection.near(doc.resolve(selection.to), 1);
+  if (next instanceof NodeSelection) {
+    return;
+  }
+  editor.view.dispatch(
+    editor.state.tr.setSelection(next).setMeta("addToHistory", false),
+  );
 }
 
 function focusTaskPillTitle(editor: Editor, pendingId: string): void {
@@ -591,6 +617,7 @@ export const TaskPill = Node.create<TaskPillOptions>({
   onCreate() {
     const options = this.options;
     const editor = this.editor;
+    clearLeadingTaskPillSelection(editor);
     const noteId = options.getNoteId?.() ?? null;
     if (!noteId || !options.listTasksForNote) {
       return;

@@ -394,4 +394,20 @@ describe("task pill (ENG-61)", () => {
       expect(textbox.querySelector(".task-pill")).toBeNull();
     });
   });
+
+  it("does not select a leading task pill when the note opens", async () => {
+    render(
+      createElement(NoteEditor, {
+        markdown: "[[task:t-lead]] First task\n\nBody",
+        onChange: () => {},
+        currentNoteId: "note-lead",
+      }),
+    );
+    const textbox = await screen.findByRole("textbox", { name: "Note body" });
+    await waitFor(() => {
+      const el = textbox.querySelector(".task-pill");
+      expect(el).toBeInstanceOf(HTMLElement);
+      expect(el).not.toHaveClass("is-selected");
+    });
+  });
 });
