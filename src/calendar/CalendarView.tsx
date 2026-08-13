@@ -609,6 +609,9 @@ export function CalendarView({
     if (mins === null) {
       return;
     }
+    if (event.target instanceof Element && event.target.closest(".cal-event")) {
+      return;
+    }
     event.preventDefault();
     const next: DragState = {
       kind: "create",

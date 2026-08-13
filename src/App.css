@@ -2818,11 +2818,15 @@ button {
   bottom: 0;
   left: 0;
   z-index: 2;
-  height: 0.45rem;
+  height: 0.7rem;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: ns-resize;
+}
+
+.cal-event-resize:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .cal-event-form {

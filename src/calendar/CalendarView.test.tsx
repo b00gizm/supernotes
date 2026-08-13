@@ -402,4 +402,46 @@ describe("CalendarView time blocking (ENG-66)", () => {
     expect(kept.title).toBe("Beatport kündigen");
     expect(kept.state).toBe("open");
   });
+
+  it("does not return a done task to the inbox after deleting its event", async () => {
+    const user = userEvent.setup();
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "block",
+        title: "Beatport kündigen",
+        start: minutesToIso(TODAY, 18 * 60),
+        end: minutesToIso(TODAY, 19 * 60),
+        task_id: "t-inbox",
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    renderCalendar();
+    const sidebar = await screen.findByRole("complementary", {
+      name: "Inbox tasks",
+    });
+    const chip = await waitFor(() => {
+      const node = document.querySelector(".cal-event.is-task");
+      expect(node).toBeTruthy();
+      return node as HTMLElement;
+    });
+    await user.click(
+      within(chip).getByRole("button", { name: "Mark task done" }),
+    );
+    await waitFor(() => {
+      expect(document.querySelector(".cal-event.is-done")).toBeTruthy();
+    });
+    const hit = chip.querySelector(".cal-event-hit");
+    expect(hit).toBeTruthy();
+    mockGridRect();
+    fireEvent.mouseDown(hit as HTMLElement, { button: 0, clientY: 18 * 48 });
+    fireEvent.mouseUp(window);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(async () => {
+      const listed = await calRef.current.listEvents();
+      expect(listed.some((item) => item.id === "block")).toBe(false);
+    });
+    expect(within(sidebar).queryByText("Beatport kündigen")).toBeNull();
+    const kept = await tasksRef.current.getTask("t-inbox");
+    expect(kept.state).toBe("done");
+  });
 });
