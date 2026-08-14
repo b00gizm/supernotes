@@ -154,12 +154,6 @@ export function SearchPalette({
     setNoteHits([]);
     setTaskHits([]);
     setActiveIndex(0);
-    const handle = window.setTimeout(() => {
-      inputRef.current?.focus();
-    }, 0);
-    return () => {
-      window.clearTimeout(handle);
-    };
   }, [open]);
 
   useEffect(() => {
@@ -204,6 +198,28 @@ export function SearchPalette({
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
+      // Printable keys that still target the editor (focus hasn't moved yet)
+      // must land in the query, not the note underneath (ENG-130).
+      const printable =
+        event.key.length === 1 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey;
+      if (printable) {
+        const input = inputRef.current;
+        if (
+          input &&
+          event.target instanceof Node &&
+          input.contains(event.target)
+        ) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        setQuery((current) => current + event.key);
+        return;
+      }
+
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
@@ -253,9 +269,9 @@ export function SearchPalette({
         }
       }
     };
-    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [open, onClose, onCreateNote, onOpenNote]);
 
@@ -285,6 +301,7 @@ export function SearchPalette({
             ref={inputRef}
             id={inputId}
             className="search-input"
+            autoFocus
             aria-label="Search notes and tasks"
             aria-controls={listId}
             aria-autocomplete="list"
