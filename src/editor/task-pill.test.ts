@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryTasksApi } from "../tasks/memoryApi";
 import { tasksApi as browserTasksApi } from "../tasks/api";
-import type { Task } from "../tasks/types";
+import type { CreateTaskInput, Task } from "../tasks/types";
 import { NoteEditor } from "./NoteEditor";
 import { noteEditorExtensions } from "./extensions";
 import { getEditorMarkdown } from "./markdown";
@@ -44,6 +44,9 @@ describe("task pill (ENG-61)", () => {
     tasks?: ReturnType<typeof createMemoryTasksApi>;
     seed?: Task[];
     content?: string;
+    createTask?: (input: CreateTaskInput) => Promise<Task>;
+    deleteTask?: (id: string) => Promise<void>;
+    onError?: (message: string) => void;
   }) {
     const tasksApi = opts?.tasks ?? createMemoryTasksApi(opts?.seed ?? []);
     const noteId = opts?.noteId ?? "note-1";
@@ -55,10 +58,12 @@ describe("task pill (ENG-61)", () => {
         {},
         {
           getNoteId: () => noteId,
-          createTask: (input) => tasksApi.createTask(input),
+          createTask:
+            opts?.createTask ?? ((input) => tasksApi.createTask(input)),
           updateTask: (input) => tasksApi.updateTask(input),
-          deleteTask: (id) => tasksApi.deleteTask(id),
+          deleteTask: opts?.deleteTask ?? ((id) => tasksApi.deleteTask(id)),
           listTasksForNote: (id) => tasksApi.listTasksForNote(id),
+          ...(opts?.onError ? { onError: opts.onError } : {}),
         },
       ),
       content: opts?.content ?? "",
@@ -111,6 +116,71 @@ describe("task pill (ENG-61)", () => {
     expect(getEditorMarkdown(ed)).toBe(
       "[[task:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa]] Buy milk",
     );
+  });
+
+  it("does not serialize pending- ids as [[task:pending-]] (ENG-141)", () => {
+    const { editor: ed } = create();
+    typeText(ed, "[] ");
+    expect(ed.getHTML()).toContain("pending-");
+    expect(getEditorMarkdown(ed)).not.toContain("[[task:pending-");
+
+    let pos = -1;
+    ed.state.doc.descendants((node, nodePos) => {
+      if (node.type.name === "taskPill") {
+        pos = nodePos;
+      }
+    });
+    const node = ed.state.doc.nodeAt(pos);
+    expect(node).toBeTruthy();
+    if (!node) {
+      return;
+    }
+    ed.view.dispatch(
+      ed.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        title: "Draft",
+      }),
+    );
+    const md = getEditorMarkdown(ed);
+    expect(md).not.toContain("[[task:pending-");
+    expect(md).toBe("Draft");
+  });
+
+  it("surfaces deleteTask failure when a pending pill is removed before create resolves (ENG-145)", async () => {
+    const onError = vi.fn();
+    let resolveCreate: ((task: Task) => void) | undefined;
+    const createTask = vi.fn(
+      () =>
+        new Promise<Task>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+    const deleteTask = vi.fn().mockRejectedValue(new Error("could not delete"));
+    const { editor: ed } = create({ createTask, deleteTask, onError });
+    typeText(ed, "[] ");
+    expect(ed.getHTML()).toContain("pending-");
+
+    ed.commands.selectAll();
+    ed.commands.deleteSelection();
+    expect(ed.getHTML()).not.toContain("task-pill");
+
+    expect(resolveCreate).toBeTypeOf("function");
+    resolveCreate?.({
+      id: "t-orphan",
+      note_id: "note-1",
+      title: "",
+      state: "open",
+      due_date: null,
+      priority: null,
+      created_at: "2026-08-12T00:00:00.000Z",
+      updated_at: "2026-08-12T00:00:00.000Z",
+      completed_at: null,
+    });
+
+    await vi.waitFor(() => {
+      expect(deleteTask).toHaveBeenCalledWith("t-orphan");
+      expect(onError).toHaveBeenCalledWith("could not delete");
+    });
   });
 
   it("click-to-done updates DB state via storage callback", async () => {
