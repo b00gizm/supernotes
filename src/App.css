@@ -711,9 +711,20 @@ button {
   border-top: 1px solid var(--border-subtle);
 }
 
-.tasks-group:first-child {
+.tasks-group:first-child:not(.is-unscheduled) {
   padding-top: 0;
   border-top: 0;
+}
+
+.tasks-group.is-unscheduled {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  background: var(--bg-suggest-active);
+}
+
+.tasks-group.is-unscheduled:first-child {
+  padding: var(--space-3) var(--space-4);
 }
 
 .tasks-group-label {
@@ -735,6 +746,10 @@ button {
 
 .tasks-group.is-default .tasks-group-label {
   color: var(--text-tertiary);
+}
+
+.tasks-group.is-unscheduled .tasks-group-label {
+  color: var(--text);
 }
 
 .tasks-group-count {

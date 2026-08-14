@@ -174,15 +174,19 @@ describe("App shell", () => {
     expect(within(pane).queryByRole("tab")).toBeNull();
     expect(within(pane).getByText("Buy milk")).toBeInTheDocument();
     expect(within(pane).getByText("Ship it")).toBeInTheDocument();
-    expect(
-      within(pane).getByRole("region", { name: "Overdue" }),
-    ).toBeInTheDocument();
-    expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
-    expect(within(pane).queryByText("Wrapped up")).not.toBeInTheDocument();
-
+    const overdue = within(pane).getByRole("region", { name: "Overdue" });
     const unscheduled = within(pane).getByRole("region", {
       name: "Unscheduled",
     });
+    expect(
+      Boolean(
+        unscheduled.compareDocumentPosition(overdue) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+    expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
+    expect(within(pane).queryByText("Wrapped up")).not.toBeInTheDocument();
+
     await user.click(
       within(unscheduled).getByRole("button", { name: "Mark task done" }),
     );

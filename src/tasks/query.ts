@@ -145,13 +145,13 @@ function formatWeekRange(start: string, end: string): string {
   return `${formatMonthDay(start)} – ${formatMonthDay(end)}`;
 }
 
-export type UpcomingGroupTone = "overdue" | "today" | "default";
+export type UpcomingGroupTone = "overdue" | "today" | "unscheduled" | "default";
 
 export type UpcomingGroup = {
   id: string;
   label: string;
   tone: UpcomingGroupTone;
-  /** Show count after label (Overdue). */
+  /** Show count after label (Overdue, Unscheduled). */
   showCount: boolean;
   tasks: Task[];
 };
@@ -224,9 +224,10 @@ function sortOpenTasks(
 
 /**
  * Open tasks on the Tasks page:
+ * Unscheduled (no due, no slot) first — the goal is none of these — then
  * Overdue (due date in the past, even if scheduled later) → earlier days
  * this week → Today → Tomorrow → rest of this week → Next week → later
- * weeks → Unscheduled (no due, no slot).
+ * weeks.
  *
  * A time block places the row on that day unless the due date is overdue.
  * Done/cancelled rows (when passed in) skip Overdue and sit on their slot,
@@ -379,11 +380,11 @@ export function groupUpcomingTasks(
   }
 
   if (unscheduled.length > 0) {
-    groups.push({
+    groups.unshift({
       id: "unscheduled",
       label: "Unscheduled",
-      tone: "default",
-      showCount: false,
+      tone: "unscheduled",
+      showCount: true,
       tasks: sortOpenTasks(unscheduled, schedules),
     });
   }

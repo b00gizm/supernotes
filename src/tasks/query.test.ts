@@ -173,16 +173,18 @@ describe("task query helpers (ENG-63)", () => {
 
     const groups = groupUpcomingTasks(tasks, friday, schedules);
     expect(groups.map((g) => g.id)).toEqual([
+      "unscheduled",
       "overdue",
       "day-2026-08-14",
-      "unscheduled",
     ]);
-    expect(groups[0]?.tasks.map((t) => t.id)).toEqual(["today-due-thu"]);
-    expect(groups[1]?.tasks.map((t) => t.id)).toEqual([
+    expect(groups[0]?.tone).toBe("unscheduled");
+    expect(groups[0]?.showCount).toBe(true);
+    expect(groups[0]?.tasks.map((t) => t.id)).toEqual(["undated"]);
+    expect(groups[1]?.tasks.map((t) => t.id)).toEqual(["today-due-thu"]);
+    expect(groups[2]?.tasks.map((t) => t.id)).toEqual([
       "today-due-sun",
       "today-only",
     ]);
-    expect(groups[2]?.tasks.map((t) => t.id)).toEqual(["undated"]);
   });
 
   it("keeps completed tasks out of Overdue and sorts them after open rows", () => {

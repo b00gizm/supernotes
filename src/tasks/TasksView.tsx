@@ -46,7 +46,7 @@ function mergeById(groups: Task[][]): Task[] {
 }
 
 /**
- * Open tasks grouped by overdue / day / unscheduled.
+ * Open tasks grouped by unscheduled callout, then overdue / day.
  * Time blocks sit on their slot day unless the due date is already overdue.
  */
 export function TasksView({
