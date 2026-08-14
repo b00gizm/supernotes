@@ -264,6 +264,9 @@ describe("CalendarView time blocking (ENG-66)", () => {
     const sidebar = await screen.findByRole("complementary", {
       name: "Inbox tasks",
     });
+    expect(
+      within(sidebar).getByRole("heading", { name: "Unscheduled Tasks" }),
+    ).toBeInTheDocument();
     expect(within(sidebar).getByText("Beatport kündigen")).toBeInTheDocument();
     expect(within(sidebar).queryByText("Survey → beta list")).toBeNull();
   });

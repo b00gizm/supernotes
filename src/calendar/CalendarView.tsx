@@ -1432,10 +1432,7 @@ function InboxSidebar({
 }) {
   return (
     <aside className="cal-inbox" aria-label="Inbox tasks">
-      <h2 className="cal-inbox-title">
-        <TaskStateIcon state="open" />
-        Tasks
-      </h2>
+      <h2 className="cal-inbox-title">Unscheduled Tasks</h2>
       {tasks.length === 0 ? (
         <p className="cal-inbox-empty">No unscheduled tasks</p>
       ) : (

@@ -2476,19 +2476,10 @@ button {
 }
 
 .cal-inbox-title {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
   margin: 0 0 var(--space-3);
   color: var(--text);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-}
-
-.cal-inbox-title .task-pill-icon {
-  width: 0.9rem;
-  height: 0.9rem;
-  color: var(--text-secondary);
 }
 
 .cal-inbox-empty {
