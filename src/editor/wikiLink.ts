@@ -528,6 +528,8 @@ export const WikiLink = Node.create<WikiLinkOptions>({
     for (const update of updates) {
       tr = tr.setNodeMarkup(update.pos, undefined, update.attrs);
     }
+    tr.setMeta("preventUpdate", true);
+    tr.setMeta("addToHistory", false);
     view.dispatch(tr);
   },
 
