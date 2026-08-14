@@ -177,7 +177,7 @@ describe("App shell", () => {
     expect(
       within(pane).getByRole("region", { name: "Overdue" }),
     ).toBeInTheDocument();
-    expect(within(pane).getByText("(Due: Aug 1)")).toHaveClass("is-overdue");
+    expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
     expect(within(pane).queryByText("Wrapped up")).not.toBeInTheDocument();
 
     const unscheduled = within(pane).getByRole("region", {

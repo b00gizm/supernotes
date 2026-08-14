@@ -128,7 +128,9 @@ export function TaskRow({
         ) : null}
         {showDue && task.due_date ? (
           <span className={`tasks-due-chip${overdue ? " is-overdue" : ""}`}>
-            {`(Due: ${formatShortDue(task.due_date)})`}
+            {scheduleLabel
+              ? `(Due: ${formatShortDue(task.due_date)})`
+              : formatShortDue(task.due_date)}
           </span>
         ) : null}
         {dot ? (
