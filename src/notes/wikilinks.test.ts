@@ -66,11 +66,22 @@ describe("wikilinks helpers", () => {
     );
   });
 
-  it("extract parity fixture matches Rust (unclosed [[ continues)", async () => {
-    const cases = (await import("./fixtures/wikilink-extract-parity.json"))
-      .default as Array<{ body: string; titles: string[] }>;
-    for (const { body, titles } of cases) {
+  it("extract and rewrite parity fixture matches Rust", async () => {
+    const fixture = (await import("./fixtures/wikilink-extract-parity.json"))
+      .default as {
+      extract: Array<{ body: string; titles: string[] }>;
+      rewrite: Array<{
+        body: string;
+        oldTitle: string;
+        newTitle: string;
+        rewritten: string;
+      }>;
+    };
+    for (const { body, titles } of fixture.extract) {
       expect(extractWikilinkTitles(body)).toEqual(titles);
+    }
+    for (const { body, oldTitle, newTitle, rewritten } of fixture.rewrite) {
+      expect(rewriteWikilinkTitle(body, oldTitle, newTitle)).toBe(rewritten);
     }
   });
 
@@ -81,6 +92,17 @@ describe("wikilinks helpers", () => {
     ];
     expect(findNoteByTitle(notes, "Foo")?.id).toBe("2");
     expect(findNoteByTitle(notes, "FOO")?.id).toBe("1");
+  });
+
+  it("finds and rewrites non-ASCII titles with Unicode fold", () => {
+    const notes = [
+      { title: "Über plan", id: "1" },
+      { title: "uber plan", id: "2" },
+    ];
+    expect(findNoteByTitle(notes, "über plan")?.id).toBe("1");
+    expect(
+      rewriteWikilinkTitle("See [[über plan]].", "Über plan", "Done"),
+    ).toBe("See [[Done]].");
   });
 
   it("ranks autocomplete by relevance then recency", () => {
