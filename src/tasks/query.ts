@@ -1,4 +1,11 @@
-import { formatDailyTitle, parseDailyTitle } from "../notes/format";
+import {
+  addDays,
+  formatDailyTitle,
+  formatShortDay,
+  formatWeekdayMonthDay,
+  formatWeekRange,
+  startOfWeekMonday,
+} from "../notes/format";
 import type { Task, TaskListFilter, TaskPriority } from "./types";
 
 /** Priority rank for Upcoming sort (lower = higher priority). */
@@ -100,72 +107,6 @@ function completeCutoff(today: string): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${String(year)}-${month}-${day}`;
-}
-
-function parseYmd(ymd: string): Date | null {
-  return parseDailyTitle(ymd);
-}
-
-function addDays(ymd: string, days: number): string {
-  const date = parseYmd(ymd);
-  if (!date) {
-    return ymd;
-  }
-  date.setDate(date.getDate() + days);
-  return formatDailyTitle(date);
-}
-
-/** Monday of the calendar week containing `ymd` (local). */
-function startOfWeekMonday(ymd: string): string {
-  const date = parseYmd(ymd);
-  if (!date) {
-    return ymd;
-  }
-  const day = date.getDay(); // 0 Sun … 6 Sat
-  const delta = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + delta);
-  return formatDailyTitle(date);
-}
-
-function formatShortDay(ymd: string): string {
-  const date = parseYmd(ymd);
-  if (!date) {
-    return ymd;
-  }
-  const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  return `${weekday}, ${month} ${String(date.getDate())}`;
-}
-
-function formatMonthDay(ymd: string): string {
-  const date = parseYmd(ymd);
-  if (!date) {
-    return ymd;
-  }
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  return `${month} ${String(date.getDate())}`;
-}
-
-function formatWeekdayMonthDay(ymd: string): string {
-  const date = parseYmd(ymd);
-  if (!date) {
-    return ymd;
-  }
-  const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  return `${weekday} ${month} ${String(date.getDate())}`;
-}
-
-function formatWeekRange(start: string, end: string): string {
-  const startDate = parseYmd(start);
-  const endDate = parseYmd(end);
-  if (!startDate || !endDate) {
-    return `${start} – ${end}`;
-  }
-  if (startDate.getMonth() === endDate.getMonth()) {
-    return `${formatMonthDay(start)} – ${String(endDate.getDate())}`;
-  }
-  return `${formatMonthDay(start)} – ${formatMonthDay(end)}`;
 }
 
 export type UpcomingGroupTone = "overdue" | "today" | "unscheduled" | "default";

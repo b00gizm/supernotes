@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  addDays,
   backlinkSnippet,
   formatDailyDisplayTitle,
   formatDailyTitle,
+  formatMonthDay,
   formatOverviewWhen,
   formatRelativeUpdated,
+  formatWeekRange,
   groupNotesForOverview,
   noteSnippet,
   parseBacklinkSnippetParts,
   parseDailyTitle,
   parseSnippetParts,
   shiftDailyTitle,
+  startOfWeekMonday,
 } from "./format";
 import type { Note } from "./types";
 
@@ -145,6 +149,25 @@ describe("shiftDailyTitle", () => {
   it("moves by local calendar days", () => {
     expect(shiftDailyTitle("2026-08-10", -1)).toBe("2026-08-09");
     expect(shiftDailyTitle("2026-08-10", 1)).toBe("2026-08-11");
+  });
+});
+
+describe("addDays / startOfWeekMonday (ENG-150)", () => {
+  it("shifts valid ymd and leaves invalid input unchanged", () => {
+    expect(addDays("2026-08-10", 1)).toBe("2026-08-11");
+    expect(addDays("nope", 1)).toBe("nope");
+  });
+
+  it("starts weeks on Monday", () => {
+    expect(startOfWeekMonday("2026-08-16")).toBe("2026-08-10");
+    expect(startOfWeekMonday("2026-08-10")).toBe("2026-08-10");
+    expect(startOfWeekMonday("nope")).toBe("nope");
+  });
+
+  it("formats month-day and week ranges", () => {
+    expect(formatMonthDay("2026-08-14")).toBe("Aug 14");
+    expect(formatWeekRange("2026-08-10", "2026-08-16")).toBe("Aug 10 – 16");
+    expect(formatWeekRange("2026-08-31", "2026-09-06")).toBe("Aug 31 – Sep 6");
   });
 });
 
