@@ -2,19 +2,25 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { calendarApi, subscribeCalendarChanged } from "../calendar/api";
 import { formatDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { tasksApi } from "./api";
+import { formatScheduleSpan } from "./due";
 import { subscribeTasksChanged } from "./events";
-import { filterTasks, groupUpcomingTasks } from "./query";
+import {
+  groupUpcomingTasks,
+  schedulesFromEvents,
+  type TaskSchedule,
+} from "./query";
 import { TaskMetaPopover, type TaskMetaPatch } from "./TaskMetaPopover";
 import { TaskRow } from "./TaskRow";
-import type { Task, TaskListFilter, TaskState } from "./types";
+import type { Task, TaskState } from "./types";
 
 export type TasksViewProps = {
   notes: Note[];
@@ -23,21 +29,25 @@ export type TasksViewProps = {
   onCreateTask: () => void;
 };
 
-const FILTERS: Array<{ id: TaskListFilter; label: string }> = [
-  { id: "inbox", label: "Inbox" },
-  { id: "upcoming", label: "Upcoming" },
-  { id: "complete", label: "Complete" },
-];
-
 type PopoverState = {
   taskId: string;
   x: number;
   y: number;
 };
 
+function mergeById(groups: Task[][]): Task[] {
+  const byId = new Map<string, Task>();
+  for (const group of groups) {
+    for (const task of group) {
+      byId.set(task.id, task);
+    }
+  }
+  return [...byId.values()];
+}
+
 /**
- * Global Tasks overview: Inbox / Upcoming / Complete (ENG-63).
- * Upcoming layout follows the design mockup (date-grouped sections).
+ * Open tasks grouped by unscheduled callout, then overdue / day.
+ * Time blocks sit on their slot day unless the due date is already overdue.
  */
 export function TasksView({
   notes,
@@ -46,11 +56,15 @@ export function TasksView({
   onCreateTask,
 }: TasksViewProps) {
   const today = todayProp ?? formatDailyTitle();
-  const [filter, setFilter] = useState<TaskListFilter>("inbox");
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [schedules, setSchedules] = useState<Map<string, TaskSchedule>>(
+    () => new Map(),
+  );
+  const [showCompleted, setShowCompleted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
+  const readyRef = useRef(false);
 
   const reload = useCallback(
     async (quiet = false) => {
@@ -58,34 +72,44 @@ export function TasksView({
         setLoading(true);
       }
       try {
-        const listed = await tasksApi.listTasks(filter, today);
-        setTasks(listed);
+        const [inbox, upcoming, events, complete] = await Promise.all([
+          tasksApi.listTasks("inbox", today),
+          tasksApi.listTasks("upcoming", today),
+          calendarApi.listEvents(),
+          showCompleted
+            ? tasksApi.listTasks("complete", today)
+            : Promise.resolve([] as Task[]),
+        ]);
+        setTasks(mergeById([inbox, upcoming, complete]));
+        setSchedules(schedulesFromEvents(events));
         setError(null);
+        readyRef.current = true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load tasks");
       } finally {
         setLoading(false);
       }
     },
-    [filter, today],
+    [showCompleted, today],
   );
 
   useEffect(() => {
-    void reload();
+    void reload(readyRef.current);
   }, [reload]);
 
   useEffect(() => subscribeTasksChanged(() => void reload(true)), [reload]);
+  useEffect(() => subscribeCalendarChanged(() => void reload(true)), [reload]);
 
   const noteById = useMemo(
     () => new Map(notes.map((note) => [note.id, note])),
     [notes],
   );
-  const upcomingGroups = useMemo(
-    () => (filter === "upcoming" ? groupUpcomingTasks(tasks, today) : []),
-    [filter, tasks, today],
+  const groups = useMemo(
+    () => groupUpcomingTasks(tasks, today, schedules),
+    [tasks, today, schedules],
   );
   const popoverTask = popover
-    ? (tasks.find((task) => task.id === popover.taskId) ?? null)
+    ? (tasks.find((item) => item.id === popover.taskId) ?? null)
     : null;
 
   const applyUpdate = async (
@@ -100,13 +124,19 @@ export function TasksView({
         due_date: patch.due_date === undefined ? task.due_date : patch.due_date,
         priority: patch.priority === undefined ? task.priority : patch.priority,
       });
-      setTasks((prev) =>
-        filterTasks(
-          prev.map((item) => (item.id === updated.id ? updated : item)),
-          filter,
-          today,
-        ),
-      );
+      setTasks((prev) => {
+        const next = prev.map((item) =>
+          item.id === updated.id ? updated : item,
+        );
+        if (
+          updated.state === "open" ||
+          updated.state === "waiting" ||
+          showCompleted
+        ) {
+          return next;
+        }
+        return next.filter((item) => item.id !== updated.id);
+      });
       setError(null);
       return true;
     } catch (err) {
@@ -130,15 +160,19 @@ export function TasksView({
     });
   };
 
-  const renderRow = (task: Task, showDue: boolean): ReactNode => {
+  const renderRow = (task: Task): ReactNode => {
     const note = noteById.get(task.note_id);
+    const slot = schedules.get(task.id);
     return (
       <li key={task.id}>
         <TaskRow
           task={task}
           note={note}
           today={today}
-          showDue={showDue}
+          showDue={Boolean(task.due_date)}
+          scheduleLabel={
+            slot ? formatScheduleSpan(slot.start, slot.end) : undefined
+          }
           onToggle={() => {
             toggleDone(task);
           }}
@@ -159,20 +193,16 @@ export function TasksView({
   let body: ReactNode;
   if (loading) {
     body = <p className="muted">Loading…</p>;
-  } else if (tasks.length === 0) {
+  } else if (groups.length === 0) {
     body = (
       <p className="muted">
-        {filter === "inbox"
-          ? "Inbox is empty. Type [] at the start of a line in a note."
-          : filter === "upcoming"
-            ? "No upcoming tasks."
-            : "No completed tasks in the last 14 days."}
+        No open tasks. Type [] at the start of a line in a note.
       </p>
     );
-  } else if (filter === "upcoming") {
+  } else {
     body = (
       <div className="tasks-groups">
-        {upcomingGroups.map((group) => (
+        {groups.map((group) => (
           <section
             key={group.id}
             className={`tasks-group is-${group.tone}`}
@@ -187,19 +217,11 @@ export function TasksView({
               ) : null}
             </h2>
             <ul className="tasks-list">
-              {group.tasks.map((task) =>
-                renderRow(task, group.tone === "overdue"),
-              )}
+              {group.tasks.map((task) => renderRow(task))}
             </ul>
           </section>
         ))}
       </div>
-    );
-  } else {
-    body = (
-      <ul className="tasks-list">
-        {tasks.map((task) => renderRow(task, filter === "complete"))}
-      </ul>
     );
   }
 
@@ -210,62 +232,16 @@ export function TasksView({
           <h1 className="pane-title">Tasks</h1>
         </div>
         <div className="tasks-header-actions">
-          <div
-            className="tasks-filter"
-            role="tablist"
-            aria-label="Task views"
-            onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
-              if (
-                event.key !== "ArrowLeft" &&
-                event.key !== "ArrowRight" &&
-                event.key !== "Home" &&
-                event.key !== "End"
-              ) {
-                return;
-              }
-              const index = FILTERS.findIndex((item) => item.id === filter);
-              if (index < 0) {
-                return;
-              }
-              event.preventDefault();
-              const nextIndex =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? FILTERS.length - 1
-                    : event.key === "ArrowRight"
-                      ? (index + 1) % FILTERS.length
-                      : (index - 1 + FILTERS.length) % FILTERS.length;
-              const next = FILTERS[nextIndex];
-              if (!next) {
-                return;
-              }
-              setFilter(next.id);
-              setPopover(null);
-              const tabs =
-                event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                  '[role="tab"]',
-                );
-              tabs[nextIndex]?.focus();
+          <button
+            type="button"
+            className={`tasks-completed-toggle${showCompleted ? " is-active" : ""}`}
+            aria-pressed={showCompleted}
+            onClick={() => {
+              setShowCompleted((on) => !on);
             }}
           >
-            {FILTERS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                tabIndex={filter === item.id ? 0 : -1}
-                aria-selected={filter === item.id}
-                className={`tasks-filter-tab${filter === item.id ? " is-active" : ""}`}
-                onClick={() => {
-                  setFilter(item.id);
-                  setPopover(null);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+            Completed
+          </button>
           <button
             type="button"
             className="new-note-button"

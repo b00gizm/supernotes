@@ -646,6 +646,25 @@ button {
   gap: var(--space-3);
 }
 
+.tasks-completed-toggle {
+  padding: 0.3rem 0.7rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.tasks-completed-toggle:hover {
+  color: var(--text);
+}
+
+.tasks-completed-toggle.is-active {
+  background: var(--bg-chip);
+  color: var(--text);
+}
+
 .tasks-filter {
   display: inline-flex;
   align-items: center;
@@ -692,8 +711,23 @@ button {
   border-top: 1px solid var(--border-subtle);
 }
 
-.tasks-group:first-child {
+.tasks-group:first-child:not(.is-unscheduled) {
   padding-top: 0;
+  border-top: 0;
+}
+
+.tasks-group.is-unscheduled {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  background: var(--bg-suggest-active);
+}
+
+.tasks-group.is-unscheduled:first-child {
+  padding: var(--space-3) var(--space-4);
+}
+
+.tasks-group.is-unscheduled + .tasks-group {
   border-top: 0;
 }
 
@@ -716,6 +750,10 @@ button {
 
 .tasks-group.is-default .tasks-group-label {
   color: var(--text-tertiary);
+}
+
+.tasks-group.is-unscheduled .tasks-group-label {
+  color: var(--text);
 }
 
 .tasks-group-count {
@@ -843,6 +881,24 @@ button {
   font-weight: var(--weight-medium);
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+.tasks-schedule-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.tasks-schedule-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  display: block;
 }
 
 .tasks-due-chip.is-overdue {
@@ -2409,6 +2465,98 @@ button {
   flex: 1;
 }
 
+.cal-inbox {
+  flex: 0 0 13.5rem;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.cal-inbox-title {
+  margin: 0 0 var(--space-3);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.cal-inbox-empty {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.cal-inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.cal-inbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  border-radius: var(--radius-md);
+  cursor: grab;
+  user-select: none;
+}
+
+.cal-inbox-row:hover {
+  background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
+}
+
+.cal-inbox-row:active {
+  cursor: grabbing;
+}
+
+.cal-inbox-toggle,
+.cal-inbox-main {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.cal-inbox-toggle {
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.cal-inbox-toggle .task-pill-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
+}
+
+.cal-inbox-main {
+  flex: 1;
+  padding: 0.35rem 0.25rem 0.35rem 0;
+  text-align: left;
+}
+
+.cal-inbox-task-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
 .cal-week {
   flex: 1;
   min-width: 0;
@@ -2607,18 +2755,33 @@ button {
   background-color: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
+.cal-day-col.is-drop {
+  background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .cal-event {
   position: absolute;
   right: 2px;
   left: 2px;
   z-index: 1;
   overflow: hidden;
+  display: flex;
+  align-items: center;
   border-radius: var(--radius-sm);
   background: var(--cal-event);
 }
 
+.cal-event.is-task {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  padding-left: 0.12rem;
+}
+
 .cal-event.is-editing {
   z-index: 3;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.cal-event.is-task.is-editing {
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
@@ -2627,19 +2790,66 @@ button {
   border: 1.5px dashed var(--accent);
 }
 
+.cal-event.is-dragging {
+  z-index: 4;
+  opacity: 0.92;
+}
+
+.cal-event.is-done {
+  opacity: 0.72;
+}
+
+.cal-event.is-done .cal-event-title,
+.cal-event.is-done .cal-event-when {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.cal-event-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.cal-event-toggle .task-pill-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  display: block;
+}
+
 .cal-event-hit {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  width: 100%;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
-  padding: 0.2rem 0.35rem;
+  padding: 0 0.3rem 0 0.2rem;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
   font: inherit;
-  cursor: pointer;
+  line-height: 1.15;
+  cursor: grab;
+}
+
+.cal-event.is-compact .cal-event-when {
+  display: none;
+}
+
+.cal-event-hit:active {
+  cursor: grabbing;
 }
 
 .cal-event-title {
@@ -2648,11 +2858,30 @@ button {
   white-space: nowrap;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
+  line-height: 1.15;
 }
 
 .cal-event-when {
   color: var(--text-secondary);
   font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+.cal-event-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  height: 0.7rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ns-resize;
+}
+
+.cal-event-resize:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .cal-event-form {
@@ -2788,8 +3017,19 @@ button {
   overflow: auto;
 }
 
+.cal-agenda-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
 .cal-agenda-row.is-past {
   opacity: 0.45;
+}
+
+.cal-agenda-row.is-done .cal-agenda-event-title {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
 }
 
 .cal-agenda-row.is-editing .cal-agenda-hit {
@@ -2802,6 +3042,8 @@ button {
   grid-template-columns: 2.6rem 1fr auto;
   align-items: baseline;
   gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
   width: 100%;
   padding: 0.35rem 0;
   border: 0;
@@ -2885,6 +3127,19 @@ button {
   .overview-pane,
   .calendar-pane {
     padding: var(--space-5) var(--space-4);
+  }
+
+  .cal-body {
+    flex-wrap: wrap;
+  }
+
+  .cal-inbox {
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: 12rem;
+    padding: var(--space-3) 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .has-mac-overlay-chrome .editor-pane,

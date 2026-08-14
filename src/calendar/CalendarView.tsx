@@ -38,6 +38,7 @@ import {
   weekRangeIso,
   weekdayShort,
 } from "./layout";
+import { scheduledTaskIds } from "./taskDrag";
 import type { CalendarEvent } from "./types";
 
 export type CalendarViewProps = {
@@ -54,11 +55,32 @@ const MODES: Array<{ id: CalMode; label: string }> = [
   { id: "agenda", label: "Agenda" },
 ];
 
-type DragState = {
-  day: string;
-  originMin: number;
-  currentMin: number;
-};
+type DragState =
+  | {
+      kind: "create";
+      day: string;
+      originMin: number;
+      currentMin: number;
+    }
+  | {
+      kind: "move";
+      id: string;
+      day: string;
+      startMin: number;
+      endMin: number;
+    }
+  | {
+      kind: "resize";
+      id: string;
+      day: string;
+      startMin: number;
+      endMin: number;
+    }
+  | {
+      kind: "drop";
+      day: string;
+      startMin: number;
+    };
 
 type EditState = {
   id: string;
@@ -106,6 +128,53 @@ function timesToIso(
     start: minutesToIso(ymd, startMin),
     end: minutesToIso(ymd, endMin),
   };
+}
+
+function dayFromPoint(clientX: number, clientY: number): string | null {
+  const node = document.elementFromPoint(clientX, clientY);
+  if (node instanceof Element) {
+    const fromNode = node.closest("[data-day]")?.getAttribute("data-day");
+    if (fromNode) {
+      return fromNode;
+    }
+  }
+  for (const col of document.querySelectorAll("[data-day]")) {
+    const rect = col.getBoundingClientRect();
+    if (
+      clientX >= rect.left &&
+      clientX < rect.right &&
+      clientY >= rect.top &&
+      clientY < rect.bottom
+    ) {
+      return col.getAttribute("data-day");
+    }
+  }
+  return null;
+}
+
+function overlayDrag(
+  events: CalendarEvent[],
+  drag: DragState | null,
+): CalendarEvent[] {
+  if (!drag || (drag.kind !== "move" && drag.kind !== "resize")) {
+    return events;
+  }
+  const times = timesToIso(drag.day, drag.startMin, drag.endMin);
+  return events.map((item) =>
+    item.id === drag.id
+      ? { ...item, start: times.start, end: times.end }
+      : item,
+  );
+}
+
+function mergeTasks(groups: Task[][]): Task[] {
+  const byId = new Map<string, Task>();
+  for (const group of groups) {
+    for (const task of group) {
+      byId.set(task.id, task);
+    }
+  }
+  return [...byId.values()];
 }
 
 function TaskChip({
@@ -162,13 +231,18 @@ export function CalendarView({
   const [mode, setMode] = useState<CalMode>("week");
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [scheduledIds, setScheduledIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [now, setNow] = useState(() => new Date());
   const creatingRef = useRef(false);
+  const draggingTaskRef = useRef<string | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const editRef = useRef<EditState | null>(null);
+  const movedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   editRef.current = edit;
@@ -196,42 +270,88 @@ export function CalendarView({
 
   const loadEvents = useCallback(async () => {
     try {
-      const listed = await calendarApi.listEvents(range.from, range.to);
+      // ponytail: unbounded list just to hide scheduled inbox rows. Upgrade:
+      // `NOT EXISTS (SELECT 1 FROM calendar_events WHERE task_id = tasks.id)`.
+      const [listed, all] = await Promise.all([
+        calendarApi.listEvents(range.from, range.to),
+        calendarApi.listEvents(),
+      ]);
       setEvents(listed);
+      setScheduledIds(scheduledTaskIds(all));
       setError(null);
+      return listed;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load events");
+      return [];
     }
   }, [range.from, range.to]);
 
-  const loadTasks = useCallback(async () => {
-    try {
-      const listed = await tasksApi.listTasks("upcoming", today);
-      setTasks(listed);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load tasks");
-    }
-  }, [today]);
+  const loadTasks = useCallback(
+    async (linkedIds: Iterable<string> = []) => {
+      try {
+        const [inbox, upcoming] = await Promise.all([
+          tasksApi.listTasks("inbox", today),
+          tasksApi.listTasks("upcoming", today),
+        ]);
+        const extraIds = [...linkedIds].filter(
+          (id) =>
+            !inbox.some((task) => task.id === id) &&
+            !upcoming.some((task) => task.id === id),
+        );
+        const extras = await Promise.all(
+          extraIds.map((id) =>
+            tasksApi.getTask(id).catch(() => null as Task | null),
+          ),
+        );
+        setTasks(
+          mergeTasks([
+            inbox,
+            upcoming,
+            extras.filter((task): task is Task => task !== null),
+          ]),
+        );
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load tasks");
+      }
+    },
+    [today],
+  );
 
   useEffect(() => {
-    void loadEvents();
-  }, [loadEvents]);
-
-  useEffect(() => {
-    void loadTasks();
-  }, [loadTasks]);
+    void loadEvents().then((listed) => {
+      const linked = listed.flatMap((item) =>
+        item.task_id ? [item.task_id] : [],
+      );
+      void loadTasks(linked);
+    });
+  }, [loadEvents, loadTasks]);
 
   useEffect(
     () =>
       subscribeCalendarChanged(() => {
-        if (creatingRef.current) {
+        if (creatingRef.current || dragRef.current) {
           return;
         }
-        void loadEvents();
+        void loadEvents().then((listed) => {
+          const linked = listed.flatMap((item) =>
+            item.task_id ? [item.task_id] : [],
+          );
+          void loadTasks(linked);
+        });
       }),
-    [loadEvents],
+    [loadEvents, loadTasks],
   );
-  useEffect(() => subscribeTasksChanged(() => void loadTasks()), [loadTasks]);
+  useEffect(
+    () =>
+      subscribeTasksChanged(() => {
+        const linked = events.flatMap((item) =>
+          item.task_id ? [item.task_id] : [],
+        );
+        void loadTasks(linked);
+      }),
+    [events, loadTasks],
+  );
 
   useEffect(() => {
     const handle = window.setInterval(() => {
@@ -293,10 +413,60 @@ export function CalendarView({
       setEvents((prev) =>
         prev.map((item) => (item.id === updated.id ? updated : item)),
       );
+      if (current.task_id) {
+        const linked = tasks.find((task) => task.id === current.task_id);
+        if (linked && linked.title !== next.title) {
+          const saved = await tasksApi.updateTask({
+            id: linked.id,
+            title: next.title,
+            state: linked.state,
+            due_date: linked.due_date,
+            priority: linked.priority,
+          });
+          setTasks((prev) =>
+            prev.map((item) => (item.id === saved.id ? saved : item)),
+          );
+        }
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save event");
       void loadEvents();
+    }
+  };
+
+  const persistTimes = async (
+    id: string,
+    day: string,
+    startMin: number,
+    endMin: number,
+  ) => {
+    const current = events.find((item) => item.id === id);
+    if (!current) {
+      return;
+    }
+    const times = timesToIso(day, startMin, endMin);
+    const previous = events;
+    setEvents((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, start: times.start, end: times.end } : item,
+      ),
+    );
+    try {
+      const updated = await calendarApi.updateEvent({
+        id,
+        title: current.title,
+        start: times.start,
+        end: times.end,
+        task_id: current.task_id,
+      });
+      setEvents((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setError(null);
+    } catch (err) {
+      setEvents(previous);
+      setError(err instanceof Error ? err.message : "Failed to save event");
     }
   };
 
@@ -311,13 +481,22 @@ export function CalendarView({
 
   const deleteEvent = async (id: string) => {
     const previous = events;
+    const removed = events.find((item) => item.id === id);
     setEvents((prev) => prev.filter((item) => item.id !== id));
+    if (removed?.task_id) {
+      setScheduledIds((prev) => {
+        const next = new Set(prev);
+        next.delete(removed.task_id as string);
+        return next;
+      });
+    }
     setEdit(null);
     try {
       await calendarApi.deleteEvent(id);
       setError(null);
     } catch (err) {
       setEvents(previous);
+      setScheduledIds(scheduledTaskIds(previous));
       setError(err instanceof Error ? err.message : "Failed to delete event");
     }
   };
@@ -365,30 +544,93 @@ export function CalendarView({
     }
   };
 
+  const scheduleTask = async (task: Task, day: string, startMin: number) => {
+    if (
+      creatingRef.current ||
+      scheduledIds.has(task.id) ||
+      !Number.isFinite(startMin)
+    ) {
+      return;
+    }
+    creatingRef.current = true;
+    const endMin = startMin + DEFAULT_DURATION_MIN;
+    const times = timesToIso(day, startMin, endMin);
+    setScheduledIds((prev) => new Set(prev).add(task.id));
+    try {
+      const created = await calendarApi.createEvent({
+        title: task.title,
+        start: times.start,
+        end: times.end,
+        task_id: task.id,
+      });
+      setEvents((prev) => {
+        if (prev.some((item) => item.id === created.id)) {
+          return prev;
+        }
+        return [...prev, created].sort((a, b) =>
+          a.start.localeCompare(b.start),
+        );
+      });
+      setTasks((prev) =>
+        prev.some((item) => item.id === task.id) ? prev : [...prev, task],
+      );
+      setSelectedDay(day);
+      setError(null);
+    } catch (err) {
+      setScheduledIds((prev) => {
+        const next = new Set(prev);
+        next.delete(task.id);
+        return next;
+      });
+      setError(err instanceof Error ? err.message : "Failed to schedule task");
+      void loadEvents();
+    } finally {
+      creatingRef.current = false;
+    }
+  };
+
+  const gridMinutes = (clientY: number): number | null => {
+    const grid = gridRef.current;
+    if (!grid || !Number.isFinite(clientY)) {
+      return null;
+    }
+    const rect = grid.getBoundingClientRect();
+    if (rect.height <= 0) {
+      return null;
+    }
+    return pointerToMinutes(clientY, rect.top, rect.height);
+  };
+
   const onGridMouseDown = (day: string, event: ReactMouseEvent) => {
     if (event.button !== 0) {
       return;
     }
-    const grid = gridRef.current;
-    if (!grid) {
+    const mins = gridMinutes(event.clientY);
+    if (mins === null) {
+      return;
+    }
+    if (event.target instanceof Element && event.target.closest(".cal-event")) {
       return;
     }
     event.preventDefault();
-    const rect = grid.getBoundingClientRect();
-    const mins = pointerToMinutes(event.clientY, rect.top, rect.height);
-    const next = { day, originMin: mins, currentMin: mins };
+    const next: DragState = {
+      kind: "create",
+      day,
+      originMin: mins,
+      currentMin: mins,
+    };
     dragRef.current = next;
     setDrag(next);
     setSelectedDay(day);
     setEdit(null);
 
     const onMove = (move: MouseEvent) => {
-      const current = pointerToMinutes(move.clientY, rect.top, rect.height);
+      const current = gridMinutes(move.clientY);
       const live = dragRef.current;
-      if (!live) {
+      if (!live || live.kind !== "create" || current === null) {
         return;
       }
-      const updated = { ...live, currentMin: current };
+      const updated: DragState = { ...live, currentMin: current };
       dragRef.current = updated;
       setDrag(updated);
     };
@@ -398,13 +640,204 @@ export function CalendarView({
       const live = dragRef.current;
       dragRef.current = null;
       setDrag(null);
-      if (!live) {
+      if (!live || live.kind !== "create") {
         return;
       }
-      const current = pointerToMinutes(up.clientY, rect.top, rect.height);
+      const current = gridMinutes(up.clientY) ?? live.currentMin;
       const start = Math.min(live.originMin, current);
       const end = Math.max(live.originMin, current);
       void createAt(live.day, start, end === start ? start : end, "grid");
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const beginMove = (
+    item: CalendarEvent,
+    day: string,
+    event: ReactMouseEvent,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const clip = eventSegmentOnDay(item, day);
+    const startMin = clip?.startMin ?? 9 * 60;
+    const endMin = clip
+      ? Math.max(clip.endMin, startMin + DEFAULT_DURATION_MIN)
+      : startMin + DEFAULT_DURATION_MIN;
+    const grab = gridMinutes(event.clientY);
+    const grabOffset = grab === null ? 0 : grab - startMin;
+    event.preventDefault();
+    event.stopPropagation();
+    movedRef.current = false;
+    const next: DragState = {
+      kind: "move",
+      id: item.id,
+      day,
+      startMin,
+      endMin,
+    };
+    dragRef.current = next;
+    setDrag(next);
+    setSelectedDay(day);
+    setEdit(null);
+
+    const onMove = (move: MouseEvent) => {
+      const current = gridMinutes(move.clientY);
+      const live = dragRef.current;
+      if (!live || live.kind !== "move" || current === null) {
+        return;
+      }
+      const duration = live.endMin - live.startMin;
+      const start = Math.max(
+        0,
+        Math.min(GRID_HOURS * 60 - DEFAULT_DURATION_MIN, current - grabOffset),
+      );
+      const overDay = dayFromPoint(move.clientX, move.clientY) ?? live.day;
+      if (start !== live.startMin || overDay !== live.day) {
+        movedRef.current = true;
+      }
+      const updated: DragState = {
+        ...live,
+        day: overDay,
+        startMin: start,
+        endMin: start + duration,
+      };
+      dragRef.current = updated;
+      setDrag(updated);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const live = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (!live || live.kind !== "move") {
+        return;
+      }
+      if (!movedRef.current) {
+        beginEdit(item, day, "grid");
+        return;
+      }
+      void persistTimes(live.id, live.day, live.startMin, live.endMin);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const beginResize = (
+    item: CalendarEvent,
+    day: string,
+    event: ReactMouseEvent,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const clip = eventSegmentOnDay(item, day);
+    const startMin = clip?.startMin ?? 9 * 60;
+    const endMin = clip
+      ? Math.max(clip.endMin, startMin + DEFAULT_DURATION_MIN)
+      : startMin + DEFAULT_DURATION_MIN;
+    event.preventDefault();
+    event.stopPropagation();
+    const next: DragState = {
+      kind: "resize",
+      id: item.id,
+      day,
+      startMin,
+      endMin,
+    };
+    dragRef.current = next;
+    setDrag(next);
+    setSelectedDay(day);
+    setEdit(null);
+
+    const onMove = (move: MouseEvent) => {
+      const current = gridMinutes(move.clientY);
+      const live = dragRef.current;
+      if (!live || live.kind !== "resize" || current === null) {
+        return;
+      }
+      const updated: DragState = {
+        ...live,
+        endMin: Math.max(live.startMin + DEFAULT_DURATION_MIN, current),
+      };
+      dragRef.current = updated;
+      setDrag(updated);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const live = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (!live || live.kind !== "resize") {
+        return;
+      }
+      void persistTimes(live.id, live.day, live.startMin, live.endMin);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const beginInboxDrag = (task: Task, event: ReactMouseEvent) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    draggingTaskRef.current = task.id;
+    movedRef.current = false;
+    dragRef.current = null;
+    setDrag(null);
+    setEdit(null);
+
+    const onMove = (move: MouseEvent) => {
+      const day = dayFromPoint(move.clientX, move.clientY);
+      const startMin = gridMinutes(move.clientY);
+      if (!day || startMin === null) {
+        if (dragRef.current?.kind === "drop") {
+          dragRef.current = null;
+          setDrag(null);
+        }
+        return;
+      }
+      movedRef.current = true;
+      const live = dragRef.current;
+      if (
+        live &&
+        live.kind === "drop" &&
+        live.day === day &&
+        live.startMin === startMin
+      ) {
+        return;
+      }
+      const updated: DragState = { kind: "drop", day, startMin };
+      dragRef.current = updated;
+      setDrag(updated);
+    };
+    const onUp = (up: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const taskId = draggingTaskRef.current;
+      draggingTaskRef.current = null;
+      const live = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (!movedRef.current) {
+        const note = noteById.get(task.note_id);
+        if (note) {
+          onOpenTask(task, note);
+        }
+        return;
+      }
+      const day =
+        live?.kind === "drop" ? live.day : dayFromPoint(up.clientX, up.clientY);
+      const startMin =
+        live?.kind === "drop" ? live.startMin : gridMinutes(up.clientY);
+      if (!taskId || !day || startMin === null) {
+        return;
+      }
+      void scheduleTask(task, day, startMin);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -420,10 +853,13 @@ export function CalendarView({
     const endMin = clip
       ? Math.max(clip.endMin, startMin + DEFAULT_DURATION_MIN)
       : startMin + DEFAULT_DURATION_MIN;
+    const linked = item.task_id
+      ? tasks.find((task) => task.id === item.task_id)
+      : undefined;
     setSelectedDay(day);
     setEdit({
       id: item.id,
-      title: item.title,
+      title: linked?.title ?? item.title,
       startMin,
       endMin,
       day,
@@ -460,10 +896,18 @@ export function CalendarView({
       ? weekStart === startOfWeekMonday(today)
       : selectedDay === today;
   const gridHeight = GRID_HOURS * HOUR_HEIGHT;
-  const selectedEvents = events
+  const visibleEvents = overlayDrag(events, drag);
+  const selectedEvents = visibleEvents
     .filter((item) => eventSegmentOnDay(item, selectedDay) !== null)
     .sort((a, b) => a.start.localeCompare(b.start));
   const selectedChips = dueTasksForDay(tasks, selectedDay, today);
+  const inboxTasks = tasks.filter(
+    (task) =>
+      (task.state === "open" || task.state === "waiting") &&
+      task.due_date === null &&
+      !scheduledIds.has(task.id),
+  );
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
 
   const hourMarks = Array.from({ length: GRID_HOURS }, (_, hour) => hour);
 
@@ -649,26 +1093,39 @@ export function CalendarView({
                   ))}
                 </div>
                 {days.map((day) => {
-                  const laid = layoutDayEvents(events, day);
-                  const dragging = drag && drag.day === day ? drag : null;
-                  const dragStart = dragging
-                    ? Math.min(dragging.originMin, dragging.currentMin)
-                    : 0;
-                  const dragEnd = dragging
-                    ? Math.max(
-                        dragging.originMin,
-                        dragging.currentMin,
-                        dragStart + DEFAULT_DURATION_MIN,
-                      )
-                    : 0;
+                  const laid = layoutDayEvents(visibleEvents, day);
+                  const dropping =
+                    drag &&
+                    drag.day === day &&
+                    (drag.kind === "create" || drag.kind === "drop")
+                      ? drag
+                      : null;
+                  let previewStart = 0;
+                  let previewEnd = 0;
+                  if (dropping?.kind === "create") {
+                    previewStart = Math.min(
+                      dropping.originMin,
+                      dropping.currentMin,
+                    );
+                    previewEnd = Math.max(
+                      dropping.originMin,
+                      dropping.currentMin,
+                      previewStart + DEFAULT_DURATION_MIN,
+                    );
+                  } else if (dropping?.kind === "drop") {
+                    previewStart = dropping.startMin;
+                    previewEnd = dropping.startMin + DEFAULT_DURATION_MIN;
+                  }
                   return (
                     <div
                       key={day}
-                      className={
-                        day === selectedDay
-                          ? "cal-day-col is-selected"
-                          : "cal-day-col"
-                      }
+                      className={[
+                        "cal-day-col",
+                        day === selectedDay ? "is-selected" : "",
+                        dropping ? "is-drop" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                       data-day={day}
                       onMouseDown={(event) => {
                         onGridMouseDown(day, event);
@@ -676,51 +1133,100 @@ export function CalendarView({
                     >
                       {laid.map((segment) => {
                         const top = (segment.startMin / 60) * HOUR_HEIGHT;
+                        // 15 min is 12px on a 48px hour; floor so a one-line chip can center.
                         const height = Math.max(
                           ((segment.endMin - segment.startMin) / 60) *
                             HOUR_HEIGHT,
-                          16,
+                          22,
                         );
+                        const compact = height < 28;
                         const width = `calc((100% - 4px) / ${String(segment.cols)})`;
                         const left = `calc(${String(segment.col)} * (100% - 4px) / ${String(segment.cols)} + 2px)`;
                         const editing =
                           edit !== null && edit.id === segment.event.id;
+                        const linked = segment.event.task_id
+                          ? taskById.get(segment.event.task_id)
+                          : undefined;
+                        const title =
+                          (linked?.title ?? segment.event.title).trim() ||
+                          "Untitled";
+                        const done =
+                          linked?.state === "done" ||
+                          linked?.state === "cancelled";
                         const startLabel = formatClock(segment.startMin);
                         const endLabel = formatClock(segment.endMin);
+                        const classes = [
+                          "cal-event",
+                          editing ? "is-editing" : "",
+                          linked ? "is-task" : "",
+                          done ? "is-done" : "",
+                          compact ? "is-compact" : "",
+                          drag &&
+                          (drag.kind === "move" || drag.kind === "resize") &&
+                          drag.id === segment.event.id
+                            ? "is-dragging"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
                         return (
                           <div
                             key={segment.event.id}
-                            className={
-                              editing ? "cal-event is-editing" : "cal-event"
-                            }
+                            className={classes}
                             style={{ top, height, width, left }}
                             onMouseDown={(event) => {
                               event.stopPropagation();
                             }}
                           >
+                            {linked ? (
+                              <button
+                                type="button"
+                                className="cal-event-toggle"
+                                aria-label={
+                                  linked.state === "done"
+                                    ? "Mark task open"
+                                    : "Mark task done"
+                                }
+                                onMouseDown={(event) => {
+                                  event.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  toggleTask(linked);
+                                }}
+                              >
+                                <TaskStateIcon state={linked.state} />
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="cal-event-hit"
-                              onClick={() => {
-                                beginEdit(segment.event, day, "grid");
+                              onMouseDown={(event) => {
+                                beginMove(segment.event, day, event);
                               }}
                             >
-                              <span className="cal-event-title">
-                                {segment.event.title.trim() || "Untitled"}
-                              </span>
+                              <span className="cal-event-title">{title}</span>
                               <span className="cal-event-when">
                                 {startLabel} – {endLabel}
                               </span>
                             </button>
+                            <button
+                              type="button"
+                              className="cal-event-resize"
+                              aria-label={`Resize ${title}`}
+                              onMouseDown={(event) => {
+                                beginResize(segment.event, day, event);
+                              }}
+                            />
                           </div>
                         );
                       })}
-                      {dragging ? (
+                      {dropping ? (
                         <div
                           className="cal-event is-preview"
                           style={{
-                            top: (dragStart / 60) * HOUR_HEIGHT,
-                            height: ((dragEnd - dragStart) / 60) * HOUR_HEIGHT,
+                            top: (previewStart / 60) * HOUR_HEIGHT,
+                            height:
+                              ((previewEnd - previewStart) / 60) * HOUR_HEIGHT,
                           }}
                         />
                       ) : null}
@@ -771,6 +1277,11 @@ export function CalendarView({
                 const startMin =
                   startDate.getHours() * 60 + startDate.getMinutes();
                 const past = Date.parse(item.end) < now.getTime();
+                const linked = item.task_id
+                  ? taskById.get(item.task_id)
+                  : undefined;
+                const done =
+                  linked?.state === "done" || linked?.state === "cancelled";
                 const showNow =
                   selectedDay === today &&
                   startMin > nowMin &&
@@ -801,14 +1312,31 @@ export function CalendarView({
                 nodes.push(
                   <li
                     key={item.id}
-                    className={
-                      past
-                        ? "cal-agenda-row is-past"
-                        : edit?.id === item.id
-                          ? "cal-agenda-row is-editing"
-                          : "cal-agenda-row"
-                    }
+                    className={[
+                      "cal-agenda-row",
+                      past ? "is-past" : "",
+                      edit?.id === item.id ? "is-editing" : "",
+                      linked && done ? "is-done" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                   >
+                    {linked ? (
+                      <button
+                        type="button"
+                        className="cal-event-toggle"
+                        aria-label={
+                          linked.state === "done"
+                            ? "Mark task open"
+                            : "Mark task done"
+                        }
+                        onClick={() => {
+                          toggleTask(linked);
+                        }}
+                      >
+                        <TaskStateIcon state={linked.state} />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="cal-agenda-hit"
@@ -820,7 +1348,7 @@ export function CalendarView({
                         {formatClock(startMin)}
                       </span>
                       <span className="cal-agenda-event-title">
-                        {item.title.trim() || "Untitled"}
+                        {(linked?.title ?? item.title).trim() || "Untitled"}
                       </span>
                       <span className="cal-agenda-dur">
                         {formatDuration(item.start, item.end)}
@@ -871,6 +1399,11 @@ export function CalendarView({
             </button>
           </section>
         )}
+        <InboxSidebar
+          tasks={inboxTasks}
+          onPointerDrag={beginInboxDrag}
+          onToggle={toggleTask}
+        />
         {edit ? (
           <EventFields
             edit={edit}
@@ -885,6 +1418,60 @@ export function CalendarView({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function InboxSidebar({
+  tasks,
+  onPointerDrag,
+  onToggle,
+}: {
+  tasks: Task[];
+  onPointerDrag: (task: Task, event: ReactMouseEvent) => void;
+  onToggle: (task: Task) => void;
+}) {
+  return (
+    <aside className="cal-inbox" aria-label="Inbox tasks">
+      <h2 className="cal-inbox-title">Unscheduled Tasks</h2>
+      {tasks.length === 0 ? (
+        <p className="cal-inbox-empty">No unscheduled tasks</p>
+      ) : (
+        <ul className="cal-inbox-list">
+          {tasks.map((task) => (
+            <li key={task.id}>
+              <div className="cal-inbox-row" data-task-id={task.id}>
+                <button
+                  type="button"
+                  className="cal-inbox-toggle"
+                  aria-label={
+                    task.state === "done" ? "Mark task open" : "Mark task done"
+                  }
+                  onMouseDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={() => {
+                    onToggle(task);
+                  }}
+                >
+                  <TaskStateIcon state={task.state} />
+                </button>
+                <button
+                  type="button"
+                  className="cal-inbox-main"
+                  onMouseDown={(event) => {
+                    onPointerDrag(task, event);
+                  }}
+                >
+                  <span className="cal-inbox-task-title">
+                    {task.title.trim() || "Untitled task"}
+                  </span>
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </aside>
   );
 }
 

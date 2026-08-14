@@ -69,4 +69,22 @@ describe("tauri calendar IPC arg keys (ENG-65)", () => {
     });
     expect(invoke).toHaveBeenCalledWith("get_calendar_event", { id: "evt-1" });
   });
+
+  it("createEvent forwards task_id for time-blocking", async () => {
+    const { calendarApi } = await import("./api");
+    await calendarApi.createEvent({
+      title: "Focus",
+      start: "2026-08-10T16:00:00.000Z",
+      end: "2026-08-10T16:15:00.000Z",
+      task_id: "t-1",
+    });
+    expect(invoke).toHaveBeenCalledWith("create_calendar_event", {
+      input: {
+        title: "Focus",
+        start: "2026-08-10T16:00:00.000Z",
+        end: "2026-08-10T16:15:00.000Z",
+        task_id: "t-1",
+      },
+    });
+  });
 });
