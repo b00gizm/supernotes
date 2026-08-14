@@ -300,17 +300,9 @@ export function CalendarView({
             !upcoming.some((task) => task.id === id),
         );
         const extras = await Promise.all(
-          extraIds.map((id) =>
-            tasksApi.getTask(id).catch(() => null as Task | null),
-          ),
+          extraIds.map((id) => tasksApi.getTask(id)),
         );
-        setTasks(
-          mergeTasks([
-            inbox,
-            upcoming,
-            extras.filter((task): task is Task => task !== null),
-          ]),
-        );
+        setTasks(mergeTasks([inbox, upcoming, extras]));
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load tasks");
