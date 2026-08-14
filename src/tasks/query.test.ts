@@ -9,7 +9,7 @@ import {
   schedulesFromEvents,
   tasksDueOnOrBefore,
 } from "./query";
-import type { Task } from "./types";
+import type { Task, TaskListFilter } from "./types";
 
 function task(partial: Partial<Task> & Pick<Task, "id" | "title">): Task {
   return {
@@ -57,62 +57,18 @@ describe("task query helpers (ENG-63)", () => {
     ).toBe(false);
   });
 
-  it("filters inbox / upcoming / complete", () => {
-    const tasks = [
-      task({
-        id: "inbox",
-        title: "No due",
-        created_at: "2026-08-11T10:00:00.000Z",
-      }),
-      task({
-        id: "waiting",
-        title: "Wait",
-        state: "waiting",
-        created_at: "2026-08-12T10:00:00.000Z",
-      }),
-      task({
-        id: "up1",
-        title: "Soon urgent",
-        due_date: "2026-08-15",
-        priority: "urgent",
-      }),
-      task({
-        id: "up2",
-        title: "Soon high",
-        state: "waiting",
-        due_date: "2026-08-15",
-        priority: "high",
-      }),
-      task({
-        id: "up3",
-        title: "Later",
-        due_date: "2026-08-20",
-        priority: "low",
-      }),
-      task({
-        id: "done",
-        title: "Done",
-        state: "done",
-        completed_at: "2026-08-10T12:00:00.000Z",
-      }),
-      task({
-        id: "old",
-        title: "Old",
-        state: "cancelled",
-        completed_at: "2026-07-01T12:00:00.000Z",
-      }),
-    ];
-
-    expect(filterTasks(tasks, "inbox", "2026-08-12").map((t) => t.id)).toEqual([
-      "waiting",
-      "inbox",
-    ]);
-    expect(
-      filterTasks(tasks, "upcoming", "2026-08-12").map((t) => t.id),
-    ).toEqual(["up1", "up2", "up3"]);
-    expect(
-      filterTasks(tasks, "complete", "2026-08-12").map((t) => t.id),
-    ).toEqual(["done"]);
+  it("list_tasks parity fixture matches Rust (inbox/upcoming/complete)", async () => {
+    const fixture = (await import("./fixtures/list-tasks-parity.json"))
+      .default as {
+      today: string;
+      tasks: Task[];
+      cases: Array<{ filter: TaskListFilter; ids: string[] }>;
+    };
+    for (const { filter, ids } of fixture.cases) {
+      expect(
+        filterTasks(fixture.tasks, filter, fixture.today).map((t) => t.id),
+      ).toEqual(ids);
+    }
   });
 
   it("groups upcoming into overdue / today / tomorrow / week buckets", () => {
