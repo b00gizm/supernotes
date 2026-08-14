@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/core";
+import { HardBreak } from "@tiptap/extension-hard-break";
 import Text from "@tiptap/extension-text";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import { DOMParser as PmDOMParser } from "@tiptap/pm/model";
@@ -41,9 +42,56 @@ export function withTablePipeEscaping<T>(
   }
 }
 
+type MarkdownItLike = {
+  inline: {
+    ruler: {
+      before: (
+        prev: string,
+        name: string,
+        rule: (state: InlineState, silent: boolean) => boolean,
+      ) => void;
+    };
+  };
+};
+
+type InlineState = {
+  pos: number;
+  posMax: number;
+  src: string;
+  push: (type: string, tag: string, nesting: number) => unknown;
+};
+
+type HardBreakMarkdownState = TablePipeEscapeState & {
+  write: (text: string) => void;
+};
+
+/** `<br>` / `<br/>` / `<br />` — table-cell hard breaks (ENG-88) with html:false. */
+const BR_TAG = /^<br\s*\/?>/i;
+
 /**
- * TipTap text node that keeps tiptap-markdown's HTML escaping and adds
- * pipe-escaping inside tables (ENG-88). StarterKit must disable its `text`.
+ * markdown-it only tokenizes HTML tags when `html:true`. We keep html off so
+ * unknown tags stay literal text (ENG-129), and only lift `<br>` to hardbreak.
+ */
+function markdownItBr(md: MarkdownItLike): void {
+  md.inline.ruler.before("html_inline", "hardbreak_br", (state, silent) => {
+    const rest = state.src.slice(state.pos, state.posMax);
+    const match = BR_TAG.exec(rest);
+    if (!match) {
+      return false;
+    }
+    if (silent) {
+      return true;
+    }
+    state.push("hardbreak", "br", 0);
+    state.pos += match[0].length;
+    return true;
+  });
+}
+
+/**
+ * TipTap text node with pipe-escaping inside tables (ENG-88).
+ * Do not HTML-escape `<>` — with html:false those chars are literal text and
+ * must round-trip (ENG-129). StarterKit must disable its `text`.
  */
 export const TablePipeSafeText = Text.extend({
   addStorage() {
@@ -53,15 +101,44 @@ export const TablePipeSafeText = Text.extend({
           state: TablePipeEscapeState & { text: (value: string) => void },
           node: PmNode,
         ) {
-          // Match tiptap-markdown's text serializer (escapeHTML) then esc().
-          const text = (node.text ?? "")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
           withTablePipeEscaping(state, () => {
-            state.text(text);
+            state.text(node.text ?? "");
           });
         },
         parse: {},
+      },
+    };
+  },
+});
+
+/**
+ * tiptap-markdown writes `[hardBreak]` in tables when html is off. Write `<br>`
+ * instead, and parse those tags back (ENG-88 / ENG-129). StarterKit must disable
+ * its `hardBreak`.
+ */
+export const TableHardBreak = HardBreak.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(
+          state: HardBreakMarkdownState,
+          node: PmNode,
+          parent: PmNode,
+          index: number,
+        ) {
+          // Same skip-trailing-breaks loop as tiptap-markdown's hard-break.js.
+          for (let i = index + 1; i < parent.childCount; i++) {
+            if (parent.child(i).type !== node.type) {
+              state.write(state.inTable ? "<br>" : "\\\n");
+              return;
+            }
+          }
+        },
+        parse: {
+          setup(md: MarkdownItLike) {
+            markdownItBr(md);
+          },
+        },
       },
     };
   },
