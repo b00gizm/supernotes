@@ -342,6 +342,73 @@ describe("task pill (ENG-61)", () => {
     });
   });
 
+  it("recreates a task when a pill is cut from one editor and pasted in another (ENG-128)", async () => {
+    const seed: Task[] = [
+      {
+        id: "t-cut",
+        note_id: "note-a",
+        title: "Buy milk",
+        state: "open",
+        due_date: "2026-08-21",
+        priority: "high",
+        created_at: "2026-08-12T00:00:00.000Z",
+        updated_at: "2026-08-12T00:00:00.000Z",
+        completed_at: null,
+      },
+    ];
+    const source = create({
+      noteId: "note-a",
+      seed,
+      content: "[[task:t-cut]] Buy milk",
+    });
+    expect(source.editor.getHTML()).toContain("t-cut");
+    await vi.waitFor(() => {
+      let due: unknown;
+      source.editor.state.doc.descendants((node) => {
+        if (node.type.name === "taskPill") {
+          due = node.attrs.dueDate;
+        }
+      });
+      expect(due).toBe("2026-08-21");
+    });
+
+    source.editor.commands.selectAll();
+    source.editor.commands.deleteSelection();
+    await vi.waitFor(async () => {
+      const listed = await source.tasksApi.listTasksForNote("note-a");
+      expect(listed).toHaveLength(0);
+    });
+
+    const sourceEl = source.editor.options.element;
+    source.editor.destroy();
+    if (sourceEl instanceof HTMLElement) {
+      sourceEl.remove();
+    }
+
+    const dest = create({
+      noteId: "note-b",
+      tasks: source.tasksApi,
+      content: "",
+    });
+    dest.editor.commands.insertContent({
+      type: "taskPill",
+      attrs: {
+        taskId: "t-cut",
+        title: "Buy milk",
+        state: "open",
+        dueDate: "2026-08-21",
+        priority: "high",
+      },
+    });
+
+    await vi.waitFor(async () => {
+      const listed = await dest.tasksApi.listTasksForNote("note-b");
+      expect(listed.length).toBeGreaterThanOrEqual(1);
+      expect(listed.some((task) => task.title === "Buy milk")).toBe(true);
+      expect(listed.some((task) => task.due_date === "2026-08-21")).toBe(true);
+    });
+  });
+
   it("blurring an empty title deletes the pill", async () => {
     const user = userEvent.setup();
     render(
