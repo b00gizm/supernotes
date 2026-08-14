@@ -2638,6 +2638,16 @@ button {
   padding: 0.15rem 0.45rem 0.15rem 0.25rem;
   border-radius: var(--radius-pill);
   background: var(--cal-chip);
+  cursor: grab;
+  user-select: none;
+}
+
+.cal-chip:active {
+  cursor: grabbing;
+}
+
+.cal-chip.is-overdue {
+  background: color-mix(in srgb, var(--danger) 12%, var(--cal-chip));
 }
 
 .cal-chip-toggle,
