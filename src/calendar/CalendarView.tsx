@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { formatDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { formatShortDue } from "../tasks/due";
 import { subscribeTasksChanged } from "../tasks/events";
@@ -480,6 +481,10 @@ export function CalendarView({
     await persistEdit(snapshot);
   };
 
+  const cancelEdit = () => {
+    setEdit(null);
+  };
+
   const deleteEvent = async (id: string) => {
     const previous = events;
     const removed = events.find((item) => item.id === id);
@@ -692,7 +697,7 @@ export function CalendarView({
       const duration = live.endMin - live.startMin;
       const start = Math.max(
         0,
-        Math.min(GRID_HOURS * 60 - DEFAULT_DURATION_MIN, current - grabOffset),
+        Math.min(GRID_HOURS * 60 - duration, current - grabOffset),
       );
       const overDay = dayFromPoint(move.clientX, move.clientY) ?? live.day;
       if (start !== live.startMin || overDay !== live.day) {
@@ -849,11 +854,10 @@ export function CalendarView({
     day: string,
     surface: EditState["surface"],
   ) => {
-    const clip = eventSegmentOnDay(item, day);
-    const startMin = clip?.startMin ?? 9 * 60;
-    const endMin = clip
-      ? Math.max(clip.endMin, startMin + DEFAULT_DURATION_MIN)
-      : startMin + DEFAULT_DURATION_MIN;
+    const start = new Date(item.start);
+    const end = new Date(item.end);
+    const startMin = start.getHours() * 60 + start.getMinutes();
+    const endMin = end.getHours() * 60 + end.getMinutes();
     const linked = item.task_id
       ? tasks.find((task) => task.id === item.task_id)
       : undefined;
@@ -863,7 +867,7 @@ export function CalendarView({
       title: linked?.title ?? item.title,
       startMin,
       endMin,
-      day,
+      day: formatDailyTitle(start),
       surface,
     });
   };
@@ -1422,6 +1426,7 @@ export function CalendarView({
             onCommit={() => {
               void commitEdit();
             }}
+            onCancel={cancelEdit}
             onDelete={() => {
               void deleteEvent(edit.id);
             }}
@@ -1490,11 +1495,13 @@ function EventFields({
   edit,
   onChange,
   onCommit,
+  onCancel,
   onDelete,
 }: {
   edit: EditState;
   onChange: (next: EditState) => void;
   onCommit: () => void;
+  onCancel: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -1503,6 +1510,12 @@ function EventFields({
       onSubmit={(event) => {
         event.preventDefault();
         onCommit();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
       }}
     >
       <input
@@ -1516,10 +1529,6 @@ function EventFields({
         }}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
-            event.preventDefault();
-            onCommit();
-          }
-          if (event.key === "Escape") {
             event.preventDefault();
             onCommit();
           }
