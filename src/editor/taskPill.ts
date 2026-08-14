@@ -286,6 +286,8 @@ function focusTaskPillTitle(editor: Editor, pendingId: string): void {
 }
 
 const skipDeleteByEditor = new WeakMap<Editor, Set<string>>();
+// Shared across NoteEditor remounts so cut in note A can paste in note B (ENG-128).
+const taskPillSnapshots = new Map<string, TaskSnapshot>();
 
 function skipDeleteSet(editor: Editor): Set<string> {
   let set = skipDeleteByEditor.get(editor);
@@ -401,8 +403,7 @@ function taskPillDeletePlugin(
   options: TaskPillOptions,
   editor: Editor,
 ): Plugin {
-  // ponytail: in-memory snapshots until undo consumes them; no recycle bin.
-  const snapshots = new Map<string, TaskSnapshot>();
+  // ponytail: in-memory snapshots until undo/paste consumes them; no recycle bin.
   return new Plugin({
     key: taskPillDeleteKey,
     appendTransaction(transactions, oldState, newState) {
@@ -419,7 +420,7 @@ function taskPillDeletePlugin(
         if (after.has(id) || id.startsWith("pending-") || skipDelete.has(id)) {
           continue;
         }
-        snapshots.set(id, snapshotFrom(node));
+        taskPillSnapshots.set(id, snapshotFrom(node));
         void options.deleteTask(id).catch((err: unknown) => {
           reportTaskError(options, err);
         });
@@ -428,11 +429,11 @@ function taskPillDeletePlugin(
         if (before.has(id) || id.startsWith("pending-")) {
           continue;
         }
-        const snap = snapshots.get(id);
+        const snap = taskPillSnapshots.get(id);
         if (!snap) {
           continue;
         }
-        snapshots.delete(id);
+        taskPillSnapshots.delete(id);
         const noteId = options.getNoteId?.() ?? null;
         if (!noteId || !options.createTask) {
           continue;
