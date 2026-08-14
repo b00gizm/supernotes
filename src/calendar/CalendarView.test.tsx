@@ -613,3 +613,63 @@ describe("CalendarView all-day chips (ENG-67)", () => {
     expect(saved.state).toBe("done");
   });
 });
+
+describe("CalendarView event edit (ENG-132)", () => {
+  const overnightStart = minutesToIso(TODAY, 23 * 60);
+  const overnightEnd = minutesToIso(TODAY, 25 * 60);
+
+  beforeEach(() => {
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "overnight",
+        title: "Night shift",
+        start: overnightStart,
+        end: overnightEnd,
+        task_id: null,
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    tasksRef.current = createMemoryTasksApi([overdue, inbox, dueToday, dueWed]);
+  });
+
+  it("keeps full cross-midnight times on blur and does not persist on Escape", async () => {
+    const user = userEvent.setup();
+    renderCalendar();
+    await screen.findAllByText("Night shift");
+    mockGridRect();
+    const openEdit = () => {
+      const hit = document.querySelector(".cal-event-hit");
+      expect(hit).toBeTruthy();
+      fireEvent.mouseDown(hit as HTMLElement, { button: 0, clientY: 23 * 48 });
+      fireEvent.mouseUp(window);
+    };
+
+    openEdit();
+    await screen.findByLabelText("Event title");
+    expect(screen.getByLabelText("Start time")).toHaveValue("23:00");
+    expect(screen.getByLabelText("End time")).toHaveValue("01:00");
+    await user.click(screen.getByText("August 2026"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Event title")).not.toBeInTheDocument();
+    });
+    await waitFor(async () => {
+      const listed = await calRef.current.listEvents();
+      const overnight = listed.find((item) => item.id === "overnight");
+      expect(overnight?.start).toBe(overnightStart);
+      expect(overnight?.end).toBe(overnightEnd);
+    });
+
+    openEdit();
+    const title = await screen.findByLabelText("Event title");
+    await user.type(title, " changed");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Event title")).not.toBeInTheDocument();
+    });
+    const afterEscape = await calRef.current.listEvents();
+    const overnight = afterEscape.find((item) => item.id === "overnight");
+    expect(overnight?.title).toBe("Night shift");
+    expect(overnight?.start).toBe(overnightStart);
+    expect(overnight?.end).toBe(overnightEnd);
+  });
+});
