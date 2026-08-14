@@ -692,7 +692,7 @@ export function CalendarView({
       const duration = live.endMin - live.startMin;
       const start = Math.max(
         0,
-        Math.min(GRID_HOURS * 60 - DEFAULT_DURATION_MIN, current - grabOffset),
+        Math.min(GRID_HOURS * 60 - duration, current - grabOffset),
       );
       const overDay = dayFromPoint(move.clientX, move.clientY) ?? live.day;
       if (start !== live.startMin || overDay !== live.day) {

@@ -356,6 +356,33 @@ describe("CalendarView time blocking (ENG-66)", () => {
     });
   });
 
+  it("clamps a 2-hour move to 24h minus duration, not 15min (ENG-133)", async () => {
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "deep-work",
+        title: "Deep work",
+        start: minutesToIso(TODAY, 10 * 60),
+        end: minutesToIso(TODAY, 12 * 60),
+        task_id: null,
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    renderCalendar();
+    await screen.findAllByText("Deep work");
+    mockGridRect();
+    const hit = document.querySelector(".cal-event-hit");
+    expect(hit).toBeTruthy();
+    fireEvent.mouseDown(hit as HTMLElement, { button: 0, clientY: 10 * 48 });
+    fireEvent.mouseMove(window, { clientY: 24 * 48 });
+    fireEvent.mouseUp(window);
+    await waitFor(async () => {
+      const listed = await calRef.current.listEvents();
+      const moved = listed.find((item) => item.id === "deep-work");
+      expect(moved?.start).toBe(minutesToIso(TODAY, 22 * 60));
+      expect(moved?.end).toBe(minutesToIso(TODAY, 24 * 60));
+    });
+  });
+
   it("marks a linked event done without deleting the task", async () => {
     const user = userEvent.setup();
     calRef.current = createMemoryCalendarApi([
