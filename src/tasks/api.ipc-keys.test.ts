@@ -68,4 +68,13 @@ describe("tauri task IPC arg keys (ENG-61)", () => {
       },
     });
   });
+
+  it("updateTask passes a partial patch without fabricating omitted fields", async () => {
+    const { tasksApi } = await import("./api");
+    await tasksApi.updateTask({ id: "task-1", state: "done" });
+
+    expect(invoke).toHaveBeenCalledWith("update_task", {
+      input: { id: "task-1", state: "done" },
+    });
+  });
 });
