@@ -63,7 +63,7 @@ describe("task pill (ENG-61)", () => {
           updateTask: (input) => tasksApi.updateTask(input),
           deleteTask: opts?.deleteTask ?? ((id) => tasksApi.deleteTask(id)),
           listTasksForNote: (id) => tasksApi.listTasksForNote(id),
-          onError: opts?.onError,
+          ...(opts?.onError ? { onError: opts.onError } : {}),
         },
       ),
       content: opts?.content ?? "",
