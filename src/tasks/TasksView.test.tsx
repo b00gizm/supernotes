@@ -246,10 +246,14 @@ describe("TasksView date grouping", () => {
       within(pane).queryByRole("button", { name: "Wrapped up" }),
     ).toBeNull();
 
-    const toggle = within(pane).getByRole("button", { name: "Completed" });
+    const toggle = within(pane).getByRole("button", {
+      name: "Show completed",
+    });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).not.toHaveClass("is-active");
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveClass("is-active");
     expect(
       await within(pane).findByRole("button", { name: "Wrapped up" }),
     ).toBeInTheDocument();

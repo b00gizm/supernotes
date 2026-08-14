@@ -236,6 +236,7 @@ export function TasksView({
             type="button"
             className={`tasks-completed-toggle${showCompleted ? " is-active" : ""}`}
             aria-pressed={showCompleted}
+            aria-label="Show completed"
             onClick={() => {
               setShowCompleted((on) => !on);
             }}

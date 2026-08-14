@@ -1,5 +1,4 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { parseDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { formatShortDue } from "./due";
 import { isTaskOverdue } from "./query";
@@ -9,11 +8,7 @@ import type { Task } from "./types";
 
 function noteLabel(note: Note): string {
   if (note.note_type === "daily") {
-    const parsed = parseDailyTitle(note.title);
-    if (parsed) {
-      const month = parsed.toLocaleDateString("en-US", { month: "short" });
-      return `${month} ${String(parsed.getDate())}`;
-    }
+    return "Daily note";
   }
   return note.title.trim() || "Untitled";
 }

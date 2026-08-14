@@ -189,6 +189,8 @@ describe("App shell", () => {
       ),
     ).toBe(true);
     expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
+    expect(within(overdue).getByText("Daily note")).toBeInTheDocument();
+    expect(within(unscheduled).getByText("Project plan")).toBeInTheDocument();
     expect(
       within(pane).queryByRole("button", { name: "Wrapped up" }),
     ).not.toBeInTheDocument();
