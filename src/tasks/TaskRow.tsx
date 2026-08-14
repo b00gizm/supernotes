@@ -18,6 +18,30 @@ function noteLabel(note: Note): string {
   return note.title.trim() || "Untitled";
 }
 
+function CalendarGlyph() {
+  return (
+    <svg className="tasks-schedule-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <rect
+        x="2.5"
+        y="3.5"
+        width="11"
+        height="10.5"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+      <path
+        d="M5 2v3M11 2v3M2.5 7h11"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function SourceLink({ label }: { label: string }) {
   return (
     <span className="tasks-source">
@@ -98,12 +122,13 @@ export function TaskRow({
         </span>
         {scheduleLabel ? (
           <span className="tasks-schedule-chip" title="Scheduled">
+            <CalendarGlyph />
             {scheduleLabel}
           </span>
         ) : null}
         {showDue && task.due_date ? (
           <span className={`tasks-due-chip${overdue ? " is-overdue" : ""}`}>
-            {formatShortDue(task.due_date)}
+            {`(Due: ${formatShortDue(task.due_date)})`}
           </span>
         ) : null}
         {dot ? (

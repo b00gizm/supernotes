@@ -132,7 +132,7 @@ describe("TasksView date grouping", () => {
     });
     expect(within(today).getByText("Pricing sync")).toBeInTheDocument();
     expect(within(today).getByText("13:00–14:00")).toBeInTheDocument();
-    expect(within(today).getByText("Aug 16")).toBeInTheDocument();
+    expect(within(today).getByText("(Due: Aug 16)")).toBeInTheDocument();
     expect(within(pane).queryByRole("region", { name: "Overdue" })).toBeNull();
   });
 
@@ -167,7 +167,9 @@ describe("TasksView date grouping", () => {
     });
     expect(within(overdue).getByText("Late brief")).toBeInTheDocument();
     expect(within(overdue).getByText("13:00–14:00")).toBeInTheDocument();
-    expect(within(overdue).getByText("Aug 13")).toHaveClass("is-overdue");
+    expect(within(overdue).getByText("(Due: Aug 13)")).toHaveClass(
+      "is-overdue",
+    );
     expect(within(pane).queryByRole("region", { name: /Today / })).toBeNull();
   });
 
