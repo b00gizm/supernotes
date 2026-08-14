@@ -2,7 +2,9 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { noteEditorExtensions } from "./extensions";
 import {
+  listHtmlFromBrLines,
   looksLikeGfmTable,
+  reconstructTableCellLists,
   withTablePipeEscaping,
   type TablePipeEscapeState,
 } from "./markdownTable";
@@ -56,6 +58,21 @@ function hardBreakParagraph(lines: string[]) {
     content.push({ type: "text", text: line });
   });
   return { type: "paragraph" as const, content };
+}
+
+function para(text: string) {
+  return {
+    type: "paragraph" as const,
+    content: [{ type: "text" as const, text }],
+  };
+}
+
+function headerCell(text: string) {
+  return { type: "tableHeader" as const, content: [para(text)] };
+}
+
+function dataCell(text: string) {
+  return { type: "tableCell" as const, content: [para(text)] };
 }
 
 function hasHardBreak(editor: Editor): boolean {
@@ -180,6 +197,106 @@ describe("markdown table fixup", () => {
     expect(md(editor)).not.toContain("[hardBreak]");
   });
 
+  it("serializes a list in a table cell without breaking the row (ENG-155)", () => {
+    editor = create({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                headerCell("Foo"),
+                headerCell("Bar"),
+                headerCell("Baz"),
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [dataCell("Hello"), dataCell("World"), dataCell("123")],
+            },
+            {
+              type: "tableRow",
+              content: [
+                dataCell("Goodbye"),
+                dataCell("World"),
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "bulletList",
+                      content: ["One", "Two", "Three"].map((text) => ({
+                        type: "listItem",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text }],
+                          },
+                        ],
+                      })),
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const serialized = md(editor);
+    expect(serialized).toBe(
+      "| Foo | Bar | Baz |\n| --- | --- | --- |\n| Hello | World | 123 |\n| Goodbye | World | - One<br>- Two<br>- Three |\n",
+    );
+    expect(serialized).not.toContain("[table]");
+
+    editor.destroy();
+    editor = create(serialized);
+    expect(editor.getHTML()).toContain("<table");
+    expect(editor.getHTML()).toContain("<ul");
+    expect(editor.getHTML()).toMatch(/<li[^>]*>[\s\S]*One/);
+    expect(editor.getHTML()).toMatch(/<li[^>]*>[\s\S]*Two/);
+    expect(editor.getHTML()).toMatch(/<li[^>]*>[\s\S]*Three/);
+    expect(md(editor)).toBe(serialized);
+  });
+
+  it("serializes extra paragraphs in a cell as <br> (ENG-155)", () => {
+    editor = create({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [headerCell("A"), headerCell("B")],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [para("Hello"), para("World")],
+                },
+                dataCell("x"),
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const serialized = md(editor);
+    expect(serialized).toBe(
+      "| A | B |\n| --- | --- |\n| Hello<br>World | x |\n",
+    );
+    expect(serialized).not.toContain("[table]");
+
+    editor.destroy();
+    editor = create(serialized);
+    expect(editor.getHTML()).toContain("<table");
+    expect(md(editor)).toBe(serialized);
+  });
+
   it("parses <br> in cells as a hardBreak (ENG-129)", () => {
     editor = create("| A | B |\n| --- | --- |\n| a<br>b | 2 |");
     expect(hasHardBreak(editor)).toBe(true);
@@ -239,5 +356,40 @@ describe("markdown table fixup", () => {
     expect(editor.getHTML()).toContain("<blockquote");
     expect(editor.getHTML()).not.toContain("<table");
     expect(hasHardBreak(editor)).toBe(true);
+  });
+});
+
+describe("listHtmlFromBrLines", () => {
+  it("rebuilds a bullet list from <br>-joined markers", () => {
+    expect(listHtmlFromBrLines("- One<br>- Two<br>- Three")).toBe(
+      "<ul><li><p>One</p></li><li><p>Two</p></li><li><p>Three</p></li></ul>",
+    );
+    expect(listHtmlFromBrLines("* One<br>* Two")).toBe(
+      "<ul><li><p>One</p></li><li><p>Two</p></li></ul>",
+    );
+  });
+
+  it("rebuilds an ordered list", () => {
+    expect(listHtmlFromBrLines("1. One<br>2. Two")).toBe(
+      "<ol><li><p>One</p></li><li><p>Two</p></li></ol>",
+    );
+  });
+
+  it("leaves non-lists and single lines alone", () => {
+    expect(listHtmlFromBrLines("Hello<br>World")).toBeNull();
+    expect(listHtmlFromBrLines("- Only")).toBeNull();
+    expect(listHtmlFromBrLines("- One<br>two")).toBeNull();
+  });
+});
+
+describe("reconstructTableCellLists", () => {
+  it("turns list-shaped cells into ul before TipTap parses", () => {
+    const root = document.createElement("div");
+    root.innerHTML =
+      "<table><tr><td>- One<br>- Two<br>- Three</td><td>plain</td></tr></table>";
+    reconstructTableCellLists(root);
+    const cell = root.querySelector("td");
+    expect(cell?.querySelectorAll("li").length).toBe(3);
+    expect(root.querySelectorAll("td")[1]?.innerHTML).toBe("plain");
   });
 });

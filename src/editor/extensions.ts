@@ -21,6 +21,7 @@ import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
 import {
   markdownTableFixupPlugin,
+  NoteTable,
   TableHardBreak,
   TablePipeSafeText,
 } from "./markdownTable";
@@ -488,11 +489,12 @@ export function noteEditorExtensions(
     NoteTaskList,
     NoteTaskItem,
     TableKit.configure({
-      table: {
-        resizable: false,
-        // Needed so Backspace after a table can NodeSelection-highlight it.
-        allowTableNodeSelection: true,
-      },
+      table: false,
+    }),
+    NoteTable.configure({
+      resizable: false,
+      // Needed so Backspace after a table can NodeSelection-highlight it.
+      allowTableNodeSelection: true,
     }),
     StaticMarkdownTable,
     MarkdownTableFixup,
