@@ -1,5 +1,6 @@
 import type { Editor } from "@tiptap/core";
 import { HardBreak } from "@tiptap/extension-hard-break";
+import { Table } from "@tiptap/extension-table";
 import Text from "@tiptap/extension-text";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import { DOMParser as PmDOMParser } from "@tiptap/pm/model";
@@ -63,6 +64,15 @@ type InlineState = {
 
 type HardBreakMarkdownState = TablePipeEscapeState & {
   write: (text: string) => void;
+};
+
+/** tiptap-markdown serializer state used while writing a GFM table (ENG-155). */
+export type TableMarkdownState = TablePipeEscapeState & {
+  out: string;
+  write: (text: string) => void;
+  renderInline: (node: PmNode) => void;
+  ensureNewLine: () => void;
+  closeBlock: (node: PmNode) => void;
 };
 
 /** `<br>` / `<br/>` / `<br />` — table-cell hard breaks (ENG-88) with html:false. */
@@ -137,6 +147,215 @@ export const TableHardBreak = HardBreak.extend({
         parse: {
           setup(md: MarkdownItLike) {
             markdownItBr(md);
+          },
+        },
+      },
+    };
+  },
+});
+
+const UL_LINE = /^[-*+][ \t]+(.+)$/;
+const OL_LINE = /^(\d+)[.)][ \t]+(.+)$/;
+
+/**
+ * GFM tables are one line per row. Turn `<br>`-separated list markers in a
+ * cell back into a real list so WYSIWYG bullets survive save/reload (ENG-155).
+ */
+export function listHtmlFromBrLines(html: string): string | null {
+  const lines = html.split(/<br\s*\/?>/i).map((line) => line.trim());
+  if (lines.length < 2 || lines.some((line) => line.length === 0)) {
+    return null;
+  }
+  const ulItems: string[] = [];
+  for (const line of lines) {
+    const text = UL_LINE.exec(line)?.[1];
+    if (text == null) {
+      break;
+    }
+    ulItems.push(`<li><p>${text}</p></li>`);
+  }
+  if (ulItems.length === lines.length) {
+    return `<ul>${ulItems.join("")}</ul>`;
+  }
+  const olItems: string[] = [];
+  for (const line of lines) {
+    const text = OL_LINE.exec(line)?.[2];
+    if (text == null) {
+      return null;
+    }
+    olItems.push(`<li><p>${text}</p></li>`);
+  }
+  return `<ol>${olItems.join("")}</ol>`;
+}
+
+/** Rewrite list-shaped table cells in markdown-it HTML before TipTap parses it. */
+export function reconstructTableCellLists(root: HTMLElement): void {
+  for (const cell of root.querySelectorAll("td, th")) {
+    if (!(cell instanceof HTMLElement)) {
+      continue;
+    }
+    if (cell.querySelector("ul, ol, pre, table")) {
+      continue;
+    }
+    const paragraphs = [...cell.querySelectorAll("p")];
+    if (paragraphs.length > 1) {
+      continue;
+    }
+    const source =
+      paragraphs.length === 1
+        ? (paragraphs[0]?.innerHTML ?? "")
+        : cell.innerHTML;
+    const rebuilt = listHtmlFromBrLines(source);
+    if (!rebuilt) {
+      continue;
+    }
+    cell.innerHTML = rebuilt;
+  }
+}
+
+function isListNode(node: PmNode): boolean {
+  const name = node.type.name;
+  return name === "bulletList" || name === "orderedList" || name === "taskList";
+}
+
+function flattenLeakedCellNewlines(cellOut: string): string {
+  return cellOut.replace(/\n+/g, "<br>").replace(/(?:<br>)+$/g, "");
+}
+
+/**
+ * Write a table cell as a single GFM line. Block children become `<br>`-joined
+ * inlines; lists keep `- ` / `1. ` markers so parse can rebuild them.
+ * Nested lists flatten to one level (ponytail: reconstruct indent if cells
+ * grow real nested editing).
+ */
+function serializeTableCell(state: TableMarkdownState, cell: PmNode): void {
+  let pendingBr = false;
+  const emitBr = () => {
+    if (pendingBr) {
+      state.write("<br>");
+    }
+    pendingBr = true;
+  };
+
+  const writeTextblock = (block: PmNode, prefix: string) => {
+    if (!block.textContent) {
+      return;
+    }
+    emitBr();
+    if (prefix) {
+      state.write(prefix);
+    }
+    state.renderInline(block);
+  };
+
+  const walkListItem = (item: PmNode, marker: string) => {
+    let first = true;
+    item.forEach((child) => {
+      if (isListNode(child)) {
+        walk(child);
+        first = false;
+        return;
+      }
+      if (child.isTextblock) {
+        writeTextblock(child, first ? marker : "");
+        first = false;
+        return;
+      }
+      walk(child);
+      first = false;
+    });
+  };
+
+  const walk = (node: PmNode) => {
+    if (node.type.name === "bulletList") {
+      node.forEach((item) => {
+        walkListItem(item, "- ");
+      });
+      return;
+    }
+    if (node.type.name === "orderedList") {
+      let n = Number(node.attrs.start ?? 1) || 1;
+      node.forEach((item) => {
+        walkListItem(item, `${String(n)}. `);
+        n += 1;
+      });
+      return;
+    }
+    if (node.type.name === "taskList") {
+      node.forEach((item) => {
+        const checked = item.attrs.checked ? "x" : " ";
+        walkListItem(item, `- [${checked}] `);
+      });
+      return;
+    }
+    if (node.type.name === "listItem" || node.type.name === "taskItem") {
+      walkListItem(node, "- ");
+      return;
+    }
+    if (node.isTextblock) {
+      writeTextblock(node, "");
+      return;
+    }
+    node.forEach((child) => {
+      walk(child);
+    });
+  };
+
+  const start = state.out.length;
+  cell.forEach((child) => {
+    walk(child);
+  });
+  const leaked = state.out.slice(start);
+  if (leaked.includes("\n")) {
+    state.out = state.out.slice(0, start) + flattenLeakedCellNewlines(leaked);
+  }
+}
+
+export function serializeGfmTable(
+  state: TableMarkdownState,
+  node: PmNode,
+): void {
+  state.inTable = true;
+  try {
+    node.forEach((row, _offset, rowIndex) => {
+      state.write("| ");
+      row.forEach((cell, _cellOffset, colIndex) => {
+        if (colIndex > 0) {
+          state.write(" | ");
+        }
+        serializeTableCell(state, cell);
+      });
+      state.write(" |");
+      state.ensureNewLine();
+      if (rowIndex === 0) {
+        const delimiter = Array.from(
+          { length: row.childCount },
+          () => "---",
+        ).join(" | ");
+        state.write(`| ${delimiter} |`);
+        state.ensureNewLine();
+      }
+    });
+    state.closeBlock(node);
+  } finally {
+    state.inTable = false;
+  }
+}
+
+/**
+ * TipTap table with GFM-safe cell serialize. tiptap-markdown's default writes
+ * raw newlines for lists / extra paragraphs, which GFM cannot parse back.
+ */
+export const NoteTable = Table.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state: TableMarkdownState, node: PmNode) {
+          serializeGfmTable(state, node);
+        },
+        parse: {
+          updateDOM(element: HTMLElement) {
+            reconstructTableCellLists(element);
           },
         },
       },

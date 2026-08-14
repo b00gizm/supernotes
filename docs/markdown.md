@@ -32,6 +32,9 @@ task items, `\` hard breaks); after that, save/load is byte-stable.
 Images are block-level in the editor: an image mid-paragraph serializes on its
 own lines.
 
+Table cells that contain lists or extra paragraphs serialize as one GFM line
+with `<br>` between blocks (e.g. `- One<br>- Two`); save/load rebuilds the list.
+
 Adjacent bullet items and checkboxes may sit in one markdown-it list; on parse
 we split them into a bullet list + task list so TipTap does not invent an empty
 checkbox. The first save after an external edit is the canonical form (golden
