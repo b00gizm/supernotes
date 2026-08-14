@@ -194,6 +194,52 @@ describe("useNotes", () => {
     expect(result.current.status).toBe("idle");
   });
 
+  it("openDaily uses post-flush notes so rename rewrites are not clobbered (ENG-131)", async () => {
+    const api = createMemoryNotesApi([
+      seedNote({
+        id: "alpha",
+        title: "Alpha",
+        body_markdown: "",
+        updated_at: "2026-08-10T12:00:00.000Z",
+      }),
+      seedNote({
+        id: "daily",
+        title: "2026-08-10",
+        body_markdown: "see [[Alpha]]",
+        note_type: "daily",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      }),
+    ]);
+    await api.updateNote({
+      id: "daily",
+      title: "2026-08-10",
+      body_markdown: "see [[Alpha]]",
+    });
+
+    const { result } = renderHook(() => useNotes({ api, autoSelect: false }));
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    act(() => {
+      result.current.selectNote("alpha");
+    });
+    act(() => {
+      result.current.setTitleDraft("Gamma");
+    });
+    expect(result.current.status).toBe("dirty");
+
+    await act(async () => {
+      await result.current.openDaily(new Date(2026, 7, 10));
+    });
+
+    expect(result.current.selectedId).toBe("daily");
+    expect(result.current.bodyDraft).toBe("see [[Gamma]]");
+    expect(
+      result.current.notes.find((note) => note.id === "daily")?.body_markdown,
+    ).toBe("see [[Gamma]]");
+  });
+
   it("force-saves within the max wait while typing continuously", async () => {
     vi.useFakeTimers();
     const api = createMemoryNotesApi([seedNote()]);

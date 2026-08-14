@@ -107,6 +107,7 @@ export function SearchPalette({
   const [taskHits, setTaskHits] = useState<Task[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const visibleTaskHits = useMemo(() => {
     const byId = new Map(notes.map((note) => [note.id, note]));
@@ -154,6 +155,7 @@ export function SearchPalette({
     setNoteHits([]);
     setTaskHits([]);
     setActiveIndex(0);
+    setSearchError(null);
   }, [open]);
 
   useEffect(() => {
@@ -162,9 +164,10 @@ export function SearchPalette({
     }
     let cancelled = false;
     setSearching(true);
+    setSearchError(null);
     const notesPromise = searchNotes(query);
     const tasksPromise = query.trim()
-      ? searchTasks(query).catch(() => [] as Task[])
+      ? searchTasks(query)
       : Promise.resolve([] as Task[]);
     void Promise.all([notesPromise, tasksPromise]).then(
       ([foundNotes, foundTasks]) => {
@@ -176,9 +179,10 @@ export function SearchPalette({
         setActiveIndex(0);
         setSearching(false);
       },
-      () => {
+      (err: unknown) => {
         // Failed search: drop stale results so the create row stands alone
-        // instead of leaving "searching" stuck (ENG-81).
+        // instead of leaving "searching" stuck (ENG-81). Surface the
+        // failure so a broken search_tasks IPC isn't "no matches" (ENG-136).
         if (cancelled) {
           return;
         }
@@ -186,6 +190,7 @@ export function SearchPalette({
         setTaskHits([]);
         setActiveIndex(0);
         setSearching(false);
+        setSearchError(err instanceof Error ? err.message : "Failed to search");
       },
     );
     return () => {
@@ -315,6 +320,12 @@ export function SearchPalette({
           <kbd className="search-esc-chip">esc</kbd>
         </div>
 
+        {searchError ? (
+          <p className="error-banner" role="alert">
+            {searchError}
+          </p>
+        ) : null}
+
         <ul id={listId} className="search-results" role="listbox">
           {hits.map((hit, index) => {
             const active = index === activeIndex;
@@ -393,7 +404,7 @@ export function SearchPalette({
               </li>
             );
           })}
-          {hits.length === 0 && !searching ? (
+          {hits.length === 0 && !searching && !searchError ? (
             <li className="search-empty" role="presentation">
               No matching notes or tasks
             </li>

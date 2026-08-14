@@ -1,17 +1,40 @@
-[
-  {
-    "name": "unclosed wiki continues to tags and mentions",
-    "body": "before [[unclosed and #tag plus @Sam after",
-    "titles": ["tag", "Sam"]
-  },
-  {
-    "name": "closed wiki then unclosed then tag",
-    "body": "[[Ok]] then [[still open and #later",
-    "titles": ["Ok", "later"]
-  },
-  {
-    "name": "empty and task pills still skipped",
-    "body": "[[ ]] [[task:abc]] #keep",
-    "titles": ["keep"]
-  }
-]
+{
+  "extract": [
+    {
+      "name": "unclosed wiki continues to tags and mentions",
+      "body": "before [[unclosed and #tag plus @Sam after",
+      "titles": ["tag", "Sam"]
+    },
+    {
+      "name": "closed wiki then unclosed then tag",
+      "body": "[[Ok]] then [[still open and #later",
+      "titles": ["Ok", "later"]
+    },
+    {
+      "name": "empty and task pills still skipped",
+      "body": "[[ ]] [[task:abc]] #keep",
+      "titles": ["keep"]
+    },
+    {
+      "name": "non-ASCII wikilink titles keep original case",
+      "body": "See [[über plan]] and [[Über plan]].",
+      "titles": ["über plan", "Über plan"]
+    }
+  ],
+  "rewrite": [
+    {
+      "name": "ascii case-insensitive wiki/tag/mention",
+      "body": "See [[weekly review]] and #Project with @sam",
+      "oldTitle": "Weekly Review",
+      "newTitle": "Done",
+      "rewritten": "See [[Done]] and #Project with @sam"
+    },
+    {
+      "name": "unicode fold Über vs über on rename",
+      "body": "See [[über plan]] and [[Über plan]].",
+      "oldTitle": "Über plan",
+      "newTitle": "Done",
+      "rewritten": "See [[Done]] and [[Done]]."
+    }
+  ]
+}

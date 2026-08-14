@@ -6,7 +6,7 @@ use super::models::{
     CalendarEvent, Link, Meeting, Note, NoteType, Task, TaskListFilter, TaskPriority, TaskState,
 };
 use super::time::utc_now;
-use super::wikilinks::{extract_wikilink_titles, rewrite_wikilink_title};
+use super::wikilinks::{extract_wikilink_titles, rewrite_wikilink_title, titles_eq_folded};
 
 pub struct Repository<'a> {
     conn: &'a Connection,
@@ -147,26 +147,22 @@ impl<'a> Repository<'a> {
         if needle.is_empty() {
             return Ok(None);
         }
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, body_markdown, note_type, pinned, created_at, updated_at
-             FROM notes
-             WHERE LOWER(title) = LOWER(?1)
-             ORDER BY updated_at DESC",
-        )?;
-        let rows = stmt.query_map([needle], map_note)?;
-        let mut exact: Option<Note> = None;
-        let mut first: Option<Note> = None;
-        for row in rows {
-            let note = row?;
-            if first.is_none() {
-                first = Some(note.clone());
+        // ponytail: load-all then Unicode-fold in Rust — SQLite LOWER() is ASCII-only
+        // (Ü ≠ ü). Fine for personal corpora; stored fold column if this shows up in profiles.
+        let notes = self.list_notes()?;
+        let mut fallback = None;
+        for note in notes {
+            if !titles_eq_folded(&note.title, needle) {
+                continue;
             }
             if note.title == needle {
-                exact = Some(note);
-                break;
+                return Ok(Some(note));
+            }
+            if fallback.is_none() {
+                fallback = Some(note);
             }
         }
-        Ok(exact.or(first))
+        Ok(fallback)
     }
 
     /// Metadata toggle: deliberately leaves `updated_at` untouched.
@@ -1049,6 +1045,34 @@ mod tests {
             let source_after = repo.get_note(&source.id).unwrap();
             assert_eq!(source_after.body_markdown, "See [[Baz]] only.");
             // Linking note's updated_at must not bump on target rename.
+            assert_eq!(source_after.updated_at, source.updated_at);
+        });
+    }
+
+    #[test]
+    fn unicode_fold_resolves_and_rewrites_wikilinks() {
+        with_repo(|repo| {
+            let target = repo
+                .create_note("Über plan", "", NoteType::Regular, false)
+                .unwrap();
+            let found = repo.find_note_by_title("über plan").unwrap();
+            assert_eq!(found.as_ref().map(|n| n.id.as_str()), Some(target.id.as_str()));
+
+            let source = repo
+                .create_note(
+                    "Source",
+                    "See [[über plan]].",
+                    NoteType::Regular,
+                    false,
+                )
+                .unwrap();
+            let links = repo.list_links_from(&source.id).unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].target_note_id, target.id);
+
+            repo.update_note(&target.id, "Done plan", "").unwrap();
+            let source_after = repo.get_note(&source.id).unwrap();
+            assert_eq!(source_after.body_markdown, "See [[Done plan]].");
             assert_eq!(source_after.updated_at, source.updated_at);
         });
     }

@@ -124,3 +124,49 @@ npm run tauri dev   # needs display + Tauri OS deps
 - If the backend rewrites rows the frontend may hold open (rename rewriting
   other notes' bodies), it needs an invalidation signal to open editors —
   otherwise the next autosave clobbers the rewrite with the stale draft.
+
+### M3–M5: Embedded entities, migrations & the view/persistence boundary
+
+- Migrations are the one place an error is permanent: a failed migration rolls
+  back, `Db::open().expect()` panics, and the app never boots again. Any
+  migration that rewrites a column feeding a new UNIQUE index must dedup
+  first, and never derive a local-day value from a UTC timestamp prefix
+  (`substr(created_at, 1, 10)` is the wrong day for evening rows). Test
+  migrations with colliding and timezone-edge rows, not one happy row.
+- Node attrs are a cache of DB state, and caches go stale. A pill that
+  hydrates once and then writes full rows from its own attrs silently reverts
+  every edit made from another surface — the M1 full-row last-write-wins bug,
+  reborn at the task layer. Writes built from node attrs must be partial
+  patches, and embedded views must subscribe to the entity's change events.
+- Delete-on-node-removal is wrong scope. "Node left this editor's doc" is not
+  "user deleted the entity": cut here / paste in another note looks identical.
+  Entity lifecycle decisions need app-level state, not per-editor-instance
+  snapshots that die on remount.
+- Every doc-changing transaction reaches autosave. NodeView attr syncs and
+  load-normalization drift mark the doc dirty, so merely opening or clicking a
+  note saves the full body and bumps `updated_at` — corrupting recency and
+  widening the last-write-wins window. Non-edit transactions must not dirty
+  the draft; assert load→serialize identity with a fixture.
+- Parser strictness flips are data-loss events. `html:false` → `html:true`
+  changed what the schema silently drops from existing bodies, and the first
+  autosave made it permanent. Any parse-mode change ships with a round-trip
+  fixture of content that was legal before the change.
+- Values clipped for display must never flow back into persistence. The
+  calendar seeded its edit state with day-clipped segment times and committed
+  them on blur _and Escape_, truncating cross-midnight events on a mere click.
+  Keep view projections and persisted values in separate shapes, make Escape
+  cancel, and clamp drag math by the event's real duration, not a default.
+- Overlays must own focus synchronously. A `setTimeout(0)` focus means the
+  keystrokes right after ⌘K land in the editor underneath the palette — and
+  autosave persists them into the note. Focus on mount and capture keys at the
+  overlay while it is open.
+- When bucketing by date range, cover the whole domain. Grouping that only
+  consumes "this week forward" let past rows fall through to a catch-all
+  rendered after "Next week". Handle the past explicitly and test rows before
+  the window, not just inside it.
+- The M2 rules held only where fixtures were hostile. Case folding diverged
+  three ways (TS Unicode `toLowerCase`, Rust `eq_ignore_ascii_case`, SQLite
+  ASCII `LOWER`) and stayed invisible because the shared parity fixtures were
+  ASCII-only; three new `catch(() => default)` swallows shipped despite the
+  rule. Parity fixtures need non-ASCII rows, and the swallow pattern is worth
+  a lint/grep in CI rather than a rule in prose.

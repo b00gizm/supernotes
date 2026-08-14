@@ -357,7 +357,14 @@ export function useNotes(options: UseNotesOptions = {}) {
             body: bodyDraftRef.current,
           });
         }
-        applySelection(existing);
+        saveGeneration.current += 1;
+        // persistDraft may have rewritten this daily's body (ENG-91 / ENG-131).
+        const fresh =
+          notesRef.current.find(
+            (note) => note.note_type === "daily" && note.title === title,
+          ) ?? existing;
+        applySelection(fresh);
+        return fresh;
       }
       return existing;
     }

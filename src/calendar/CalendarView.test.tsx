@@ -356,6 +356,33 @@ describe("CalendarView time blocking (ENG-66)", () => {
     });
   });
 
+  it("clamps a 2-hour move to 24h minus duration, not 15min (ENG-133)", async () => {
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "deep-work",
+        title: "Deep work",
+        start: minutesToIso(TODAY, 10 * 60),
+        end: minutesToIso(TODAY, 12 * 60),
+        task_id: null,
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    renderCalendar();
+    await screen.findAllByText("Deep work");
+    mockGridRect();
+    const hit = document.querySelector(".cal-event-hit");
+    expect(hit).toBeTruthy();
+    fireEvent.mouseDown(hit as HTMLElement, { button: 0, clientY: 10 * 48 });
+    fireEvent.mouseMove(window, { clientY: 24 * 48 });
+    fireEvent.mouseUp(window);
+    await waitFor(async () => {
+      const listed = await calRef.current.listEvents();
+      const moved = listed.find((item) => item.id === "deep-work");
+      expect(moved?.start).toBe(minutesToIso(TODAY, 22 * 60));
+      expect(moved?.end).toBe(minutesToIso(TODAY, 24 * 60));
+    });
+  });
+
   it("marks a linked event done without deleting the task", async () => {
     const user = userEvent.setup();
     calRef.current = createMemoryCalendarApi([
@@ -635,5 +662,65 @@ describe("CalendarView linked-task load (ENG-137)", () => {
     );
     expect(await screen.findAllByText("Orphan block")).not.toHaveLength(0);
     expect(document.querySelector(".cal-event.is-task")).toBeNull();
+  });
+});
+
+describe("CalendarView event edit (ENG-132)", () => {
+  const overnightStart = minutesToIso(TODAY, 23 * 60);
+  const overnightEnd = minutesToIso(TODAY, 25 * 60);
+
+  beforeEach(() => {
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "overnight",
+        title: "Night shift",
+        start: overnightStart,
+        end: overnightEnd,
+        task_id: null,
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    tasksRef.current = createMemoryTasksApi([overdue, inbox, dueToday, dueWed]);
+  });
+
+  it("keeps full cross-midnight times on blur and does not persist on Escape", async () => {
+    const user = userEvent.setup();
+    renderCalendar();
+    await screen.findAllByText("Night shift");
+    mockGridRect();
+    const openEdit = () => {
+      const hit = document.querySelector(".cal-event-hit");
+      expect(hit).toBeTruthy();
+      fireEvent.mouseDown(hit as HTMLElement, { button: 0, clientY: 23 * 48 });
+      fireEvent.mouseUp(window);
+    };
+
+    openEdit();
+    await screen.findByLabelText("Event title");
+    expect(screen.getByLabelText("Start time")).toHaveValue("23:00");
+    expect(screen.getByLabelText("End time")).toHaveValue("01:00");
+    await user.click(screen.getByText("August 2026"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Event title")).not.toBeInTheDocument();
+    });
+    await waitFor(async () => {
+      const listed = await calRef.current.listEvents();
+      const overnight = listed.find((item) => item.id === "overnight");
+      expect(overnight?.start).toBe(overnightStart);
+      expect(overnight?.end).toBe(overnightEnd);
+    });
+
+    openEdit();
+    const title = await screen.findByLabelText("Event title");
+    await user.type(title, " changed");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Event title")).not.toBeInTheDocument();
+    });
+    const afterEscape = await calRef.current.listEvents();
+    const overnight = afterEscape.find((item) => item.id === "overnight");
+    expect(overnight?.title).toBe("Night shift");
+    expect(overnight?.start).toBe(overnightStart);
+    expect(overnight?.end).toBe(overnightEnd);
   });
 });
