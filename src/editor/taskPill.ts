@@ -344,7 +344,9 @@ function bindPendingTask(
       const foundPos = findTaskPillPos(editor, pendingId);
       if (foundPos < 0) {
         // User deleted the placeholder — drop the orphaned DB row.
-        void options.deleteTask?.(task.id).catch(() => {});
+        void options.deleteTask?.(task.id).catch((err: unknown) => {
+          reportTaskError(options, err);
+        });
         return;
       }
       rewriteTaskPillId(editor, pendingId, task);
@@ -626,6 +628,12 @@ export const TaskPill = Node.create<TaskPillOptions>({
         serialize(state: MarkdownWriteState, node: ProseMirrorNode) {
           const taskId = String(node.attrs.taskId ?? "");
           const title = String(node.attrs.title ?? "");
+          // Pending ids are local placeholders; never persist [[task:pending-N]] (ENG-141).
+          if (taskId.startsWith("pending-")) {
+            state.write(title);
+            state.closeBlock(node);
+            return;
+          }
           state.write(
             title ? `[[task:${taskId}]] ${title}` : `[[task:${taskId}]]`,
           );
