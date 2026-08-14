@@ -3,7 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CalendarApi } from "../calendar/api";
 import { createMemoryCalendarApi } from "../calendar/api";
-import { minutesToIso } from "../calendar/layout";
+import {
+  minutesToIso,
+  shiftYmd,
+  startOfWeekMonday,
+  weekRangeIso,
+} from "../calendar/layout";
 import type { Note } from "../notes/types";
 import { TasksView } from "./TasksView";
 import type { TasksApi } from "./api";
@@ -260,5 +265,26 @@ describe("TasksView date grouping", () => {
         within(pane).queryByRole("button", { name: "Wrapped up" }),
       ).toBeNull();
     });
+  });
+
+  it("scopes listEvents to ~2 weeks back through +4 weeks (ENG-151)", async () => {
+    const listEvents = vi.spyOn(calRef.current, "listEvents");
+    tasksRef.current = createMemoryTasksApi([
+      openTask({ id: "t1", title: "Scoped" }),
+    ]);
+    render(
+      <TasksView
+        notes={notes}
+        today={TODAY}
+        onOpenTask={vi.fn()}
+        onCreateTask={vi.fn()}
+      />,
+    );
+    await screen.findByRole("region", { name: "Tasks" });
+
+    const weekStart = startOfWeekMonday(TODAY);
+    const expectedFrom = weekRangeIso(shiftYmd(weekStart, -14)).from;
+    const expectedTo = weekRangeIso(shiftYmd(weekStart, 28)).from;
+    expect(listEvents).toHaveBeenCalledWith(expectedFrom, expectedTo);
   });
 });

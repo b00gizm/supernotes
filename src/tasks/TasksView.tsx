@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { calendarApi, subscribeCalendarChanged } from "../calendar/api";
+import { shiftYmd, startOfWeekMonday, weekRangeIso } from "../calendar/layout";
 import { formatDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { tasksApi } from "./api";
@@ -45,6 +46,14 @@ function mergeById(groups: Task[][]): Task[] {
   return [...byId.values()];
 }
 
+/** Schedule chips: ~2 weeks back (complete window) through +4 weeks. */
+function scheduleEventsRange(today: string): { from: string; to: string } {
+  const weekStart = startOfWeekMonday(today);
+  const from = weekRangeIso(shiftYmd(weekStart, -14)).from;
+  const to = weekRangeIso(shiftYmd(weekStart, 28)).from;
+  return { from, to };
+}
+
 /**
  * Open tasks grouped by unscheduled callout, then overdue / day.
  * Time blocks sit on their slot day unless the due date is already overdue.
@@ -72,10 +81,11 @@ export function TasksView({
         setLoading(true);
       }
       try {
+        const { from, to } = scheduleEventsRange(today);
         const [inbox, upcoming, events, complete] = await Promise.all([
           tasksApi.listTasks("inbox", today),
           tasksApi.listTasks("upcoming", today),
-          calendarApi.listEvents(),
+          calendarApi.listEvents(from, to),
           showCompleted
             ? tasksApi.listTasks("complete", today)
             : Promise.resolve([] as Task[]),
