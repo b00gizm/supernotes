@@ -13,7 +13,9 @@ import type {
   Task,
   TaskPriority,
   TaskState,
+  UpdateTaskInput,
 } from "../tasks/types";
+import { subscribeTasksChanged } from "../tasks/events";
 import { TaskPillView } from "./TaskPillView";
 
 /** Minimal surface used by tiptap-markdown node serializers. */
@@ -161,13 +163,7 @@ export type TaskPillOptions = {
   /** Note that owns new tasks created via `[]`. */
   getNoteId?: () => string | null;
   createTask?: (input: CreateTaskInput) => Promise<Task>;
-  updateTask?: (input: {
-    id: string;
-    title: string;
-    state: TaskState;
-    due_date: string | null;
-    priority: TaskPriority | null;
-  }) => Promise<Task>;
+  updateTask?: (input: UpdateTaskInput) => Promise<Task>;
   deleteTask?: (id: string) => Promise<void>;
   /** Hydrate state/title from DB after markdown load. */
   listTasksForNote?: (noteId: string) => Promise<Task[]>;
@@ -286,6 +282,8 @@ function focusTaskPillTitle(editor: Editor, pendingId: string): void {
 }
 
 const skipDeleteByEditor = new WeakMap<Editor, Set<string>>();
+// Shared across NoteEditor remounts so cut in note A can paste in note B (ENG-128).
+const taskPillSnapshots = new Map<string, TaskSnapshot>();
 
 function skipDeleteSet(editor: Editor): Set<string> {
   let set = skipDeleteByEditor.get(editor);
@@ -401,8 +399,7 @@ function taskPillDeletePlugin(
   options: TaskPillOptions,
   editor: Editor,
 ): Plugin {
-  // ponytail: in-memory snapshots until undo consumes them; no recycle bin.
-  const snapshots = new Map<string, TaskSnapshot>();
+  // ponytail: in-memory snapshots until undo/paste consumes them; no recycle bin.
   return new Plugin({
     key: taskPillDeleteKey,
     appendTransaction(transactions, oldState, newState) {
@@ -419,7 +416,7 @@ function taskPillDeletePlugin(
         if (after.has(id) || id.startsWith("pending-") || skipDelete.has(id)) {
           continue;
         }
-        snapshots.set(id, snapshotFrom(node));
+        taskPillSnapshots.set(id, snapshotFrom(node));
         void options.deleteTask(id).catch((err: unknown) => {
           reportTaskError(options, err);
         });
@@ -428,11 +425,11 @@ function taskPillDeletePlugin(
         if (before.has(id) || id.startsWith("pending-")) {
           continue;
         }
-        const snap = snapshots.get(id);
+        const snap = taskPillSnapshots.get(id);
         if (!snap) {
           continue;
         }
-        snapshots.delete(id);
+        taskPillSnapshots.delete(id);
         const noteId = options.getNoteId?.() ?? null;
         if (!noteId || !options.createTask) {
           continue;
@@ -461,6 +458,67 @@ function taskPillDeletePlugin(
 
 function priorityOf(task: Task): TaskPriority | null {
   return task.priority;
+}
+
+function hydrateTaskPills(editor: Editor, options: TaskPillOptions): void {
+  if (editor.isDestroyed) {
+    return;
+  }
+  const noteId = options.getNoteId?.() ?? null;
+  if (!noteId || !options.listTasksForNote) {
+    return;
+  }
+  void options
+    .listTasksForNote(noteId)
+    .then((tasks) => {
+      if (editor.isDestroyed) {
+        return;
+      }
+      const byId = new Map(tasks.map((task) => [task.id, task]));
+      const { state, view } = editor;
+      let tr = state.tr;
+      state.doc.descendants((node, pos) => {
+        if (node.type.name !== "taskPill") {
+          return;
+        }
+        const id = String(node.attrs.taskId ?? "");
+        const task = byId.get(id);
+        if (!task) {
+          return;
+        }
+        const next = {
+          ...node.attrs,
+          title: task.title,
+          state: task.state,
+          dueDate: task.due_date,
+          priority: priorityOf(task),
+        };
+        if (
+          next.title !== node.attrs.title ||
+          next.state !== node.attrs.state ||
+          next.dueDate !== node.attrs.dueDate ||
+          next.priority !== node.attrs.priority
+        ) {
+          tr = tr.setNodeMarkup(pos, undefined, next);
+        }
+      });
+      if (tr.docChanged) {
+        view.dispatch(tr);
+      }
+    })
+    .catch((err: unknown) => {
+      reportTaskError(options, err);
+    });
+}
+
+const unsubscribeByEditor = new WeakMap<Editor, () => void>();
+
+function bindTasksChanged(editor: Editor, options: TaskPillOptions): void {
+  unsubscribeByEditor.get(editor)?.();
+  const unsubscribe = subscribeTasksChanged(() => {
+    hydrateTaskPills(editor, options);
+  });
+  unsubscribeByEditor.set(editor, unsubscribe);
 }
 
 export const TaskPill = Node.create<TaskPillOptions>({
@@ -611,58 +669,18 @@ export const TaskPill = Node.create<TaskPillOptions>({
     // Wire sync here — TipTap defers onCreate until after mount (setTimeout 0).
     // Mutate editor.storage (snapshot), not this.options (fresh each access).
     wireTaskPillHandlers(this.options, this.editor);
+    bindTasksChanged(this.editor, this.options);
     return [taskPillDeletePlugin(this.options, this.editor)];
   },
 
   onCreate() {
-    const options = this.options;
-    const editor = this.editor;
-    clearLeadingTaskPillSelection(editor);
-    const noteId = options.getNoteId?.() ?? null;
-    if (!noteId || !options.listTasksForNote) {
-      return;
-    }
-    void options
-      .listTasksForNote(noteId)
-      .then((tasks) => {
-        if (editor.isDestroyed) {
-          return;
-        }
-        const byId = new Map(tasks.map((task) => [task.id, task]));
-        const { state, view } = editor;
-        let tr = state.tr;
-        state.doc.descendants((node, pos) => {
-          if (node.type.name !== "taskPill") {
-            return;
-          }
-          const id = String(node.attrs.taskId ?? "");
-          const task = byId.get(id);
-          if (!task) {
-            return;
-          }
-          const next = {
-            ...node.attrs,
-            title: task.title,
-            state: task.state,
-            dueDate: task.due_date,
-            priority: priorityOf(task),
-          };
-          if (
-            next.title !== node.attrs.title ||
-            next.state !== node.attrs.state ||
-            next.dueDate !== node.attrs.dueDate ||
-            next.priority !== node.attrs.priority
-          ) {
-            tr = tr.setNodeMarkup(pos, undefined, next);
-          }
-        });
-        if (tr.docChanged) {
-          view.dispatch(tr);
-        }
-      })
-      .catch((err: unknown) => {
-        reportTaskError(options, err);
-      });
+    clearLeadingTaskPillSelection(this.editor);
+    hydrateTaskPills(this.editor, this.options);
+  },
+
+  onDestroy() {
+    unsubscribeByEditor.get(this.editor)?.();
+    unsubscribeByEditor.delete(this.editor);
   },
 });
 
@@ -677,73 +695,28 @@ function wireTaskPillHandlers(options: TaskPillOptions, editor: Editor): void {
     );
   };
   bag.onSetState = (id, state) => {
-    const node = findTaskNode(editor, id);
-    if (!node || !options.updateTask) {
+    if (!findTaskNode(editor, id) || !options.updateTask) {
       return;
     }
-    const dueDate =
-      typeof node.attrs.dueDate === "string" ? node.attrs.dueDate : null;
-    const priority = parsePriority(node.attrs.priority);
-    void options
-      .updateTask({
-        id,
-        title: String(node.attrs.title ?? ""),
-        state,
-        due_date: dueDate,
-        priority,
-      })
-      .catch((err: unknown) => {
-        reportTaskError(options, err);
-      });
+    void options.updateTask({ id, state }).catch((err: unknown) => {
+      reportTaskError(options, err);
+    });
   };
   bag.onTitleCommit = (id, title) => {
-    const node = findTaskNode(editor, id);
-    if (!node || !options.updateTask) {
+    if (!findTaskNode(editor, id) || !options.updateTask) {
       return;
     }
-    const dueDate =
-      typeof node.attrs.dueDate === "string" ? node.attrs.dueDate : null;
-    const priority = parsePriority(node.attrs.priority);
-    void options
-      .updateTask({
-        id,
-        title,
-        state: parseState(String(node.attrs.state ?? "open")),
-        due_date: dueDate,
-        priority,
-      })
-      .catch((err: unknown) => {
-        reportTaskError(options, err);
-      });
+    void options.updateTask({ id, title }).catch((err: unknown) => {
+      reportTaskError(options, err);
+    });
   };
   bag.onMetaUpdate = (id, patch) => {
-    const node = findTaskNode(editor, id);
-    if (!node || !options.updateTask) {
+    if (!findTaskNode(editor, id) || !options.updateTask) {
       return;
     }
-    // Prefer patch values — node attrs can still be pre-optimistic after await.
-    const dueDate =
-      patch.due_date !== undefined
-        ? patch.due_date
-        : typeof node.attrs.dueDate === "string"
-          ? node.attrs.dueDate
-          : null;
-    const priority =
-      patch.priority !== undefined
-        ? patch.priority
-        : parsePriority(node.attrs.priority);
-    const state = patch.state ?? parseState(String(node.attrs.state ?? "open"));
-    void options
-      .updateTask({
-        id,
-        title: String(node.attrs.title ?? ""),
-        state,
-        due_date: dueDate,
-        priority,
-      })
-      .catch((err: unknown) => {
-        reportTaskError(options, err);
-      });
+    void options.updateTask({ id, ...patch }).catch((err: unknown) => {
+      reportTaskError(options, err);
+    });
   };
 }
 

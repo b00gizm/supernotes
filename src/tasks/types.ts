@@ -28,8 +28,8 @@ export type CreateTaskInput = {
 
 export type UpdateTaskInput = {
   id: string;
-  title: string;
-  state: TaskState;
+  title?: string;
+  state?: TaskState;
   due_date?: string | null;
   priority?: TaskPriority | null;
 };

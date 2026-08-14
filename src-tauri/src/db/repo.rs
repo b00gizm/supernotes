@@ -489,18 +489,30 @@ impl<'a> Repository<'a> {
     pub fn update_task(
         &self,
         id: &str,
-        title: &str,
-        state: TaskState,
-        due_date: Option<&str>,
-        priority: Option<TaskPriority>,
+        title: Option<&str>,
+        state: Option<TaskState>,
+        due_date: Option<Option<&str>>,
+        priority: Option<Option<TaskPriority>>,
     ) -> DbResult<Task> {
         let existing = self.get_task(id)?;
         let updated_at = utc_now(self.conn)?;
+        let title = title.unwrap_or(&existing.title);
+        let next_state = state.unwrap_or(existing.state);
+        let due_date = match due_date {
+            Some(value) => value,
+            None => existing.due_date.as_deref(),
+        };
+        let priority = match priority {
+            Some(value) => value,
+            None => existing.priority,
+        };
+        // Only recompute completed_at when state is part of the patch.
         let completed_at = match state {
-            TaskState::Done | TaskState::Cancelled => {
+            None => existing.completed_at.clone(),
+            Some(TaskState::Done | TaskState::Cancelled) => {
                 existing.completed_at.or_else(|| Some(updated_at.clone()))
             }
-            TaskState::Open | TaskState::Waiting => None,
+            Some(TaskState::Open | TaskState::Waiting) => None,
         };
 
         let changed = self.conn.execute(
@@ -510,7 +522,7 @@ impl<'a> Repository<'a> {
              WHERE id = ?7",
             params![
                 title,
-                state.as_str(),
+                next_state.as_str(),
                 due_date,
                 priority.map(TaskPriority::as_str),
                 updated_at,
@@ -1134,14 +1146,16 @@ mod tests {
             let done = repo
                 .update_task(
                     &created.id,
-                    "Buy milk",
-                    TaskState::Done,
-                    Some("2026-08-11"),
-                    Some(TaskPriority::High),
+                    None,
+                    Some(TaskState::Done),
+                    None,
+                    None,
                 )
                 .unwrap();
             assert_eq!(done.state, TaskState::Done);
             assert!(done.completed_at.is_some());
+            assert_eq!(done.due_date.as_deref(), Some("2026-08-11"));
+            assert_eq!(done.priority, Some(TaskPriority::High));
 
             assert_eq!(repo.list_tasks_for_note(&note.id).unwrap().len(), 1);
             repo.delete_task(&created.id).unwrap();

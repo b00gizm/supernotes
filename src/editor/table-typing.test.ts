@@ -180,6 +180,13 @@ describe("markdown table fixup", () => {
     expect(md(editor)).not.toContain("[hardBreak]");
   });
 
+  it("parses <br> in cells as a hardBreak (ENG-129)", () => {
+    editor = create("| A | B |\n| --- | --- |\n| a<br>b | 2 |");
+    expect(hasHardBreak(editor)).toBe(true);
+    expect(md(editor)).toContain("a<br>b");
+    expect(md(editor)).not.toContain("[hardBreak]");
+  });
+
   it("keeps hard breaks when column counts mismatch (ENG-95)", () => {
     const lines = MISMATCH.split("\n");
     editor = create({

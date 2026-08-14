@@ -342,6 +342,73 @@ describe("task pill (ENG-61)", () => {
     });
   });
 
+  it("recreates a task when a pill is cut from one editor and pasted in another (ENG-128)", async () => {
+    const seed: Task[] = [
+      {
+        id: "t-cut",
+        note_id: "note-a",
+        title: "Buy milk",
+        state: "open",
+        due_date: "2026-08-21",
+        priority: "high",
+        created_at: "2026-08-12T00:00:00.000Z",
+        updated_at: "2026-08-12T00:00:00.000Z",
+        completed_at: null,
+      },
+    ];
+    const source = create({
+      noteId: "note-a",
+      seed,
+      content: "[[task:t-cut]] Buy milk",
+    });
+    expect(source.editor.getHTML()).toContain("t-cut");
+    await vi.waitFor(() => {
+      let due: unknown;
+      source.editor.state.doc.descendants((node) => {
+        if (node.type.name === "taskPill") {
+          due = node.attrs.dueDate;
+        }
+      });
+      expect(due).toBe("2026-08-21");
+    });
+
+    source.editor.commands.selectAll();
+    source.editor.commands.deleteSelection();
+    await vi.waitFor(async () => {
+      const listed = await source.tasksApi.listTasksForNote("note-a");
+      expect(listed).toHaveLength(0);
+    });
+
+    const sourceEl = source.editor.options.element;
+    source.editor.destroy();
+    if (sourceEl instanceof HTMLElement) {
+      sourceEl.remove();
+    }
+
+    const dest = create({
+      noteId: "note-b",
+      tasks: source.tasksApi,
+      content: "",
+    });
+    dest.editor.commands.insertContent({
+      type: "taskPill",
+      attrs: {
+        taskId: "t-cut",
+        title: "Buy milk",
+        state: "open",
+        dueDate: "2026-08-21",
+        priority: "high",
+      },
+    });
+
+    await vi.waitFor(async () => {
+      const listed = await dest.tasksApi.listTasksForNote("note-b");
+      expect(listed.length).toBeGreaterThanOrEqual(1);
+      expect(listed.some((task) => task.title === "Buy milk")).toBe(true);
+      expect(listed.some((task) => task.due_date === "2026-08-21")).toBe(true);
+    });
+  });
+
   it("blurring an empty title deletes the pill", async () => {
     const user = userEvent.setup();
     render(
@@ -408,6 +475,122 @@ describe("task pill (ENG-61)", () => {
       const el = textbox.querySelector(".task-pill");
       expect(el).toBeInstanceOf(HTMLElement);
       expect(el).not.toHaveClass("is-selected");
+    });
+  });
+
+  it("onSetState sends only id+state so stale dueDate attrs cannot clobber (ENG-127)", async () => {
+    const seed: Task[] = [
+      {
+        id: "t-stale",
+        note_id: "note-1",
+        title: "Has due",
+        state: "open",
+        due_date: "2026-08-20",
+        priority: "high",
+        created_at: "2026-08-12T00:00:00.000Z",
+        updated_at: "2026-08-12T00:00:00.000Z",
+        completed_at: null,
+      },
+    ];
+    const tasksApi = createMemoryTasksApi(seed);
+    const spy = vi.spyOn(tasksApi, "updateTask");
+    const { editor: ed } = create({
+      tasks: tasksApi,
+      content: "[[task:t-stale]] Has due",
+    });
+
+    const setState = taskPillHandlers(ed).onSetState;
+    expect(setState).toBeTypeOf("function");
+    setState?.("t-stale", "done");
+
+    expect(spy).toHaveBeenCalledWith({ id: "t-stale", state: "done" });
+    expect(spy.mock.calls[0]?.[0]).not.toHaveProperty("due_date");
+    expect(spy.mock.calls[0]?.[0]).not.toHaveProperty("title");
+    expect(spy.mock.calls[0]?.[0]).not.toHaveProperty("priority");
+
+    await vi.waitFor(async () => {
+      const task = await tasksApi.getTask("t-stale");
+      expect(task.state).toBe("done");
+      expect(task.due_date).toBe("2026-08-20");
+      expect(task.priority).toBe("high");
+      expect(task.title).toBe("Has due");
+    });
+  });
+
+  it("onTitleCommit sends only id+title so stale state cannot reopen (ENG-127)", async () => {
+    const seed: Task[] = [
+      {
+        id: "t-done",
+        note_id: "note-1",
+        title: "Old title",
+        state: "done",
+        due_date: "2026-08-20",
+        priority: "low",
+        created_at: "2026-08-12T00:00:00.000Z",
+        updated_at: "2026-08-12T00:00:00.000Z",
+        completed_at: "2026-08-12T01:00:00.000Z",
+      },
+    ];
+    const tasksApi = createMemoryTasksApi(seed);
+    const spy = vi.spyOn(tasksApi, "updateTask");
+    const { editor: ed } = create({
+      tasks: tasksApi,
+      content: "[[task:t-done]] Old title",
+    });
+
+    const commit = taskPillHandlers(ed).onTitleCommit;
+    expect(commit).toBeTypeOf("function");
+    commit?.("t-done", "New title");
+
+    expect(spy).toHaveBeenCalledWith({ id: "t-done", title: "New title" });
+    expect(spy.mock.calls[0]?.[0]).not.toHaveProperty("state");
+    expect(spy.mock.calls[0]?.[0]).not.toHaveProperty("due_date");
+
+    await vi.waitFor(async () => {
+      const task = await tasksApi.getTask("t-done");
+      expect(task.title).toBe("New title");
+      expect(task.state).toBe("done");
+      expect(task.completed_at).toBe("2026-08-12T01:00:00.000Z");
+      expect(task.due_date).toBe("2026-08-20");
+    });
+  });
+
+  it("rehydrates pill attrs on tasks-changed (ENG-127)", async () => {
+    const seed: Task[] = [
+      {
+        id: "t-hyd",
+        note_id: "note-1",
+        title: "Hydrate me",
+        state: "open",
+        due_date: null,
+        priority: null,
+        created_at: "2026-08-12T00:00:00.000Z",
+        updated_at: "2026-08-12T00:00:00.000Z",
+        completed_at: null,
+      },
+    ];
+    const { editor: ed, tasksApi } = create({
+      seed,
+      content: "[[task:t-hyd]] Hydrate me",
+    });
+
+    await tasksApi.updateTask({
+      id: "t-hyd",
+      due_date: "2026-08-20",
+      priority: "urgent",
+    });
+
+    await vi.waitFor(() => {
+      let dueDate: unknown;
+      let priority: unknown;
+      ed.state.doc.descendants((node) => {
+        if (node.type.name === "taskPill" && node.attrs.taskId === "t-hyd") {
+          dueDate = node.attrs.dueDate;
+          priority = node.attrs.priority;
+        }
+      });
+      expect(dueDate).toBe("2026-08-20");
+      expect(priority).toBe("urgent");
     });
   });
 });

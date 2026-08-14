@@ -74,13 +74,15 @@ export function createMemoryTasksApi(seed: Task[] = []): TasksApi {
       }
       const now = stamp();
       const completed_at =
-        input.state === "done" || input.state === "cancelled"
-          ? (current.completed_at ?? now)
-          : null;
+        input.state === undefined
+          ? current.completed_at
+          : input.state === "done" || input.state === "cancelled"
+            ? (current.completed_at ?? now)
+            : null;
       const updated: Task = {
         ...current,
-        title: input.title,
-        state: input.state,
+        title: input.title ?? current.title,
+        state: input.state ?? current.state,
         due_date:
           input.due_date === undefined ? current.due_date : input.due_date,
         priority:
