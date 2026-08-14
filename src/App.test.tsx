@@ -1000,6 +1000,64 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("hides same-note due tasks from the daily Due section (ENG-144)", async () => {
+    const today = formatDailyTitle();
+    const stamp = "2026-08-10T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily",
+        title: today,
+        body_markdown: "[[task:t-standup]] Prep standup",
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+      {
+        id: "src",
+        title: "Project plan",
+        body_markdown: "[[task:t-other]] Ship pricing",
+        note_type: "regular",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    tasksApiRef.current = createMemoryTasksApi([
+      {
+        id: "t-standup",
+        note_id: "daily",
+        title: "Prep standup",
+        state: "open",
+        due_date: today,
+        priority: null,
+        created_at: stamp,
+        updated_at: stamp,
+        completed_at: null,
+      },
+      {
+        id: "t-other",
+        note_id: "src",
+        title: "Ship pricing",
+        state: "open",
+        due_date: today,
+        priority: null,
+        created_at: stamp,
+        updated_at: stamp,
+        completed_at: null,
+      },
+    ]);
+
+    render(<App />);
+    const due = await screen.findByRole("region", { name: "Due" });
+    expect(
+      within(due).getByRole("button", { name: "Ship pricing" }),
+    ).toBeInTheDocument();
+    expect(
+      within(due).queryByRole("button", { name: "Prep standup" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("links Due rows to the source note and omits the section on regular notes", async () => {
     const user = userEvent.setup();
     const today = formatDailyTitle();
