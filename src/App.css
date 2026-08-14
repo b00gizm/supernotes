@@ -727,6 +727,10 @@ button {
   padding: var(--space-3) var(--space-4);
 }
 
+.tasks-group.is-unscheduled + .tasks-group {
+  border-top: 0;
+}
+
 .tasks-group-label {
   display: inline-flex;
   align-items: baseline;
