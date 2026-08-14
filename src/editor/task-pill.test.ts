@@ -427,15 +427,17 @@ describe("task pill (ENG-61)", () => {
       expect(document.activeElement).toBe(el);
       return el as HTMLInputElement;
     });
-    await user.keyboard("[[Foo]]{Enter}");
+    // user-event: `{[}` types a literal `[` (`[[` collapses to one `[`).
+    await user.keyboard("{[}{[}Foo{]}{]}");
+    input.blur();
     await waitFor(async () => {
+      expect(input).toHaveValue("Foo");
       const listed = await browserTasksApi.listTasksForNote(
         "note-wikilink-title",
       );
       expect(listed.some((task) => task.title === "Foo")).toBe(true);
       expect(listed.every((task) => !task.title.includes("[["))).toBe(true);
     });
-    expect(input).toHaveValue("Foo");
   });
 
   it("blurring an empty title deletes the pill", async () => {
