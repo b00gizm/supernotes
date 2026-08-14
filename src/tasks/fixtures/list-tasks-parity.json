@@ -1,0 +1,99 @@
+{
+  "today": "2026-08-12",
+  "tasks": [
+    {
+      "id": "inbox",
+      "note_id": "n1",
+      "title": "No due",
+      "state": "open",
+      "due_date": null,
+      "priority": null,
+      "created_at": "2026-08-11T10:00:00.000Z",
+      "updated_at": "2026-08-11T10:00:00.000Z",
+      "completed_at": null
+    },
+    {
+      "id": "waiting",
+      "note_id": "n1",
+      "title": "Wait",
+      "state": "waiting",
+      "due_date": null,
+      "priority": null,
+      "created_at": "2026-08-12T10:00:00.000Z",
+      "updated_at": "2026-08-12T10:00:00.000Z",
+      "completed_at": null
+    },
+    {
+      "id": "up1",
+      "note_id": "n1",
+      "title": "Soon urgent",
+      "state": "open",
+      "due_date": "2026-08-15",
+      "priority": "urgent",
+      "created_at": "2026-08-10T10:00:00.000Z",
+      "updated_at": "2026-08-10T10:00:00.000Z",
+      "completed_at": null
+    },
+    {
+      "id": "up2",
+      "note_id": "n1",
+      "title": "Soon high",
+      "state": "waiting",
+      "due_date": "2026-08-15",
+      "priority": "high",
+      "created_at": "2026-08-10T10:00:00.000Z",
+      "updated_at": "2026-08-10T10:00:00.000Z",
+      "completed_at": null
+    },
+    {
+      "id": "up3",
+      "note_id": "n1",
+      "title": "Later",
+      "state": "open",
+      "due_date": "2026-08-20",
+      "priority": "low",
+      "created_at": "2026-08-10T10:00:00.000Z",
+      "updated_at": "2026-08-10T10:00:00.000Z",
+      "completed_at": null
+    },
+    {
+      "id": "done",
+      "note_id": "n1",
+      "title": "Done",
+      "state": "done",
+      "due_date": null,
+      "priority": null,
+      "created_at": "2026-08-10T10:00:00.000Z",
+      "updated_at": "2026-08-10T10:00:00.000Z",
+      "completed_at": "2026-08-10T12:00:00.000Z"
+    },
+    {
+      "id": "old",
+      "note_id": "n1",
+      "title": "Old",
+      "state": "cancelled",
+      "due_date": null,
+      "priority": null,
+      "created_at": "2026-08-10T10:00:00.000Z",
+      "updated_at": "2026-08-10T10:00:00.000Z",
+      "completed_at": "2026-07-01T12:00:00.000Z"
+    }
+  ],
+  "cases": [
+    {
+      "name": "inbox open/waiting undated newest first",
+      "filter": "inbox",
+      "ids": ["waiting", "inbox"]
+    },
+    {
+      "name": "upcoming dated open/waiting by due then priority",
+      "filter": "upcoming",
+      "ids": ["up1", "up2", "up3"]
+    },
+    {
+      "name": "complete 14-day window newest completed first",
+      "filter": "complete",
+      "ids": ["done"]
+    }
+  ]
+}

@@ -1188,101 +1188,56 @@ mod tests {
     }
 
     #[test]
-    fn list_tasks_filters_inbox_upcoming_complete() {
+    fn list_tasks_parity_fixture_matches_ts() {
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            today: String,
+            tasks: Vec<Task>,
+            cases: Vec<Case>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Case {
+            name: String,
+            filter: TaskListFilter,
+            ids: Vec<String>,
+        }
+        let fixture: Fixture = serde_json::from_str(include_str!(
+            "../../../src/tasks/fixtures/list-tasks-parity.json"
+        ))
+        .expect("parity fixture");
+
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         let repo = Repository::new(&conn);
         let note = repo
             .create_note("Tasks", "", NoteType::Regular, false)
             .unwrap();
-        let inbox = repo
-            .create_task(&note.id, "Inbox item", TaskState::Open, None, None)
-            .unwrap();
-        let waiting_no_due = repo
-            .create_task(
-                &note.id,
-                "Waiting undated",
-                TaskState::Waiting,
-                None,
-                None,
+        for task in &fixture.tasks {
+            conn.execute(
+                "INSERT INTO tasks (
+                    id, note_id, title, state, due_date, priority,
+                    created_at, updated_at, completed_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    task.id,
+                    note.id,
+                    task.title,
+                    task.state.as_str(),
+                    task.due_date,
+                    task.priority.map(TaskPriority::as_str),
+                    task.created_at,
+                    task.updated_at,
+                    task.completed_at,
+                ],
             )
             .unwrap();
-        let upcoming_low = repo
-            .create_task(
-                &note.id,
-                "Later",
-                TaskState::Open,
-                Some("2026-08-20"),
-                Some(TaskPriority::Low),
-            )
-            .unwrap();
-        let upcoming_high = repo
-            .create_task(
-                &note.id,
-                "Soon high",
-                TaskState::Waiting,
-                Some("2026-08-15"),
-                Some(TaskPriority::High),
-            )
-            .unwrap();
-        let upcoming_same_day = repo
-            .create_task(
-                &note.id,
-                "Soon urgent",
-                TaskState::Open,
-                Some("2026-08-15"),
-                Some(TaskPriority::Urgent),
-            )
-            .unwrap();
-        let done_recent = repo
-            .create_task(
-                &note.id,
-                "Finished",
-                TaskState::Done,
-                Some("2026-08-01"),
-                None,
-            )
-            .unwrap();
-        let cancelled_old = repo
-            .create_task(&note.id, "Ancient", TaskState::Cancelled, None, None)
-            .unwrap();
-        // Pin inbox created_at so ORDER BY created_at DESC is stable when
-        // two utc_now() calls land in the same millisecond (CI).
-        conn.execute(
-            "UPDATE tasks SET created_at = '2026-08-11T10:00:00.000Z' WHERE id = ?1",
-            [&inbox.id],
-        )
-        .unwrap();
-        conn.execute(
-            "UPDATE tasks SET created_at = '2026-08-12T10:00:00.000Z' WHERE id = ?1",
-            [&waiting_no_due.id],
-        )
-        .unwrap();
-        // Force completed_at outside the 14-day window.
-        conn.execute(
-            "UPDATE tasks SET completed_at = '2026-07-01T12:00:00.000Z' WHERE id = ?1",
-            [&cancelled_old.id],
-        )
-        .unwrap();
+        }
 
-        let inbox_list = repo.list_tasks(TaskListFilter::Inbox, "2026-08-12").unwrap();
-        assert_eq!(inbox_list.len(), 2);
-        assert_eq!(inbox_list[0].id, waiting_no_due.id);
-        assert_eq!(inbox_list[1].id, inbox.id);
-
-        let upcoming = repo
-            .list_tasks(TaskListFilter::Upcoming, "2026-08-12")
-            .unwrap();
-        assert_eq!(upcoming.len(), 3);
-        assert_eq!(upcoming[0].id, upcoming_same_day.id);
-        assert_eq!(upcoming[1].id, upcoming_high.id);
-        assert_eq!(upcoming[2].id, upcoming_low.id);
-
-        let complete = repo
-            .list_tasks(TaskListFilter::Complete, "2026-08-12")
-            .unwrap();
-        assert_eq!(complete.len(), 1);
-        assert_eq!(complete[0].id, done_recent.id);
+        for case in fixture.cases {
+            let listed = repo.list_tasks(case.filter, &fixture.today).unwrap();
+            let ids: Vec<String> = listed.iter().map(|task| task.id.clone()).collect();
+            assert_eq!(ids, case.ids, "{}", case.name);
+        }
     }
 
     #[test]
