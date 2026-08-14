@@ -57,6 +57,7 @@ export function TaskRow({
   note,
   today,
   showDue,
+  chipDate,
   onToggle,
   onOpen,
   onMeta,
@@ -65,6 +66,7 @@ export function TaskRow({
   note: Note | undefined;
   today: string;
   showDue: boolean;
+  chipDate?: string | undefined;
   onToggle: () => void;
   onOpen: () => void;
   onMeta: (event: ReactMouseEvent) => void;
@@ -73,6 +75,7 @@ export function TaskRow({
   const dot = priorityDotClass(task.priority);
   const terminal = task.state === "done" || task.state === "cancelled";
   const missingNote = !note;
+  const chip = showDue && task.due_date ? task.due_date : (chipDate ?? null);
 
   return (
     <div className={`tasks-row${terminal ? " is-terminal" : ""}`}>
@@ -94,9 +97,9 @@ export function TaskRow({
         <span className="tasks-row-title">
           {task.title.trim() || "Untitled task"}
         </span>
-        {showDue && task.due_date ? (
+        {chip ? (
           <span className={`tasks-due-chip${overdue ? " is-overdue" : ""}`}>
-            {formatShortDue(task.due_date)}
+            {formatShortDue(chip)}
           </span>
         ) : null}
         {dot ? (

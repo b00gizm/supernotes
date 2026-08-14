@@ -3,6 +3,7 @@ import {
   filterTasks,
   groupUpcomingTasks,
   isTaskOverdue,
+  partitionInboxTasks,
   priorityRank,
   tasksDueOnOrBefore,
 } from "./query";
@@ -104,11 +105,17 @@ describe("task query helpers (ENG-63)", () => {
       "waiting",
       "inbox",
     ]);
+    const inboxRows = filterTasks(tasks, "inbox", "2026-08-12");
     expect(
-      filterTasks(tasks, "inbox", "2026-08-12", new Set(["waiting"])).map(
+      partitionInboxTasks(inboxRows, new Set(["waiting"])).unscheduled.map(
         (t) => t.id,
       ),
     ).toEqual(["inbox"]);
+    expect(
+      partitionInboxTasks(inboxRows, new Set(["waiting"])).scheduled.map(
+        (t) => t.id,
+      ),
+    ).toEqual(["waiting"]);
     expect(
       filterTasks(tasks, "upcoming", "2026-08-12").map((t) => t.id),
     ).toEqual(["up1", "up2", "up3"]);

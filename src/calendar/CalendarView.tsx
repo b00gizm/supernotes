@@ -270,8 +270,8 @@ export function CalendarView({
 
   const loadEvents = useCallback(async () => {
     try {
-      // ponytail: unbounded list so extras merged for chips stay out of the
-      // sidebar. `list_tasks(inbox)` also uses NOT EXISTS.
+      // ponytail: unbounded list just to hide scheduled inbox rows. Upgrade:
+      // `NOT EXISTS (SELECT 1 FROM calendar_events WHERE task_id = tasks.id)`.
       const [listed, all] = await Promise.all([
         calendarApi.listEvents(range.from, range.to),
         calendarApi.listEvents(),

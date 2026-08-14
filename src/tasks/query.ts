@@ -289,22 +289,37 @@ export function groupUpcomingTasks(
   return groups;
 }
 
+/** Split Inbox rows: unscheduled capture vs time-blocked on the calendar. */
+export function partitionInboxTasks(
+  tasks: Task[],
+  scheduledIds: ReadonlySet<string>,
+): { unscheduled: Task[]; scheduled: Task[] } {
+  const unscheduled: Task[] = [];
+  const scheduled: Task[] = [];
+  for (const task of tasks) {
+    if (scheduledIds.has(task.id)) {
+      scheduled.push(task);
+    } else {
+      unscheduled.push(task);
+    }
+  }
+  return { unscheduled, scheduled };
+}
+
 /** Mirror of backend `list_tasks` filters (memory API / unit checks). */
 export function filterTasks(
   tasks: Task[],
   filter: TaskListFilter,
   today: string,
-  scheduledIds: ReadonlySet<string> = new Set(),
 ): Task[] {
   if (filter === "inbox") {
     // ENG-117: undated Waiting has no other home; Inbox is all undated
-    // non-terminal. Time-blocked tasks live on the calendar until unlinked.
+    // non-terminal. Time-blocked rows stay here under Scheduled.
     return tasks
       .filter(
         (task) =>
           (task.state === "open" || task.state === "waiting") &&
-          task.due_date == null &&
-          !scheduledIds.has(task.id),
+          task.due_date == null,
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   }

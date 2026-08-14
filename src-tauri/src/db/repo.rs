@@ -450,9 +450,6 @@ impl<'a> Repository<'a> {
                 "SELECT id, note_id, title, state, due_date, priority, created_at, updated_at, completed_at
                  FROM tasks
                  WHERE state IN ('open', 'waiting') AND due_date IS NULL
-                   AND NOT EXISTS (
-                     SELECT 1 FROM calendar_events WHERE task_id = tasks.id
-                   )
                  ORDER BY created_at DESC"
                     .to_string(),
                 vec![],
@@ -1248,39 +1245,6 @@ mod tests {
             .unwrap();
         assert_eq!(complete.len(), 1);
         assert_eq!(complete[0].id, done_recent.id);
-    }
-
-    #[test]
-    fn list_tasks_inbox_excludes_time_blocked_tasks() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
-        let repo = Repository::new(&conn);
-        let note = repo
-            .create_note("Tasks", "", NoteType::Regular, false)
-            .unwrap();
-        let inbox = repo
-            .create_task(&note.id, "Inbox item", TaskState::Open, None, None)
-            .unwrap();
-        let blocked = repo
-            .create_task(&note.id, "Time blocked", TaskState::Open, None, None)
-            .unwrap();
-        let event = repo
-            .create_calendar_event(
-                "Time blocked",
-                "2026-08-10T09:00:00.000Z",
-                "2026-08-10T09:15:00.000Z",
-                Some(&blocked.id),
-            )
-            .unwrap();
-
-        let listed = repo.list_tasks(TaskListFilter::Inbox, "2026-08-12").unwrap();
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].id, inbox.id);
-
-        repo.delete_calendar_event(&event.id).unwrap();
-        let restored = repo.list_tasks(TaskListFilter::Inbox, "2026-08-12").unwrap();
-        assert_eq!(restored.len(), 2);
-        assert!(restored.iter().any(|task| task.id == blocked.id));
     }
 
     #[test]

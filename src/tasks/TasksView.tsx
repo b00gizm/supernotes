@@ -8,12 +8,12 @@ import {
   type ReactNode,
 } from "react";
 import { calendarApi, subscribeCalendarChanged } from "../calendar/api";
-import { scheduledTaskIds } from "../calendar/taskDrag";
+import { earliestScheduledOn, scheduledTaskIds } from "../calendar/taskDrag";
 import { formatDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { tasksApi } from "./api";
 import { subscribeTasksChanged } from "./events";
-import { filterTasks, groupUpcomingTasks } from "./query";
+import { filterTasks, groupUpcomingTasks, partitionInboxTasks } from "./query";
 import { TaskMetaPopover, type TaskMetaPatch } from "./TaskMetaPopover";
 import { TaskRow } from "./TaskRow";
 import type { Task, TaskListFilter, TaskState } from "./types";
@@ -50,6 +50,10 @@ export function TasksView({
   const today = todayProp ?? formatDailyTitle();
   const [filter, setFilter] = useState<TaskListFilter>("inbox");
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [scheduledTasks, setScheduledTasks] = useState<Task[]>([]);
+  const [scheduledOn, setScheduledOn] = useState<Map<string, string>>(
+    () => new Map(),
+  );
   const [scheduledIds, setScheduledIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -65,17 +69,20 @@ export function TasksView({
       try {
         const [listed, events] = await Promise.all([
           tasksApi.listTasks(filter, today),
-          // ponytail: unbounded list to hide time-blocked inbox rows in the
-          // browser mock. Tauri `list_tasks(inbox)` already uses NOT EXISTS.
           calendarApi.listEvents(),
         ]);
         const scheduled = scheduledTaskIds(events);
+        const on = earliestScheduledOn(events);
         setScheduledIds(scheduled);
-        setTasks(
-          filter === "inbox"
-            ? listed.filter((task) => !scheduled.has(task.id))
-            : listed,
-        );
+        setScheduledOn(on);
+        if (filter === "inbox") {
+          const split = partitionInboxTasks(listed, scheduled);
+          setTasks(split.unscheduled);
+          setScheduledTasks(split.scheduled);
+        } else {
+          setTasks(listed);
+          setScheduledTasks([]);
+        }
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load tasks");
@@ -102,7 +109,9 @@ export function TasksView({
     [filter, tasks, today],
   );
   const popoverTask = popover
-    ? (tasks.find((task) => task.id === popover.taskId) ?? null)
+    ? (tasks.find((item) => item.id === popover.taskId) ??
+      scheduledTasks.find((item) => item.id === popover.taskId) ??
+      null)
     : null;
 
   const applyUpdate = async (
@@ -122,8 +131,18 @@ export function TasksView({
           prev.map((item) => (item.id === updated.id ? updated : item)),
           filter,
           today,
-          scheduledIds,
         ),
+      );
+      setScheduledTasks(
+        (blocked) =>
+          partitionInboxTasks(
+            filterTasks(
+              blocked.map((item) => (item.id === updated.id ? updated : item)),
+              "inbox",
+              today,
+            ),
+            scheduledIds,
+          ).scheduled,
       );
       setError(null);
       return true;
@@ -148,7 +167,11 @@ export function TasksView({
     });
   };
 
-  const renderRow = (task: Task, showDue: boolean): ReactNode => {
+  const renderRow = (
+    task: Task,
+    showDue: boolean,
+    chipDate?: string,
+  ): ReactNode => {
     const note = noteById.get(task.note_id);
     return (
       <li key={task.id}>
@@ -157,6 +180,7 @@ export function TasksView({
           note={note}
           today={today}
           showDue={showDue}
+          chipDate={chipDate}
           onToggle={() => {
             toggleDone(task);
           }}
@@ -174,17 +198,23 @@ export function TasksView({
     );
   };
 
+  const inboxEmpty = tasks.length === 0 && scheduledTasks.length === 0;
+
   let body: ReactNode;
   if (loading) {
     body = <p className="muted">Loading…</p>;
-  } else if (tasks.length === 0) {
+  } else if (filter === "inbox" && inboxEmpty) {
     body = (
       <p className="muted">
-        {filter === "inbox"
-          ? "Inbox is empty. Type [] at the start of a line in a note."
-          : filter === "upcoming"
-            ? "No upcoming tasks."
-            : "No completed tasks in the last 14 days."}
+        Inbox is empty. Type [] at the start of a line in a note.
+      </p>
+    );
+  } else if (tasks.length === 0 && filter !== "inbox") {
+    body = (
+      <p className="muted">
+        {filter === "upcoming"
+          ? "No upcoming tasks."
+          : "No completed tasks in the last 14 days."}
       </p>
     );
   } else if (filter === "upcoming") {
@@ -211,6 +241,28 @@ export function TasksView({
             </ul>
           </section>
         ))}
+      </div>
+    );
+  } else if (filter === "inbox" && scheduledTasks.length > 0) {
+    body = (
+      <div className="tasks-groups">
+        {tasks.length > 0 ? (
+          <section className="tasks-group is-default" aria-label="Inbox">
+            <ul className="tasks-list">
+              {tasks.map((task) => renderRow(task, false))}
+            </ul>
+          </section>
+        ) : null}
+        <section className="tasks-group is-default" aria-label="Scheduled">
+          <h2 className="tasks-group-label">
+            <span>Scheduled</span>
+          </h2>
+          <ul className="tasks-list">
+            {scheduledTasks.map((task) =>
+              renderRow(task, false, scheduledOn.get(task.id)),
+            )}
+          </ul>
+        </section>
       </div>
     );
   } else {
@@ -311,7 +363,9 @@ export function TasksView({
           }}
           onUpdate={(patch) => {
             const current =
-              tasks.find((item) => item.id === popoverTask.id) ?? popoverTask;
+              tasks.find((item) => item.id === popoverTask.id) ??
+              scheduledTasks.find((item) => item.id === popoverTask.id) ??
+              popoverTask;
             void applyUpdate(current, patch).then((ok) => {
               if (ok) {
                 void reload(true);

@@ -98,7 +98,7 @@ describe("TasksView inbox vs time-blocking", () => {
     tasksRef.current = createMemoryTasksApi([inbox]);
   });
 
-  it("hides inbox tasks that have a linked calendar event", async () => {
+  it("keeps time-blocked tasks on Inbox under Scheduled", async () => {
     calRef.current = createMemoryCalendarApi([
       {
         id: "block",
@@ -118,14 +118,17 @@ describe("TasksView inbox vs time-blocking", () => {
       />,
     );
     const pane = await screen.findByRole("region", { name: "Tasks" });
-    await waitFor(() => {
-      expect(within(pane).queryByText("Beatport kündigen")).toBeNull();
+    const scheduled = await within(pane).findByRole("region", {
+      name: "Scheduled",
     });
     expect(
-      within(pane).getByText(
+      within(scheduled).getByText("Beatport kündigen"),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).queryByText(
         "Inbox is empty. Type [] at the start of a line in a note.",
       ),
-    ).toBeInTheDocument();
+    ).toBeNull();
   });
 
   it("returns the task to inbox after the linked event is deleted", async () => {
@@ -149,15 +152,18 @@ describe("TasksView inbox vs time-blocking", () => {
       />,
     );
     const pane = await screen.findByRole("region", { name: "Tasks" });
-    await waitFor(() => {
-      expect(within(pane).queryByText("Beatport kündigen")).toBeNull();
-    });
+    expect(
+      await within(pane).findByRole("region", { name: "Scheduled" }),
+    ).toBeInTheDocument();
 
     await calRef.current.deleteEvent("block");
     emitCalendarChanged();
 
-    expect(
-      await within(pane).findByText("Beatport kündigen"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        within(pane).queryByRole("region", { name: "Scheduled" }),
+      ).toBeNull();
+    });
+    expect(within(pane).getByText("Beatport kündigen")).toBeInTheDocument();
   });
 });
