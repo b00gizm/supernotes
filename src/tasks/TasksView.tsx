@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -59,9 +60,11 @@ export function TasksView({
   const [schedules, setSchedules] = useState<Map<string, TaskSchedule>>(
     () => new Map(),
   );
+  const [showCompleted, setShowCompleted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
+  const readyRef = useRef(false);
 
   const reload = useCallback(
     async (quiet = false) => {
@@ -69,25 +72,29 @@ export function TasksView({
         setLoading(true);
       }
       try {
-        const [inbox, upcoming, events] = await Promise.all([
+        const [inbox, upcoming, events, complete] = await Promise.all([
           tasksApi.listTasks("inbox", today),
           tasksApi.listTasks("upcoming", today),
           calendarApi.listEvents(),
+          showCompleted
+            ? tasksApi.listTasks("complete", today)
+            : Promise.resolve([] as Task[]),
         ]);
-        setTasks(mergeById([inbox, upcoming]));
+        setTasks(mergeById([inbox, upcoming, complete]));
         setSchedules(schedulesFromEvents(events));
         setError(null);
+        readyRef.current = true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load tasks");
       } finally {
         setLoading(false);
       }
     },
-    [today],
+    [showCompleted, today],
   );
 
   useEffect(() => {
-    void reload();
+    void reload(readyRef.current);
   }, [reload]);
 
   useEffect(() => subscribeTasksChanged(() => void reload(true)), [reload]);
@@ -121,7 +128,11 @@ export function TasksView({
         const next = prev.map((item) =>
           item.id === updated.id ? updated : item,
         );
-        if (updated.state === "open" || updated.state === "waiting") {
+        if (
+          updated.state === "open" ||
+          updated.state === "waiting" ||
+          showCompleted
+        ) {
           return next;
         }
         return next.filter((item) => item.id !== updated.id);
@@ -221,6 +232,16 @@ export function TasksView({
           <h1 className="pane-title">Tasks</h1>
         </div>
         <div className="tasks-header-actions">
+          <button
+            type="button"
+            className={`tasks-completed-toggle${showCompleted ? " is-active" : ""}`}
+            aria-pressed={showCompleted}
+            onClick={() => {
+              setShowCompleted((on) => !on);
+            }}
+          >
+            Completed
+          </button>
           <button
             type="button"
             className="new-note-button"

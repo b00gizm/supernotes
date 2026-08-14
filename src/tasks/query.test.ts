@@ -185,6 +185,37 @@ describe("task query helpers (ENG-63)", () => {
     expect(groups[2]?.tasks.map((t) => t.id)).toEqual(["undated"]);
   });
 
+  it("keeps completed tasks out of Overdue and sorts them after open rows", () => {
+    const friday = "2026-08-14";
+    const tasks = [
+      task({
+        id: "done-overdue",
+        title: "Finished late",
+        due_date: "2026-08-13",
+        state: "done",
+        completed_at: "2026-08-14T12:00:00.000Z",
+      }),
+      task({ id: "open-today", title: "Still open", due_date: friday }),
+      task({
+        id: "done-today",
+        title: "Wrapped today",
+        due_date: friday,
+        state: "done",
+        completed_at: "2026-08-14T15:00:00.000Z",
+      }),
+    ];
+    const groups = groupUpcomingTasks(tasks, friday);
+    expect(groups.map((g) => g.id)).toEqual([
+      "day-2026-08-13",
+      "day-2026-08-14",
+    ]);
+    expect(groups[0]?.tasks.map((t) => t.id)).toEqual(["done-overdue"]);
+    expect(groups[1]?.tasks.map((t) => t.id)).toEqual([
+      "open-today",
+      "done-today",
+    ]);
+  });
+
   it("rolls unresolved due tasks onto later days and drops terminal ones", () => {
     const tasks = [
       task({ id: "mon", title: "Monday due", due_date: "2026-08-10" }),

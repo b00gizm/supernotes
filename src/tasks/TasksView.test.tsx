@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CalendarApi } from "../calendar/api";
 import { createMemoryCalendarApi } from "../calendar/api";
@@ -207,5 +208,41 @@ describe("TasksView date grouping", () => {
       within(pane).getByRole("region", { name: "Unscheduled" }),
     ).toBeInTheDocument();
     expect(within(pane).getByText("Beatport kündigen")).toBeInTheDocument();
+  });
+
+  it("shows completed tasks only when the Completed toggle is on", async () => {
+    const user = userEvent.setup();
+    tasksRef.current = createMemoryTasksApi([
+      openTask({ id: "t-open", title: "Buy milk" }),
+      openTask({
+        id: "t-done",
+        title: "Wrapped up",
+        state: "done",
+        due_date: TODAY,
+        completed_at: "2026-08-14T12:00:00.000Z",
+      }),
+    ]);
+    render(
+      <TasksView
+        notes={notes}
+        today={TODAY}
+        onOpenTask={vi.fn()}
+        onCreateTask={vi.fn()}
+      />,
+    );
+    const pane = await screen.findByRole("region", { name: "Tasks" });
+    expect(within(pane).getByText("Buy milk")).toBeInTheDocument();
+    expect(within(pane).queryByText("Wrapped up")).toBeNull();
+
+    const toggle = within(pane).getByRole("button", { name: "Completed" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(await within(pane).findByText("Wrapped up")).toBeInTheDocument();
+
+    await user.click(toggle);
+    await waitFor(() => {
+      expect(within(pane).queryByText("Wrapped up")).toBeNull();
+    });
   });
 });

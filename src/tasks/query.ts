@@ -188,11 +188,20 @@ export function schedulesFromEvents(
   return byTask;
 }
 
+function isTerminal(task: Task): boolean {
+  return task.state === "done" || task.state === "cancelled";
+}
+
 function sortOpenTasks(
   tasks: Task[],
   schedules: ReadonlyMap<string, TaskSchedule>,
 ): Task[] {
   return [...tasks].sort((a, b) => {
+    const terminalA = isTerminal(a);
+    const terminalB = isTerminal(b);
+    if (terminalA !== terminalB) {
+      return terminalA ? 1 : -1;
+    }
     const scheduledA = schedules.get(a.id);
     const scheduledB = schedules.get(b.id);
     if (scheduledA && scheduledB) {
@@ -220,6 +229,8 @@ function sortOpenTasks(
  * weeks → Unscheduled (no due, no slot).
  *
  * A time block places the row on that day unless the due date is overdue.
+ * Done/cancelled rows (when passed in) skip Overdue and sit on their slot,
+ * due date, or completed day.
  */
 export function groupUpcomingTasks(
   tasks: Task[],
@@ -237,14 +248,15 @@ export function groupUpcomingTasks(
   const byDay = new Map<string, Task[]>();
 
   for (const task of tasks) {
-    if (task.state === "done" || task.state === "cancelled") {
-      continue;
-    }
-    if (task.due_date && task.due_date < today) {
+    const terminal = isTerminal(task);
+    if (!terminal && task.due_date && task.due_date < today) {
       overdue.push(task);
       continue;
     }
-    const day = schedules.get(task.id)?.day ?? task.due_date;
+    const day =
+      schedules.get(task.id)?.day ??
+      task.due_date ??
+      (terminal ? (task.completed_at?.slice(0, 10) ?? null) : null);
     if (!day) {
       unscheduled.push(task);
       continue;
