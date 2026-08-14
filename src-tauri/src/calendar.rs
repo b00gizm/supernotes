@@ -216,4 +216,44 @@ mod tests {
         assert_eq!(kept.title, "Focus");
         assert_eq!(kept.state, TaskState::Open);
     }
+
+    #[test]
+    fn create_calendar_event_input_omitted_task_id_is_none() {
+        let input: CreateCalendarEventInput = serde_json::from_str(
+            r#"{"title":"Standup","start":"2026-08-10T09:30:00.000Z","end":"2026-08-10T09:45:00.000Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(input.title, "Standup");
+        assert_eq!(input.start, "2026-08-10T09:30:00.000Z");
+        assert_eq!(input.end, "2026-08-10T09:45:00.000Z");
+        assert!(input.task_id.is_none());
+    }
+
+    #[test]
+    fn create_calendar_event_input_keeps_task_id_from_json() {
+        let input: CreateCalendarEventInput = serde_json::from_str(
+            r#"{"title":"Standup","start":"2026-08-10T09:30:00.000Z","end":"2026-08-10T09:45:00.000Z","task_id":"t-1"}"#,
+        )
+        .unwrap();
+        assert_eq!(input.task_id.as_deref(), Some("t-1"));
+    }
+
+    #[test]
+    fn update_calendar_event_input_omitted_vs_json_null_task_id() {
+        let omitted: UpdateCalendarEventInput = serde_json::from_str(
+            r#"{"id":"e1","title":"Standup","start":"2026-08-10T09:30:00.000Z","end":"2026-08-10T09:45:00.000Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(omitted.id, "e1");
+        assert_eq!(omitted.title, "Standup");
+        assert_eq!(omitted.start, "2026-08-10T09:30:00.000Z");
+        assert_eq!(omitted.end, "2026-08-10T09:45:00.000Z");
+        assert!(omitted.task_id.is_none());
+
+        let null_task: UpdateCalendarEventInput = serde_json::from_str(
+            r#"{"id":"e1","title":"Standup","start":"2026-08-10T09:30:00.000Z","end":"2026-08-10T09:45:00.000Z","task_id":null}"#,
+        )
+        .unwrap();
+        assert!(null_task.task_id.is_none());
+    }
 }
