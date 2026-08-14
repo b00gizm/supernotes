@@ -99,6 +99,7 @@ export function TaskRow({
   const dot = priorityDotClass(task.priority);
   const terminal = task.state === "done" || task.state === "cancelled";
   const missingNote = !note;
+  const titleLabel = task.title.trim() || "Untitled task";
 
   return (
     <div className={`tasks-row${terminal ? " is-terminal" : ""}`}>
@@ -113,13 +114,12 @@ export function TaskRow({
       <button
         type="button"
         className="tasks-row-main"
+        aria-label={titleLabel}
         disabled={missingNote}
         onClick={onOpen}
         onContextMenu={onMeta}
       >
-        <span className="tasks-row-title">
-          {task.title.trim() || "Untitled task"}
-        </span>
+        <span className="tasks-row-title">{titleLabel}</span>
         {scheduleLabel ? (
           <span className="tasks-schedule-chip" title="Scheduled">
             <CalendarGlyph />

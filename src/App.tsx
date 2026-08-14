@@ -279,18 +279,20 @@ function SidebarNoteRow({
   selected: boolean;
   onOpen: (note: Note) => void;
 }) {
+  const label = title.trim() || "Untitled";
   return (
     <li>
       <button
         type="button"
         className={selected ? "recent-item is-selected" : "recent-item"}
+        aria-label={label}
         onClick={() => {
           onOpen(note);
         }}
       >
         <span className="recent-title-row">
           {note.note_type === "meeting" ? <IconWaveform /> : null}
-          <span className="recent-title">{title || "Untitled"}</span>
+          <span className="recent-title">{label}</span>
         </span>
         <span className="recent-meta">
           <span className="recent-when">
@@ -854,6 +856,8 @@ function App() {
                 key={item.id}
                 type="button"
                 className={active ? "nav-item is-active" : "nav-item"}
+                aria-label={item.label}
+                title={sidebarCollapsed ? item.label : undefined}
                 aria-current={active ? "page" : undefined}
                 onClick={() => {
                   goNav(item.id);
@@ -926,6 +930,7 @@ function App() {
             type="button"
             className="search-hint"
             aria-label="Search"
+            title={sidebarCollapsed ? "Search" : undefined}
             onClick={() => {
               setSearchOpen(true);
             }}
