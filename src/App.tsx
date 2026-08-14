@@ -1191,6 +1191,7 @@ function App() {
             {selectedId && surface.kind === "daily" ? (
               <DueSection
                 date={dailyDate}
+                noteId={selectedId}
                 notes={notes}
                 onOpenTask={openTaskSource}
               />

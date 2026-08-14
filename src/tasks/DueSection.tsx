@@ -16,6 +16,8 @@ import type { Task, TaskState } from "./types";
 export type DueSectionProps = {
   /** Daily note calendar day (`YYYY-MM-DD`). */
   date: string;
+  /** Open daily note — same-note tasks stay in the body, not Due (ENG-144). */
+  noteId: string;
   notes: Note[];
   onOpenTask: (task: Task, note: Note) => void;
 };
@@ -26,11 +28,26 @@ type PopoverState = {
   y: number;
 };
 
+function dueExcludingNote(
+  listed: Task[],
+  date: string,
+  noteId: string,
+): Task[] {
+  return tasksDueOnOrBefore(listed, date).filter(
+    (task) => task.note_id !== noteId,
+  );
+}
+
 /**
  * Read-only Due query below a daily note (ENG-64). Never written into markdown.
  * Always the live query for `date`: resolved tasks drop off past days too.
  */
-export function DueSection({ date, notes, onOpenTask }: DueSectionProps) {
+export function DueSection({
+  date,
+  noteId,
+  notes,
+  onOpenTask,
+}: DueSectionProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
@@ -38,12 +55,12 @@ export function DueSection({ date, notes, onOpenTask }: DueSectionProps) {
   const load = useCallback(async () => {
     try {
       const listed = await tasksApi.listTasks("upcoming", date);
-      setTasks(tasksDueOnOrBefore(listed, date));
+      setTasks(dueExcludingNote(listed, date, noteId));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load due tasks");
     }
-  }, [date]);
+  }, [date, noteId]);
 
   useEffect(() => {
     void load();
@@ -82,9 +99,10 @@ export function DueSection({ date, notes, onOpenTask }: DueSectionProps) {
         priority: patch.priority === undefined ? task.priority : patch.priority,
       });
       setTasks((prev) =>
-        tasksDueOnOrBefore(
+        dueExcludingNote(
           prev.map((item) => (item.id === updated.id ? updated : item)),
           date,
+          noteId,
         ),
       );
       setError(null);
