@@ -188,6 +188,41 @@ describe("task query helpers (ENG-63)", () => {
     ]);
   });
 
+  it("places prior-week groups before next week (ENG-135)", () => {
+    // Wed 2026-08-12 → this week Mon 10–Sun 16; next week 17–23; prior week 3–9.
+    const lastWeek = "2026-08-05";
+    const slot = {
+      start: minutesToIso(lastWeek, 13 * 60),
+      end: minutesToIso(lastWeek, 14 * 60),
+    };
+    const tasks = [
+      task({
+        id: "done-last-week",
+        title: "Finished last week",
+        due_date: lastWeek,
+        state: "done",
+        completed_at: "2026-08-05T15:00:00.000Z",
+      }),
+      task({ id: "blocked-last-week", title: "Blocked last week" }),
+      task({ id: "nw", title: "Next week item", due_date: "2026-08-19" }),
+    ];
+    const schedules = schedulesFromEvents([
+      { task_id: "blocked-last-week", ...slot },
+    ]);
+
+    const groups = groupUpcomingTasks(tasks, "2026-08-12", schedules);
+    expect(groups.map((g) => g.id)).toEqual([
+      "week-2026-08-03",
+      "week-2026-08-17",
+    ]);
+    expect(groups[0]?.label).toBe("Aug 3 – 9");
+    expect(groups[1]?.label).toMatch(/^Next week /);
+    expect(groups[0]?.tasks.map((t) => t.id)).toEqual([
+      "blocked-last-week",
+      "done-last-week",
+    ]);
+  });
+
   it("keeps completed tasks out of Overdue and sorts them after open rows", () => {
     const friday = "2026-08-14";
     const tasks = [

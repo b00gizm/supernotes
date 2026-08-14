@@ -248,9 +248,9 @@ function sortOpenTasks(
 /**
  * Open tasks on the Tasks page:
  * Unscheduled (no due, no slot) first — the goal is none of these — then
- * Overdue (due date in the past, even if scheduled later) → earlier days
- * this week → Today → Tomorrow → rest of this week → Next week → later
- * weeks.
+ * Overdue (due date in the past, even if scheduled later) → earlier weeks
+ * (completed / time-blocked before this Monday) → earlier days this week →
+ * Today → Tomorrow → rest of this week → Next week → later weeks.
  *
  * A time block places the row on that day unless the due date is overdue.
  * Done/cancelled rows (when passed in) skip Overdue and sit on their slot,
@@ -304,6 +304,27 @@ export function groupUpcomingTasks(
       tone: "overdue",
       showCount: true,
       tasks: sortOpenTasks(overdue, schedules),
+    });
+  }
+
+  const pastWeekBuckets = new Map<string, Task[]>();
+  for (const day of [...byDay.keys()]) {
+    if (day >= thisWeekStart) {
+      continue;
+    }
+    const weekStart = startOfWeekMonday(day);
+    const bucket = pastWeekBuckets.get(weekStart) ?? [];
+    bucket.push(...takeDay(day));
+    pastWeekBuckets.set(weekStart, bucket);
+  }
+  for (const weekStart of [...pastWeekBuckets.keys()].sort()) {
+    const weekEnd = addDays(weekStart, 6);
+    groups.push({
+      id: `week-${weekStart}`,
+      label: formatWeekRange(weekStart, weekEnd),
+      tone: "default",
+      showCount: false,
+      tasks: sortOpenTasks(pastWeekBuckets.get(weekStart) ?? [], schedules),
     });
   }
 
