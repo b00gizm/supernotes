@@ -1,5 +1,12 @@
-import { formatDailyTitle, parseDailyTitle } from "../notes/format";
+import {
+  addDays as shiftYmd,
+  formatWeekRange,
+  parseDailyTitle,
+  startOfWeekMonday,
+} from "../notes/format";
 import type { CalendarEvent } from "./types";
+
+export { shiftYmd, startOfWeekMonday };
 
 export const HOUR_HEIGHT = 48;
 export const SNAP_MINUTES = 15;
@@ -13,26 +20,6 @@ export type DaySegment = {
   col: number;
   cols: number;
 };
-
-export function startOfWeekMonday(ymd: string): string {
-  const date = parseDailyTitle(ymd);
-  if (!date) {
-    return ymd;
-  }
-  const day = date.getDay();
-  const delta = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + delta);
-  return formatDailyTitle(date);
-}
-
-export function shiftYmd(ymd: string, days: number): string {
-  const date = parseDailyTitle(ymd);
-  if (!date) {
-    return ymd;
-  }
-  date.setDate(date.getDate() + days);
-  return formatDailyTitle(date);
-}
 
 export function weekDays(weekStart: string): string[] {
   return Array.from({ length: 7 }, (_, index) => shiftYmd(weekStart, index));
@@ -51,25 +38,17 @@ export function weekHeading(weekStart: string): {
   range: string;
 } {
   const start = parseDailyTitle(weekStart);
-  const end = parseDailyTitle(shiftYmd(weekStart, 6));
+  const endYmd = shiftYmd(weekStart, 6);
+  const end = parseDailyTitle(endYmd);
   if (!start || !end) {
     return { monthYear: weekStart, range: weekStart };
   }
-  const monthYear = start.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-  const startMonth = start.toLocaleDateString("en-US", { month: "short" });
-  if (start.getMonth() === end.getMonth()) {
-    return {
-      monthYear,
-      range: `${startMonth} ${String(start.getDate())} – ${String(end.getDate())}`,
-    };
-  }
-  const endMonth = end.toLocaleDateString("en-US", { month: "short" });
   return {
-    monthYear,
-    range: `${startMonth} ${String(start.getDate())} – ${endMonth} ${String(end.getDate())}`,
+    monthYear: start.toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    }),
+    range: formatWeekRange(weekStart, endYmd),
   };
 }
 

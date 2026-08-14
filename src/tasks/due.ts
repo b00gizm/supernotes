@@ -1,8 +1,10 @@
 import {
   formatDailyTitle,
-  parseDailyTitle,
+  formatMonthDay as formatShortDue,
   shiftDailyTitle,
 } from "../notes/format";
+
+export { formatShortDue };
 
 export type DueChipTone = "today" | "tomorrow" | "overdue" | "default";
 
@@ -30,16 +32,6 @@ export function formatScheduleSpan(startIso: string, endIso: string): string {
   const clock = (date: Date) =>
     `${String(date.getHours())}:${String(date.getMinutes()).padStart(2, "0")}`;
   return `${clock(start)}–${clock(end)}`;
-}
-
-/** Short month-day label (`Aug 14`). */
-export function formatShortDue(ymd: string): string {
-  const date = parseDailyTitle(ymd);
-  if (!date) {
-    return ymd;
-  }
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  return `${month} ${String(date.getDate())}`;
 }
 
 /**

@@ -224,6 +224,75 @@ export function shiftDailyTitle(title: string, deltaDays: number): string {
   return formatDailyTitle(date);
 }
 
+/**
+ * Add `days` to a YYYY-MM-DD. Invalid input is returned unchanged
+ * (unlike `shiftDailyTitle`, which falls back to today).
+ */
+export function addDays(ymd: string, days: number): string {
+  const date = parseDailyTitle(ymd);
+  if (!date) {
+    return ymd;
+  }
+  date.setDate(date.getDate() + days);
+  return formatDailyTitle(date);
+}
+
+/** Monday of the calendar week containing `ymd` (local). */
+export function startOfWeekMonday(ymd: string): string {
+  const date = parseDailyTitle(ymd);
+  if (!date) {
+    return ymd;
+  }
+  const day = date.getDay(); // 0 Sun … 6 Sat
+  const delta = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + delta);
+  return formatDailyTitle(date);
+}
+
+/** Short month-day (`Aug 14`). */
+export function formatMonthDay(ymd: string): string {
+  const date = parseDailyTitle(ymd);
+  if (!date) {
+    return ymd;
+  }
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  return `${month} ${String(date.getDate())}`;
+}
+
+/** `Mon, Aug 10`. */
+export function formatShortDay(ymd: string): string {
+  const date = parseDailyTitle(ymd);
+  if (!date) {
+    return ymd;
+  }
+  const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  return `${weekday}, ${month} ${String(date.getDate())}`;
+}
+
+/** `Monday Aug 10`. */
+export function formatWeekdayMonthDay(ymd: string): string {
+  const date = parseDailyTitle(ymd);
+  if (!date) {
+    return ymd;
+  }
+  const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  return `${weekday} ${month} ${String(date.getDate())}`;
+}
+
+export function formatWeekRange(start: string, end: string): string {
+  const startDate = parseDailyTitle(start);
+  const endDate = parseDailyTitle(end);
+  if (!startDate || !endDate) {
+    return `${start} – ${end}`;
+  }
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${formatMonthDay(start)} – ${String(endDate.getDate())}`;
+  }
+  return `${formatMonthDay(start)} – ${formatMonthDay(end)}`;
+}
+
 export type OverviewGroupId = "pinned" | "today" | "yesterday" | "earlier";
 
 export type OverviewGroup = {
