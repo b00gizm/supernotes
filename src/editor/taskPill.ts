@@ -6,7 +6,9 @@ import {
   Plugin,
   PluginKey,
   TextSelection,
+  type Transaction,
 } from "@tiptap/pm/state";
+import { ReplaceAroundStep, ReplaceStep } from "@tiptap/pm/transform";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import type {
   CreateTaskInput,
@@ -213,6 +215,66 @@ function taskPillsInDoc(doc: ProseMirrorNode): Map<string, ProseMirrorNode> {
   return pills;
 }
 
+function contentHasTaskPill(node: ProseMirrorNode): boolean {
+  let found = false;
+  node.descendants((child) => {
+    if (found) {
+      return false;
+    }
+    if (child.type.name === "taskPill") {
+      found = true;
+      return false;
+    }
+  });
+  return found;
+}
+
+function rangeHasTaskPill(
+  doc: ProseMirrorNode,
+  from: number,
+  to: number,
+): boolean {
+  if (from >= to) {
+    return false;
+  }
+  let found = false;
+  doc.nodesBetween(from, to, (node) => {
+    if (found) {
+      return false;
+    }
+    if (node.type.name === "taskPill") {
+      found = true;
+      return false;
+    }
+  });
+  return found;
+}
+
+/** Skip full-doc id diff unless a replace step may add/remove a taskPill. */
+function transactionsMayTouchTaskPill(
+  transactions: readonly Transaction[],
+): boolean {
+  for (const tr of transactions) {
+    if (!tr.docChanged) {
+      continue;
+    }
+    for (let i = 0; i < tr.steps.length; i++) {
+      const step = tr.steps[i];
+      if (!(step instanceof ReplaceStep || step instanceof ReplaceAroundStep)) {
+        continue;
+      }
+      const doc = tr.docs[i];
+      if (
+        rangeHasTaskPill(doc, step.from, step.to) ||
+        contentHasTaskPill(step.slice.content)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function reportTaskError(options: TaskPillOptions, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
   options.onError?.(message.trim() || "Could not save task");
@@ -407,6 +469,10 @@ function taskPillDeletePlugin(
         return null;
       }
       if (!options.deleteTask) {
+        return null;
+      }
+      // ENG-152: typing/attr edits that never touch a pill stay O(steps), not O(doc).
+      if (!transactionsMayTouchTaskPill(transactions)) {
         return null;
       }
       const skipDelete = skipDeleteSet(editor);
