@@ -605,6 +605,7 @@ describe("CalendarView linked-task load (ENG-137)", () => {
   it("keeps unlinked events chip-less without an error", async () => {
     renderCalendar();
     expect(await screen.findAllByText("Standup")).not.toHaveLength(0);
+    expect(await screen.findByText("Beatport kündigen")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(document.querySelector(".cal-event.is-task")).toBeNull();
   });
