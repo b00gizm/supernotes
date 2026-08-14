@@ -29,7 +29,9 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
-            let db = Db::open(&data_dir).expect("failed to open sqlite database");
+            let db = Db::open(&data_dir).unwrap_or_else(|err| {
+                panic!("failed to open sqlite database: {err}");
+            });
             app.manage(db);
             menu_nav::install_app_menu(app)?;
             Ok(())
