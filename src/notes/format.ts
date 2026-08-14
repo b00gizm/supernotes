@@ -66,7 +66,12 @@ function stripMarkdownMarkers(line: string): string {
 /** First non-empty body line as plain text; computed, not stored. */
 export function noteSnippet(body: string): string {
   for (const line of body.split(/\r?\n/)) {
-    const trimmed = stripMarkdownMarkers(line.trim());
+    const trimmed = stripMarkdownMarkers(line.trim())
+      // Task pills serialize as `[[task:id]] Title`; drop the token, keep the title.
+      .replace(/\[\[task:[^\]]+\]\]\s*/gi, "")
+      .replace(/\[\[([^\]]+)\]\]/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
     if (trimmed) {
       return trimmed;
     }
