@@ -1133,11 +1133,13 @@ export function CalendarView({
                     >
                       {laid.map((segment) => {
                         const top = (segment.startMin / 60) * HOUR_HEIGHT;
+                        // 15 min is 12px on a 48px hour; floor so a one-line chip can center.
                         const height = Math.max(
                           ((segment.endMin - segment.startMin) / 60) *
                             HOUR_HEIGHT,
-                          16,
+                          22,
                         );
+                        const compact = height < 28;
                         const width = `calc((100% - 4px) / ${String(segment.cols)})`;
                         const left = `calc(${String(segment.col)} * (100% - 4px) / ${String(segment.cols)} + 2px)`;
                         const editing =
@@ -1158,6 +1160,7 @@ export function CalendarView({
                           editing ? "is-editing" : "",
                           linked ? "is-task" : "",
                           done ? "is-done" : "",
+                          compact ? "is-compact" : "",
                           drag &&
                           (drag.kind === "move" || drag.kind === "resize") &&
                           drag.id === segment.event.id
