@@ -661,8 +661,10 @@ button {
 }
 
 .tasks-completed-toggle.is-active {
-  background: var(--bg-chip);
-  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-main));
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .tasks-filter {
