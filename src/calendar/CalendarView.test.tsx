@@ -614,6 +614,57 @@ describe("CalendarView all-day chips (ENG-67)", () => {
   });
 });
 
+describe("CalendarView linked-task load (ENG-137)", () => {
+  beforeEach(() => {
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "standup",
+        title: "Standup",
+        start: minutesToIso(TODAY, 9 * 60 + 30),
+        end: minutesToIso(TODAY, 9 * 60 + 45),
+        task_id: null,
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    tasksRef.current = createMemoryTasksApi([overdue, inbox, dueToday, dueWed]);
+  });
+
+  it("keeps unlinked events chip-less without an error", async () => {
+    renderCalendar();
+    expect(await screen.findAllByText("Standup")).not.toHaveLength(0);
+    expect(await screen.findByText("Beatport kündigen")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.querySelector(".cal-event.is-task")).toBeNull();
+  });
+
+  it("surfaces a getTask failure instead of a silent missing chip", async () => {
+    const inner = createMemoryTasksApi([overdue, inbox, dueToday, dueWed]);
+    tasksRef.current = {
+      ...inner,
+      getTask: (id: string) =>
+        id === "t-linked"
+          ? Promise.reject(new Error("task lookup failed"))
+          : inner.getTask(id),
+    };
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "block",
+        title: "Orphan block",
+        start: minutesToIso(TODAY, 18 * 60),
+        end: minutesToIso(TODAY, 19 * 60),
+        task_id: "t-linked",
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    renderCalendar();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "task lookup failed",
+    );
+    expect(await screen.findAllByText("Orphan block")).not.toHaveLength(0);
+    expect(document.querySelector(".cal-event.is-task")).toBeNull();
+  });
+});
+
 describe("CalendarView event edit (ENG-132)", () => {
   const overnightStart = minutesToIso(TODAY, 23 * 60);
   const overnightEnd = minutesToIso(TODAY, 25 * 60);
