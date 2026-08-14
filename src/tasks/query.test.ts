@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { minutesToIso } from "../calendar/layout";
 import {
+  allDayChipTasks,
   filterTasks,
   groupUpcomingTasks,
   isTaskOverdue,
@@ -271,5 +272,34 @@ describe("task query helpers (ENG-63)", () => {
     );
     expect(groups).toHaveLength(1);
     expect(groups[0]?.label).toBe("Aug 31 – Sep 6");
+  });
+
+  it("places all-day chips on the due day, overdue on today, and hides scheduled", () => {
+    const today = "2026-08-12";
+    const tasks = [
+      task({ id: "overdue", title: "Late", due_date: "2026-08-10" }),
+      task({ id: "today", title: "Due today", due_date: today }),
+      task({ id: "thu", title: "Thursday", due_date: "2026-08-13" }),
+      task({ id: "blocked", title: "Already blocked", due_date: today }),
+      task({ id: "inbox", title: "No due" }),
+      task({
+        id: "done",
+        title: "Done",
+        due_date: today,
+        state: "done",
+        completed_at: "2026-08-12T12:00:00.000Z",
+      }),
+    ];
+    const scheduled = new Set(["blocked"]);
+
+    expect(
+      allDayChipTasks(tasks, "2026-08-10", today, scheduled).map((t) => t.id),
+    ).toEqual([]);
+    expect(
+      allDayChipTasks(tasks, today, today, scheduled).map((t) => t.id),
+    ).toEqual(["overdue", "today"]);
+    expect(
+      allDayChipTasks(tasks, "2026-08-13", today, scheduled).map((t) => t.id),
+    ).toEqual(["thu"]);
   });
 });

@@ -60,6 +60,29 @@ export function tasksDueOnOrBefore(tasks: Task[], date: string): Task[] {
     });
 }
 
+/**
+ * Calendar all-day chips (ENG-67): dated open/waiting tasks with no time
+ * block. Overdue items roll onto `today` (same as daily-note Due); past days
+ * stay empty. Scheduled tasks drop off the chip row.
+ */
+export function allDayChipTasks(
+  tasks: Task[],
+  day: string,
+  today: string,
+  scheduledIds: ReadonlySet<string> = new Set(),
+): Task[] {
+  const unscheduled = tasks.filter((task) => !scheduledIds.has(task.id));
+  if (day < today) {
+    return [];
+  }
+  if (day === today) {
+    return tasksDueOnOrBefore(unscheduled, today);
+  }
+  return tasksDueOnOrBefore(unscheduled, day).filter(
+    (task) => task.due_date === day,
+  );
+}
+
 function completeCutoff(today: string): string {
   // ponytail: completed_at is UTC ISO; window uses the UTC calendar prefix
   // against local `today`. Upgrade: convert to local date first.

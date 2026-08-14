@@ -111,6 +111,30 @@ const inbox: Task = {
   completed_at: null,
 };
 
+const dueToday: Task = {
+  id: "t-today",
+  note_id: "n1",
+  title: "Ship pricing brief",
+  state: "open",
+  due_date: TODAY,
+  priority: "medium",
+  created_at: "2026-08-10T00:00:00.000Z",
+  updated_at: "2026-08-10T00:00:00.000Z",
+  completed_at: null,
+};
+
+const dueWed: Task = {
+  id: "t-wed",
+  note_id: "n1",
+  title: "Interview Priya",
+  state: "open",
+  due_date: "2026-08-12",
+  priority: null,
+  created_at: "2026-08-10T00:00:00.000Z",
+  updated_at: "2026-08-10T00:00:00.000Z",
+  completed_at: null,
+};
+
 function mockGridRect() {
   const grid = document.querySelector(".cal-grid");
   expect(grid).toBeTruthy();
@@ -151,7 +175,7 @@ describe("CalendarView (ENG-65)", () => {
         created_at: "2026-08-10T00:00:00.000Z",
       },
     ]);
-    tasksRef.current = createMemoryTasksApi([overdue, inbox]);
+    tasksRef.current = createMemoryTasksApi([overdue, inbox, dueToday, dueWed]);
   });
 
   it("renders the week grid", async () => {
@@ -256,7 +280,7 @@ describe("CalendarView time blocking (ENG-66)", () => {
         created_at: "2026-08-10T00:00:00.000Z",
       },
     ]);
-    tasksRef.current = createMemoryTasksApi([overdue, inbox]);
+    tasksRef.current = createMemoryTasksApi([overdue, inbox, dueToday, dueWed]);
   });
 
   it("lists unscheduled inbox tasks in the calendar sidebar", async () => {
@@ -446,5 +470,119 @@ describe("CalendarView time blocking (ENG-66)", () => {
     expect(within(sidebar).queryByText("Beatport kündigen")).toBeNull();
     const kept = await tasksRef.current.getTask("t-inbox");
     expect(kept.state).toBe("done");
+  });
+});
+
+describe("CalendarView all-day chips (ENG-67)", () => {
+  beforeEach(() => {
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "standup",
+        title: "Standup",
+        start: minutesToIso(TODAY, 9 * 60 + 30),
+        end: minutesToIso(TODAY, 9 * 60 + 45),
+        task_id: null,
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    tasksRef.current = createMemoryTasksApi([overdue, inbox, dueToday, dueWed]);
+  });
+
+  it("shows due tasks as chips on their day and overdue chips on today", async () => {
+    renderCalendar();
+    const allDay = await screen.findByRole("group", { name: "All-day" });
+    const todayCell = allDay.querySelector('[data-allday="2026-08-10"]');
+    const wedCell = allDay.querySelector('[data-allday="2026-08-12"]');
+    expect(todayCell).toBeTruthy();
+    expect(wedCell).toBeTruthy();
+    expect(
+      await within(todayCell as HTMLElement).findByText("Ship pricing brief"),
+    ).toBeInTheDocument();
+    const overdueChip = await within(todayCell as HTMLElement).findByText(
+      "Survey → beta list",
+    );
+    expect(overdueChip.closest(".cal-chip")).toHaveClass("is-overdue");
+    expect(
+      within(todayCell as HTMLElement).queryByText("Interview Priya"),
+    ).toBeNull();
+    expect(
+      await within(wedCell as HTMLElement).findByText("Interview Priya"),
+    ).toBeInTheDocument();
+    expect(
+      within(allDay).queryByText("Beatport kündigen"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides a due chip once the task has a time block", async () => {
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "block",
+        title: "Ship pricing brief",
+        start: minutesToIso(TODAY, 11 * 60),
+        end: minutesToIso(TODAY, 11 * 60 + 15),
+        task_id: "t-today",
+        created_at: "2026-08-10T00:00:00.000Z",
+      },
+    ]);
+    renderCalendar();
+    const allDay = await screen.findByRole("group", { name: "All-day" });
+    await waitFor(() => {
+      expect(
+        within(allDay).queryByText("Ship pricing brief"),
+      ).not.toBeInTheDocument();
+    });
+    expect(document.querySelector(".cal-event.is-task")).toBeTruthy();
+  });
+
+  it("converts a chip into a 15-minute event when dragged onto the grid", async () => {
+    renderCalendar();
+    const allDay = await screen.findByRole("group", { name: "All-day" });
+    const chip = await waitFor(() => {
+      const node = allDay.querySelector(
+        '[data-task-id="t-today"] .cal-chip-main',
+      );
+      expect(node).toBeTruthy();
+      return node as HTMLElement;
+    });
+    mockGridRect();
+    const col = document.querySelector('[data-day="2026-08-10"]');
+    expect(col).toBeTruthy();
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(col);
+    fireEvent.mouseDown(chip, { button: 0, clientX: 80, clientY: 14 * 48 });
+    fireEvent.mouseMove(window, { clientX: 80, clientY: 14 * 48 });
+    fireEvent.mouseUp(window, { clientX: 80, clientY: 14 * 48 });
+    await waitFor(() => {
+      expect(
+        within(allDay).queryByText("Ship pricing brief"),
+      ).not.toBeInTheDocument();
+    });
+    const listed = await calRef.current.listEvents();
+    const linked = listed.find((item) => item.task_id === "t-today");
+    expect(linked).toBeTruthy();
+    expect(linked?.title).toBe("Ship pricing brief");
+    expect(
+      Date.parse(linked?.end ?? "") - Date.parse(linked?.start ?? ""),
+    ).toBe(15 * 60_000);
+  });
+
+  it("resolves a task from the chip and drops it from the all-day row", async () => {
+    const user = userEvent.setup();
+    renderCalendar();
+    const allDay = await screen.findByRole("group", { name: "All-day" });
+    const chip = await waitFor(() => {
+      const node = allDay.querySelector('[data-task-id="t-overdue"]');
+      expect(node).toBeTruthy();
+      return node as HTMLElement;
+    });
+    await user.click(
+      within(chip).getByRole("button", { name: "Mark task done" }),
+    );
+    await waitFor(() => {
+      expect(
+        within(allDay).queryByText("Survey → beta list"),
+      ).not.toBeInTheDocument();
+    });
+    const saved = await tasksRef.current.getTask("t-overdue");
+    expect(saved.state).toBe("done");
   });
 });

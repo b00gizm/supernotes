@@ -11,7 +11,7 @@ import type { Note } from "../notes/types";
 import { formatShortDue } from "../tasks/due";
 import { subscribeTasksChanged } from "../tasks/events";
 import { priorityDotClass } from "../tasks/priority";
-import { isTaskOverdue, tasksDueOnOrBefore } from "../tasks/query";
+import { allDayChipTasks, isTaskOverdue } from "../tasks/query";
 import { TaskStateIcon } from "../tasks/TaskStateIcon";
 import { tasksApi } from "../tasks/api";
 import type { Task, TaskState } from "../tasks/types";
@@ -90,18 +90,6 @@ type EditState = {
   day: string;
   surface: "grid" | "agenda";
 };
-
-function dueTasksForDay(tasks: Task[], day: string, today: string): Task[] {
-  if (day === today) {
-    return tasksDueOnOrBefore(tasks, today);
-  }
-  return tasks.filter((task) => {
-    if (task.state === "done" || task.state === "cancelled") {
-      return false;
-    }
-    return task.due_date === day;
-  });
-}
 
 function priorityName(dot: string): string {
   if (dot === "is-p1") {
@@ -182,26 +170,39 @@ function TaskChip({
   today,
   onToggle,
   onOpen,
+  onPointerDrag,
 }: {
   task: Task;
   today: string;
   onToggle: () => void;
   onOpen: () => void;
+  onPointerDrag?: (event: ReactMouseEvent) => void;
 }) {
   const overdue = isTaskOverdue(task, today);
   const dot = priorityDotClass(task.priority);
   const showDue = overdue && task.due_date;
   return (
-    <div className="cal-chip">
+    <div
+      className={overdue ? "cal-chip is-overdue" : "cal-chip"}
+      data-task-id={task.id}
+    >
       <button
         type="button"
         className="cal-chip-toggle"
         aria-label={task.state === "done" ? "Mark task open" : "Mark task done"}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
         onClick={onToggle}
       >
         <TaskStateIcon state={task.state} />
       </button>
-      <button type="button" className="cal-chip-main" onClick={onOpen}>
+      <button
+        type="button"
+        className="cal-chip-main"
+        onClick={onPointerDrag ? undefined : onOpen}
+        onMouseDown={onPointerDrag}
+      >
         <span className="cal-chip-title">
           {task.title.trim() || "Untitled task"}
         </span>
@@ -780,7 +781,7 @@ export function CalendarView({
     window.addEventListener("mouseup", onUp);
   };
 
-  const beginInboxDrag = (task: Task, event: ReactMouseEvent) => {
+  const beginTaskDrag = (task: Task, event: ReactMouseEvent) => {
     if (event.button !== 0) {
       return;
     }
@@ -900,7 +901,12 @@ export function CalendarView({
   const selectedEvents = visibleEvents
     .filter((item) => eventSegmentOnDay(item, selectedDay) !== null)
     .sort((a, b) => a.start.localeCompare(b.start));
-  const selectedChips = dueTasksForDay(tasks, selectedDay, today);
+  const selectedChips = allDayChipTasks(
+    tasks,
+    selectedDay,
+    today,
+    scheduledIds,
+  );
   const inboxTasks = tasks.filter(
     (task) =>
       (task.state === "open" || task.state === "waiting") &&
@@ -1045,28 +1051,33 @@ export function CalendarView({
               })}
             </div>
 
-            <div className="cal-allday">
+            <div className="cal-allday" role="group" aria-label="All-day">
               <span className="cal-gutter cal-allday-label">ALL-DAY</span>
               {days.map((day) => (
-                <div key={day} className="cal-allday-cell">
-                  {dueTasksForDay(tasks, day, today).map((task) => {
-                    const note = noteById.get(task.note_id);
-                    return (
-                      <TaskChip
-                        key={task.id}
-                        task={task}
-                        today={today}
-                        onToggle={() => {
-                          toggleTask(task);
-                        }}
-                        onOpen={() => {
-                          if (note) {
-                            onOpenTask(task, note);
-                          }
-                        }}
-                      />
-                    );
-                  })}
+                <div key={day} className="cal-allday-cell" data-allday={day}>
+                  {allDayChipTasks(tasks, day, today, scheduledIds).map(
+                    (task) => {
+                      const note = noteById.get(task.note_id);
+                      return (
+                        <TaskChip
+                          key={task.id}
+                          task={task}
+                          today={today}
+                          onToggle={() => {
+                            toggleTask(task);
+                          }}
+                          onOpen={() => {
+                            if (note) {
+                              onOpenTask(task, note);
+                            }
+                          }}
+                          onPointerDrag={(event) => {
+                            beginTaskDrag(task, event);
+                          }}
+                        />
+                      );
+                    },
+                  )}
                 </div>
               ))}
             </div>
@@ -1401,7 +1412,7 @@ export function CalendarView({
         )}
         <InboxSidebar
           tasks={inboxTasks}
-          onPointerDrag={beginInboxDrag}
+          onPointerDrag={beginTaskDrag}
           onToggle={toggleTask}
         />
         {edit ? (
