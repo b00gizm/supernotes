@@ -130,7 +130,9 @@ describe("TasksView date grouping", () => {
     const today = await within(pane).findByRole("region", {
       name: /Today /,
     });
-    expect(within(today).getByText("Pricing sync")).toBeInTheDocument();
+    expect(
+      within(today).getByRole("button", { name: "Pricing sync" }),
+    ).toBeInTheDocument();
     expect(within(today).getByText("13:00–14:00")).toBeInTheDocument();
     expect(within(today).getByText("(Due: Aug 16)")).toBeInTheDocument();
     expect(within(pane).queryByRole("region", { name: "Overdue" })).toBeNull();
@@ -165,7 +167,9 @@ describe("TasksView date grouping", () => {
     const overdue = await within(pane).findByRole("region", {
       name: "Overdue",
     });
-    expect(within(overdue).getByText("Late brief")).toBeInTheDocument();
+    expect(
+      within(overdue).getByRole("button", { name: "Late brief" }),
+    ).toBeInTheDocument();
     expect(within(overdue).getByText("13:00–14:00")).toBeInTheDocument();
     expect(within(overdue).getByText("(Due: Aug 13)")).toHaveClass(
       "is-overdue",
@@ -209,7 +213,9 @@ describe("TasksView date grouping", () => {
     expect(
       within(pane).getByRole("region", { name: "Unscheduled" }),
     ).toBeInTheDocument();
-    expect(within(pane).getByText("Beatport kündigen")).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: "Beatport kündigen" }),
+    ).toBeInTheDocument();
   });
 
   it("shows completed tasks only when the Completed toggle is on", async () => {
@@ -233,18 +239,26 @@ describe("TasksView date grouping", () => {
       />,
     );
     const pane = await screen.findByRole("region", { name: "Tasks" });
-    expect(within(pane).getByText("Buy milk")).toBeInTheDocument();
-    expect(within(pane).queryByText("Wrapped up")).toBeNull();
+    expect(
+      within(pane).getByRole("button", { name: "Buy milk" }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).queryByRole("button", { name: "Wrapped up" }),
+    ).toBeNull();
 
     const toggle = within(pane).getByRole("button", { name: "Completed" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(await within(pane).findByText("Wrapped up")).toBeInTheDocument();
+    expect(
+      await within(pane).findByRole("button", { name: "Wrapped up" }),
+    ).toBeInTheDocument();
 
     await user.click(toggle);
     await waitFor(() => {
-      expect(within(pane).queryByText("Wrapped up")).toBeNull();
+      expect(
+        within(pane).queryByRole("button", { name: "Wrapped up" }),
+      ).toBeNull();
     });
   });
 });

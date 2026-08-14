@@ -172,8 +172,12 @@ describe("App shell", () => {
 
     const pane = await screen.findByRole("region", { name: "Tasks" });
     expect(within(pane).queryByRole("tab")).toBeNull();
-    expect(within(pane).getByText("Buy milk")).toBeInTheDocument();
-    expect(within(pane).getByText("Ship it")).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: "Buy milk" }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: "Ship it" }),
+    ).toBeInTheDocument();
     const overdue = within(pane).getByRole("region", { name: "Overdue" });
     const unscheduled = within(pane).getByRole("region", {
       name: "Unscheduled",
@@ -185,16 +189,20 @@ describe("App shell", () => {
       ),
     ).toBe(true);
     expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
-    expect(within(pane).queryByText("Wrapped up")).not.toBeInTheDocument();
+    expect(
+      within(pane).queryByRole("button", { name: "Wrapped up" }),
+    ).not.toBeInTheDocument();
 
     await user.click(
       within(unscheduled).getByRole("button", { name: "Mark task done" }),
     );
     await waitFor(() => {
-      expect(within(pane).queryByText("Buy milk")).not.toBeInTheDocument();
+      expect(
+        within(pane).queryByRole("button", { name: "Buy milk" }),
+      ).not.toBeInTheDocument();
     });
 
-    await user.click(within(pane).getByText("Ship it"));
+    await user.click(within(pane).getByRole("button", { name: "Ship it" }));
     expect(await screen.findByLabelText("Note title")).toHaveValue(
       dailyDisplayTitle(today),
     );
@@ -289,7 +297,7 @@ describe("App shell", () => {
     });
     expect(
       within(pinnedSection).getByRole("button", {
-        name: /Meridian Q3 roadmap/,
+        name: "Meridian Q3 roadmap",
       }),
     ).toBeInTheDocument();
 
@@ -369,7 +377,7 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
 
     await user.click(
-      within(sidebar).getByRole("button", { name: /Interview/ }),
+      within(sidebar).getByRole("button", { name: "Interview — Priya Sharma" }),
     );
     const pin = await screen.findByRole("button", { name: "Pin note" });
     expect(pin).toHaveAttribute("aria-pressed", "false");
@@ -404,7 +412,7 @@ describe("App shell", () => {
       screen.queryByRole("button", { name: "Back to Notes" }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Pricing sync/ }));
+    await user.click(screen.getByRole("button", { name: "Pricing sync" }));
     const crumb = await screen.findByRole("button", { name: "Back to Notes" });
     await user.click(crumb);
     expect(
@@ -429,7 +437,7 @@ describe("App shell", () => {
     render(<App />);
     await screen.findByLabelText("Note title");
 
-    const recent = screen.getByRole("button", { name: /Pricing sync/ });
+    const recent = screen.getByRole("button", { name: "Pricing sync" });
     expect(within(recent).getByText(/Decided to keep/)).toBeInTheDocument();
 
     await user.click(recent);
@@ -464,6 +472,15 @@ describe("App shell", () => {
     expect(screen.getByLabelText("Supernotes")).toHaveClass(
       "is-sidebar-collapsed",
     );
+
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    for (const label of ["Daily Note", "Notes", "Tasks", "Calendar"] as const) {
+      const item = within(nav).getByRole("button", { name: label });
+      expect(item).toHaveAttribute("aria-label", label);
+      expect(item).toHaveAttribute("title", label);
+    }
+    const search = screen.getByRole("button", { name: "Search" });
+    expect(search).toHaveAttribute("title", "Search");
   });
 
   it("reserves mac overlay titlebar drag regions under traffic lights (ENG-115)", async () => {
@@ -594,7 +611,7 @@ describe("App shell", () => {
 
     render(<App />);
     await screen.findByLabelText("Note title");
-    await user.click(screen.getByRole("button", { name: /Hello world/ }));
+    await user.click(screen.getByRole("button", { name: "Hello world" }));
     const body = await screen.findByLabelText("Note body");
     expect(body).toHaveTextContent("Known unique sentence");
 
@@ -650,7 +667,7 @@ describe("App shell", () => {
     render(<App />);
     await screen.findByLabelText("Note title");
 
-    await user.click(screen.getByRole("button", { name: /^Foo\b/ }));
+    await user.click(screen.getByRole("button", { name: "Foo" }));
     const backlinks = await screen.findByRole("region", { name: "Backlinks" });
     expect(
       within(backlinks).getByRole("button", { name: /Source note/ }),
@@ -815,7 +832,7 @@ describe("App shell", () => {
       formatDailyDisplayTitle(),
     );
 
-    await user.click(screen.getByRole("button", { name: /^Other note\b/ }));
+    await user.click(screen.getByRole("button", { name: "Other note" }));
     expect(await screen.findByLabelText("Note title")).toHaveValue(
       "Other note",
     );
@@ -922,11 +939,15 @@ describe("App shell", () => {
     await screen.findByLabelText("Note title");
 
     const dueToday = await screen.findByRole("region", { name: "Due" });
-    expect(within(dueToday).getByText("Ship pricing")).toBeInTheDocument();
-    expect(within(dueToday).getByText("Project plan")).toBeInTheDocument();
-    expect(within(dueToday).queryByText("Later work")).not.toBeInTheDocument();
     expect(
-      within(dueToday).queryByText("Already done"),
+      within(dueToday).getByRole("button", { name: "Ship pricing" }),
+    ).toBeInTheDocument();
+    expect(within(dueToday).getByText("Project plan")).toBeInTheDocument();
+    expect(
+      within(dueToday).queryByRole("button", { name: "Later work" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dueToday).queryByRole("button", { name: "Already done" }),
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Previous day" }));
@@ -934,8 +955,9 @@ describe("App shell", () => {
       dailyDisplayTitle(shiftDailyTitle(today, -1)),
     );
     expect(
-      within(await screen.findByRole("region", { name: "Due" })).getByText(
-        "Ship pricing",
+      within(await screen.findByRole("region", { name: "Due" })).getByRole(
+        "button",
+        { name: "Ship pricing" },
       ),
     ).toBeInTheDocument();
 
@@ -944,8 +966,9 @@ describe("App shell", () => {
       dailyDisplayTitle(monday),
     );
     expect(
-      within(await screen.findByRole("region", { name: "Due" })).getByText(
-        "Ship pricing",
+      within(await screen.findByRole("region", { name: "Due" })).getByRole(
+        "button",
+        { name: "Ship pricing" },
       ),
     ).toBeInTheDocument();
 
@@ -1013,7 +1036,7 @@ describe("App shell", () => {
       screen.getByRole("dialog", { name: /Ship pricing/ }),
     ).toBeInTheDocument();
     await user.keyboard("{Escape}");
-    await user.click(within(due).getByRole("button", { name: /Ship pricing/ }));
+    await user.click(within(due).getByRole("button", { name: "Ship pricing" }));
     expect(await screen.findByLabelText("Note title")).toHaveValue(
       "Project plan",
     );
@@ -1061,7 +1084,9 @@ describe("App shell", () => {
 
     render(<App />);
     const due = await screen.findByRole("region", { name: "Due" });
-    expect(within(due).getByText("Live due item")).toBeInTheDocument();
+    expect(
+      within(due).getByRole("button", { name: "Live due item" }),
+    ).toBeInTheDocument();
 
     await tasksApiRef.current.updateTask({
       id: "t-live",
