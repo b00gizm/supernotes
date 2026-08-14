@@ -64,6 +64,19 @@ describe("noteSnippet", () => {
       "Draft for #meridian with @Priya",
     );
   });
+
+  it("strips task tokens and unwraps wikilinks", () => {
+    expect(noteSnippet("[[task:demo-task-inbox]] Draft pricing brief")).toBe(
+      "Draft pricing brief",
+    );
+    expect(noteSnippet("See [[Weekly Review]] tomorrow")).toBe(
+      "See Weekly Review tomorrow",
+    );
+    expect(noteSnippet("[[task:abc]] Buy milk via [[Foo]]")).toBe(
+      "Buy milk via Foo",
+    );
+    expect(noteSnippet("[[task:abc]]\nNext line")).toBe("Next line");
+  });
 });
 
 describe("backlinkSnippet", () => {
