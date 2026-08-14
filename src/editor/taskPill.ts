@@ -1,6 +1,6 @@
 import { mergeAttributes, Node, InputRule } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Fragment, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import {
   NodeSelection,
   Plugin,
@@ -215,9 +215,9 @@ function taskPillsInDoc(doc: ProseMirrorNode): Map<string, ProseMirrorNode> {
   return pills;
 }
 
-function contentHasTaskPill(node: ProseMirrorNode): boolean {
+function contentHasTaskPill(content: Fragment): boolean {
   let found = false;
-  node.descendants((child) => {
+  content.descendants((child) => {
     if (found) {
       return false;
     }
@@ -264,6 +264,10 @@ function transactionsMayTouchTaskPill(
         continue;
       }
       const doc = tr.docs[i];
+      // Missing pre-step doc: don't skip the plugin (false skip drops pill sync).
+      if (!doc) {
+        return true;
+      }
       if (
         rangeHasTaskPill(doc, step.from, step.to) ||
         contentHasTaskPill(step.slice.content)
