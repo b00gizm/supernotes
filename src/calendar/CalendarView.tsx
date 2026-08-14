@@ -1483,6 +1483,19 @@ function InboxSidebar({
   );
 }
 
+function editPopoverStyle(edit: EditState): { left: number; top: number } {
+  const col = document.querySelector(`[data-day="${edit.day}"]`);
+  const grid = document.querySelector(".cal-grid");
+  const left = col?.getBoundingClientRect().left ?? 8;
+  const top =
+    (grid?.getBoundingClientRect().top ?? 0) +
+    (edit.startMin / 60) * HOUR_HEIGHT;
+  return {
+    left: Math.max(8, Math.min(left, window.innerWidth - 300)),
+    top: Math.max(8, Math.min(top, window.innerHeight - 420)),
+  };
+}
+
 function EventFields({
   edit,
   onChange,
@@ -1499,6 +1512,7 @@ function EventFields({
   return (
     <form
       className="cal-event-form"
+      style={editPopoverStyle(edit)}
       onSubmit={(event) => {
         event.preventDefault();
         onCommit();

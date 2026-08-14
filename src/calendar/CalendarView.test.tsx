@@ -697,6 +697,11 @@ describe("CalendarView event edit (ENG-132)", () => {
 
     openEdit();
     await screen.findByLabelText("Event title");
+    const form = document.querySelector(".cal-event-form");
+    expect(form).toBeInstanceOf(HTMLElement);
+    expect(Number.parseFloat((form as HTMLElement).style.top)).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByLabelText("Start time")).toHaveValue("23:00");
     expect(screen.getByLabelText("End time")).toHaveValue("01:00");
     await user.click(screen.getByText("August 2026"));
