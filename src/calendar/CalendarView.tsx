@@ -894,6 +894,14 @@ export function CalendarView({
       : selectedDay === today;
   const gridHeight = GRID_HOURS * HOUR_HEIGHT;
   const visibleEvents = overlayDrag(events, drag);
+  // ponytail: static week layout; drag times overlay without re-columning. Re-layout live if overlap during drag looks wrong.
+  const weekLayout = useMemo(
+    () =>
+      Object.fromEntries(
+        days.map((day) => [day, layoutDayEvents(events, day)]),
+      ),
+    [days, events],
+  );
   const selectedEvents = visibleEvents
     .filter((item) => eventSegmentOnDay(item, selectedDay) !== null)
     .sort((a, b) => a.start.localeCompare(b.start));
@@ -1100,7 +1108,7 @@ export function CalendarView({
                   ))}
                 </div>
                 {days.map((day) => {
-                  const laid = layoutDayEvents(visibleEvents, day);
+                  const laid = weekLayout[day] ?? [];
                   const dropping =
                     drag &&
                     drag.day === day &&
@@ -1139,11 +1147,20 @@ export function CalendarView({
                       }}
                     >
                       {laid.map((segment) => {
-                        const top = (segment.startMin / 60) * HOUR_HEIGHT;
+                        const live =
+                          drag &&
+                          (drag.kind === "move" || drag.kind === "resize") &&
+                          drag.id === segment.event.id
+                            ? drag
+                            : null;
+                        const startMin = live
+                          ? live.startMin
+                          : segment.startMin;
+                        const endMin = live ? live.endMin : segment.endMin;
+                        const top = (startMin / 60) * HOUR_HEIGHT;
                         // 15 min is 12px on a 48px hour; floor so a one-line chip can center.
                         const height = Math.max(
-                          ((segment.endMin - segment.startMin) / 60) *
-                            HOUR_HEIGHT,
+                          ((endMin - startMin) / 60) * HOUR_HEIGHT,
                           22,
                         );
                         const compact = height < 28;
@@ -1160,19 +1177,15 @@ export function CalendarView({
                         const done =
                           linked?.state === "done" ||
                           linked?.state === "cancelled";
-                        const startLabel = formatClock(segment.startMin);
-                        const endLabel = formatClock(segment.endMin);
+                        const startLabel = formatClock(startMin);
+                        const endLabel = formatClock(endMin);
                         const classes = [
                           "cal-event",
                           editing ? "is-editing" : "",
                           linked ? "is-task" : "",
                           done ? "is-done" : "",
                           compact ? "is-compact" : "",
-                          drag &&
-                          (drag.kind === "move" || drag.kind === "resize") &&
-                          drag.id === segment.event.id
-                            ? "is-dragging"
-                            : "",
+                          live ? "is-dragging" : "",
                         ]
                           .filter(Boolean)
                           .join(" ");
