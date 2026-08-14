@@ -19,7 +19,11 @@ import { common, createLowlight } from "lowlight";
 import taskListPlugin from "markdown-it-task-lists";
 import { Markdown } from "tiptap-markdown";
 import { ImageView } from "./ImageView";
-import { markdownTableFixupPlugin, TablePipeSafeText } from "./markdownTable";
+import {
+  markdownTableFixupPlugin,
+  TableHardBreak,
+  TablePipeSafeText,
+} from "./markdownTable";
 import { StaticMarkdownTable } from "./staticTable";
 import { TaskPill, type TaskPillOptions } from "./taskPill";
 import { WikiLink, type WikiLinkOptions } from "./wikiLink";
@@ -472,8 +476,11 @@ export function noteEditorExtensions(
       link: false,
       // Replaced by TablePipeSafeText (ENG-88 pipe escape in cells).
       text: false,
+      // Replaced by TableHardBreak (`<br>` in cells without html:true — ENG-129).
+      hardBreak: false,
     }),
     TablePipeSafeText,
+    TableHardBreak,
     NoteLink,
     Highlight,
     CodeBlockLowlight.configure({ lowlight }),
@@ -496,9 +503,10 @@ export function noteEditorExtensions(
     WikiLink.configure(wikiLink),
     Placeholder.configure({ placeholder: "Start writing…" }),
     Markdown.configure({
-      // html:true so hardBreak in table cells serializes as <br> (tiptap-markdown
-      // falls back to "[hardBreak]" when html is off — ENG-88).
-      html: true,
+      // html:false so unknown tags stay literal text (ENG-129). TableHardBreak
+      // special-cases `<br>` in cells (ENG-88) without turning markdown-it loose
+      // on every tag.
+      html: false,
       transformPastedText: true,
     }),
   ];
