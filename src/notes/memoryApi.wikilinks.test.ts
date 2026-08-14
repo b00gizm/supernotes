@@ -95,6 +95,32 @@ describe("memoryApi wikilink sync", () => {
     ).toEqual(["proj", "wr"]);
   });
 
+  it("syncs and rewrites Unicode-folded wikilinks (ENG-134)", async () => {
+    const api = createMemoryNotesApi([
+      seed({
+        id: "src",
+        title: "Source",
+        body_markdown: "See [[über plan]].",
+      }),
+      seed({ id: "plan", title: "Über plan" }),
+    ]);
+    await api.updateNote({
+      id: "src",
+      title: "Source",
+      body_markdown: "See [[über plan]].",
+    });
+    expect(await api.listLinksFrom("src")).toEqual([
+      expect.objectContaining({
+        source_note_id: "src",
+        target_note_id: "plan",
+      }),
+    ]);
+
+    await api.updateNote({ id: "plan", title: "Done plan", body_markdown: "" });
+    const source = (await api.listNotes()).find((note) => note.id === "src");
+    expect(source?.body_markdown).toBe("See [[Done plan]].");
+  });
+
   it("syncs and rewrites #tag / @mention like wikilinks", async () => {
     const api = createMemoryNotesApi([
       seed({ id: "src", title: "Source" }),

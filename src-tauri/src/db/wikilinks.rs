@@ -118,8 +118,14 @@ pub fn extract_wikilink_titles(body: &str) -> Vec<String> {
     titles
 }
 
+/// Unicode case-fold used by resolve and rewrite (matches JS `String#toLowerCase`).
+/// SQLite `LOWER()` is ASCII-only, so title matching happens in Rust.
+pub fn titles_eq_folded(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
+}
+
 /// Replace `[[old]]` / `#old` / `@old` when the captured title matches
-/// case-insensitively (same as `find_note_by_title` / SQLite `LOWER`).
+/// case-insensitively (same Unicode fold as `find_note_by_title`).
 /// Tag/mention shorthand rewrites only when both titles still fit that syntax.
 pub fn rewrite_wikilink_title(body: &str, old_title: &str, new_title: &str) -> String {
     if old_title == new_title {
@@ -135,7 +141,7 @@ pub fn rewrite_wikilink_title(body: &str, old_title: &str, new_title: &str) -> S
             let start = i + 2;
             if let Some(rel) = body[start..].find("]]") {
                 let raw = &body[start..start + rel];
-                if raw.trim().eq_ignore_ascii_case(old_title) {
+                if titles_eq_folded(raw.trim(), old_title) {
                     out.push_str("[[");
                     out.push_str(new_title);
                     out.push_str("]]");
@@ -147,7 +153,7 @@ pub fn rewrite_wikilink_title(body: &str, old_title: &str, new_title: &str) -> S
 
         if rewrite_tag && bytes[i] == b'#' && !is_wordy_before(bytes, i) {
             if let Some(title) = scan_tag_title(body, i + 1) {
-                if title.eq_ignore_ascii_case(old_title) {
+                if titles_eq_folded(title, old_title) {
                     out.push('#');
                     out.push_str(new_title);
                     i += 1 + title.len();
@@ -158,7 +164,7 @@ pub fn rewrite_wikilink_title(body: &str, old_title: &str, new_title: &str) -> S
 
         if rewrite_mention && bytes[i] == b'@' && !is_wordy_before(bytes, i) {
             if let Some(title) = scan_mention_title(body, i + 1) {
-                if title.eq_ignore_ascii_case(old_title) {
+                if titles_eq_folded(title, old_title) {
                     out.push('@');
                     out.push_str(new_title);
                     i += 1 + title.len();
@@ -238,21 +244,52 @@ mod tests {
     }
 
     #[test]
-    fn extract_parity_fixture_matches_ts() {
+    fn rewrite_matches_unicode_case_fold() {
+        assert_eq!(
+            rewrite_wikilink_title("See [[über plan]] next.", "Über plan", "Done"),
+            "See [[Done]] next."
+        );
+        assert!(titles_eq_folded("Über plan", "über plan"));
+        assert!(!titles_eq_folded("Über plan", "uber plan"));
+    }
+
+    #[test]
+    fn extract_and_rewrite_parity_fixture_matches_ts() {
         #[derive(serde::Deserialize)]
-        struct Case {
+        struct Fixture {
+            extract: Vec<ExtractCase>,
+            rewrite: Vec<RewriteCase>,
+        }
+        #[derive(serde::Deserialize)]
+        struct ExtractCase {
             body: String,
             titles: Vec<String>,
         }
-        let cases: Vec<Case> = serde_json::from_str(include_str!(
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct RewriteCase {
+            body: String,
+            old_title: String,
+            new_title: String,
+            rewritten: String,
+        }
+        let fixture: Fixture = serde_json::from_str(include_str!(
             "../../../src/notes/fixtures/wikilink-extract-parity.json"
         ))
         .expect("parity fixture");
-        for case in cases {
+        for case in fixture.extract {
             assert_eq!(
                 extract_wikilink_titles(&case.body),
                 case.titles,
-                "body={:?}",
+                "extract body={:?}",
+                case.body
+            );
+        }
+        for case in fixture.rewrite {
+            assert_eq!(
+                rewrite_wikilink_title(&case.body, &case.old_title, &case.new_title),
+                case.rewritten,
+                "rewrite body={:?}",
                 case.body
             );
         }
