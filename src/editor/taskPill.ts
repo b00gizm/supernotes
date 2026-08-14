@@ -503,6 +503,9 @@ function hydrateTaskPills(editor: Editor, options: TaskPillOptions): void {
         }
       });
       if (tr.docChanged) {
+        // Attr-only hydrate must not dirty the note body / bump updated_at (ENG-139).
+        tr.setMeta("preventUpdate", true);
+        tr.setMeta("addToHistory", false);
         view.dispatch(tr);
       }
     })

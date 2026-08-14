@@ -143,10 +143,14 @@ export function NoteEditor({
 }: NoteEditorProps) {
   const notesRef = useRef(notes);
   const currentNoteIdRef = useRef(currentNoteId);
+  const markdownRef = useRef(markdown);
+  const onChangeRef = useRef(onChange);
   const onOpenWikiLinkRef = useRef(onOpenWikiLink);
   const onFocusedTaskRef = useRef(onFocusedTask);
   notesRef.current = notes;
   currentNoteIdRef.current = currentNoteId;
+  markdownRef.current = markdown;
+  onChangeRef.current = onChange;
   onOpenWikiLinkRef.current = onOpenWikiLink;
   onFocusedTaskRef.current = onFocusedTask;
 
@@ -371,10 +375,13 @@ export function NoteEditor({
       if (current.isDestroyed) {
         return;
       }
-      onChange(
-        getEditorMarkdown(current) || current.getText(),
-        currentNoteIdRef.current,
-      );
+      const next = getEditorMarkdown(current) || current.getText();
+      // Attr-sync / load transactions that serialize identically must not
+      // dirty the draft — that bumps updated_at with no user edit (ENG-139).
+      if (next === markdownRef.current) {
+        return;
+      }
+      onChangeRef.current(next, currentNoteIdRef.current);
     },
   });
 

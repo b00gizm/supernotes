@@ -462,6 +462,59 @@ describe("task pill (ENG-61)", () => {
     });
   });
 
+  it("does not dirty onChange when pill hydrate updates attrs (ENG-139)", async () => {
+    const onChange = vi.fn();
+    const stamp = "2026-08-12T00:00:00.000Z";
+    const seed: Task = {
+      id: "t-ghost",
+      note_id: "n-ghost",
+      title: "Buy oat milk",
+      state: "done",
+      due_date: "2026-08-20",
+      priority: "urgent",
+      created_at: stamp,
+      updated_at: stamp,
+      completed_at: stamp,
+    };
+    const listSpy = vi
+      .spyOn(browserTasksApi, "listTasksForNote")
+      .mockResolvedValue([seed]);
+    const markdown = "[[task:t-ghost]] Buy milk\n\nBody";
+    try {
+      const user = userEvent.setup();
+      render(
+        createElement(NoteEditor, {
+          markdown,
+          onChange,
+          currentNoteId: "n-ghost",
+        }),
+      );
+      const textbox = await screen.findByRole("textbox", { name: "Note body" });
+      await waitFor(() => {
+        const pill = textbox.querySelector(".task-pill");
+        expect(pill).toBeInstanceOf(HTMLElement);
+        expect(pill).toHaveClass("is-done");
+        const title = pill?.querySelector(".task-pill-title");
+        expect(title).toHaveValue("Buy oat milk");
+      });
+      await user.click(textbox);
+      expect(
+        onChange.mock.calls.filter(([next]) =>
+          String(next).includes("Buy oat milk"),
+        ),
+      ).toEqual([]);
+
+      await user.keyboard("!");
+      await waitFor(() => {
+        expect(
+          onChange.mock.calls.some(([next]) => String(next).includes("!")),
+        ).toBe(true);
+      });
+    } finally {
+      listSpy.mockRestore();
+    }
+  });
+
   it("does not select a leading task pill when the note opens", async () => {
     render(
       createElement(NoteEditor, {
