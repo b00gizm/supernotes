@@ -578,6 +578,45 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("routes early keystrokes into search instead of the open note (ENG-130)", async () => {
+    const user = userEvent.setup();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "n1",
+        title: "Hello world",
+        body_markdown: "Known unique sentence",
+        note_type: "regular",
+        pinned: false,
+        created_at: "2026-08-09T10:00:00.000Z",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      },
+    ]);
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+    await user.click(screen.getByRole("button", { name: /Hello world/ }));
+    const body = await screen.findByLabelText("Note body");
+    expect(body).toHaveTextContent("Known unique sentence");
+
+    await user.keyboard("{Control>}k{/Control}");
+    const search = await screen.findByLabelText("Search notes and tasks");
+
+    // Target-phase keydown on the editor: without capture this would hit the
+    // note under the overlay before the search input is focused.
+    body.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "p",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(search).toHaveValue("p");
+    });
+    expect(body).toHaveTextContent("Known unique sentence");
+  });
+
   it("shows backlinks from the links index and hides when empty", async () => {
     const user = userEvent.setup();
     const stamp = "2026-08-09T10:00:00.000Z";
