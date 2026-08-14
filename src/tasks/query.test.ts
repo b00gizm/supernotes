@@ -105,6 +105,11 @@ describe("task query helpers (ENG-63)", () => {
       "inbox",
     ]);
     expect(
+      filterTasks(tasks, "inbox", "2026-08-12", new Set(["waiting"])).map(
+        (t) => t.id,
+      ),
+    ).toEqual(["inbox"]);
+    expect(
       filterTasks(tasks, "upcoming", "2026-08-12").map((t) => t.id),
     ).toEqual(["up1", "up2", "up3"]);
     expect(

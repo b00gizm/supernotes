@@ -7,6 +7,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { calendarApi, subscribeCalendarChanged } from "../calendar/api";
+import { scheduledTaskIds } from "../calendar/taskDrag";
 import { formatDailyTitle } from "../notes/format";
 import type { Note } from "../notes/types";
 import { tasksApi } from "./api";
@@ -48,6 +50,9 @@ export function TasksView({
   const today = todayProp ?? formatDailyTitle();
   const [filter, setFilter] = useState<TaskListFilter>("inbox");
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [scheduledIds, setScheduledIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
@@ -58,8 +63,19 @@ export function TasksView({
         setLoading(true);
       }
       try {
-        const listed = await tasksApi.listTasks(filter, today);
-        setTasks(listed);
+        const [listed, events] = await Promise.all([
+          tasksApi.listTasks(filter, today),
+          // ponytail: unbounded list to hide time-blocked inbox rows in the
+          // browser mock. Tauri `list_tasks(inbox)` already uses NOT EXISTS.
+          calendarApi.listEvents(),
+        ]);
+        const scheduled = scheduledTaskIds(events);
+        setScheduledIds(scheduled);
+        setTasks(
+          filter === "inbox"
+            ? listed.filter((task) => !scheduled.has(task.id))
+            : listed,
+        );
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load tasks");
@@ -75,6 +91,7 @@ export function TasksView({
   }, [reload]);
 
   useEffect(() => subscribeTasksChanged(() => void reload(true)), [reload]);
+  useEffect(() => subscribeCalendarChanged(() => void reload(true)), [reload]);
 
   const noteById = useMemo(
     () => new Map(notes.map((note) => [note.id, note])),
@@ -105,6 +122,7 @@ export function TasksView({
           prev.map((item) => (item.id === updated.id ? updated : item)),
           filter,
           today,
+          scheduledIds,
         ),
       );
       setError(null);

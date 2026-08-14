@@ -294,14 +294,17 @@ export function filterTasks(
   tasks: Task[],
   filter: TaskListFilter,
   today: string,
+  scheduledIds: ReadonlySet<string> = new Set(),
 ): Task[] {
   if (filter === "inbox") {
-    // ENG-117: undated Waiting has no other home; Inbox is all undated non-terminal.
+    // ENG-117: undated Waiting has no other home; Inbox is all undated
+    // non-terminal. Time-blocked tasks live on the calendar until unlinked.
     return tasks
       .filter(
         (task) =>
           (task.state === "open" || task.state === "waiting") &&
-          task.due_date == null,
+          task.due_date == null &&
+          !scheduledIds.has(task.id),
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
