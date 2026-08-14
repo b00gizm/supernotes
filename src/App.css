@@ -589,6 +589,10 @@ button {
   padding: var(--space-6) var(--space-10) var(--space-8);
 }
 
+.editor-pane {
+  overflow: auto;
+}
+
 /* Constrain readable line length, centred; mirrors Bear/Apple Notes aesthetic */
 .editor-pane > *,
 .overview-pane > * {
@@ -1187,9 +1191,8 @@ button {
 .note-editor {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
+  flex: 0 0 auto;
+  min-height: 12rem;
 }
 
 .due-section,
