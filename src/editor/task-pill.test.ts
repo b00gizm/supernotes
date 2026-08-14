@@ -479,6 +479,37 @@ describe("task pill (ENG-61)", () => {
     });
   });
 
+  it("strips [[wikilink]] brackets from the title on commit (ENG-147)", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(NoteEditor, {
+        markdown: "",
+        onChange: () => {},
+        currentNoteId: "note-wikilink-title",
+      }),
+    );
+    const textbox = await screen.findByRole("textbox", { name: "Note body" });
+    await user.click(textbox);
+    await user.keyboard("[[] ");
+    const input = await waitFor(() => {
+      const el = textbox.querySelector(".task-pill-title");
+      expect(el).toBeInstanceOf(HTMLInputElement);
+      expect(document.activeElement).toBe(el);
+      return el as HTMLInputElement;
+    });
+    // user-event: `{[}` types a literal `[` (`[[` collapses to one `[`).
+    await user.keyboard("{[}{[}Foo{]}{]}");
+    input.blur();
+    await waitFor(async () => {
+      expect(input).toHaveValue("Foo");
+      const listed = await browserTasksApi.listTasksForNote(
+        "note-wikilink-title",
+      );
+      expect(listed.some((task) => task.title === "Foo")).toBe(true);
+      expect(listed.every((task) => !task.title.includes("[["))).toBe(true);
+    });
+  });
+
   it("blurring an empty title deletes the pill", async () => {
     const user = userEvent.setup();
     render(

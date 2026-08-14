@@ -135,7 +135,18 @@ export function TaskPillView({
   };
 
   const commitTitle = (next: string) => {
-    const trimmed = next.replace(/\s+/g, " ").trimStart();
+    let trimmed = next.replace(/\s+/g, " ").trimStart();
+    if (trimmed.includes("[[")) {
+      trimmed = trimmed
+        .replace(/\[\[([^\]|]*)(?:\|[^\]]*)?\]\]/g, "$1")
+        .replace(/\[\[|\]\]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!trimmed) {
+        setDraft(title);
+        return;
+      }
+    }
     if (trimmed === title) {
       setDraft(title);
       return;
