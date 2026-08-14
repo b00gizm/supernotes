@@ -16,6 +16,7 @@ Range.prototype.getBoundingClientRect = () => ({
 });
 Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 document.elementFromPoint = () => null;
+HTMLElement.prototype.scrollIntoView = () => {};
 
 afterEach(() => {
   cleanup();
