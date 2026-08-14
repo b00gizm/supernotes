@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { earliestScheduledOn, scheduledTaskIds } from "./taskDrag";
+import { scheduledTaskIds } from "./taskDrag";
 import type { CalendarEvent } from "./types";
 
 describe("scheduledTaskIds (ENG-66)", () => {
@@ -31,6 +31,5 @@ describe("scheduledTaskIds (ENG-66)", () => {
       },
     ];
     expect([...scheduledTaskIds(events)]).toEqual(["t-1"]);
-    expect(earliestScheduledOn(events).get("t-1")).toBe("2026-08-10");
   });
 });

@@ -66,7 +66,7 @@ vi.mock("./api", async () => {
   };
 });
 
-const TODAY = "2026-08-10";
+const TODAY = "2026-08-14";
 
 const notes: Note[] = [
   {
@@ -75,38 +75,45 @@ const notes: Note[] = [
     body_markdown: "",
     note_type: "regular",
     pinned: false,
-    created_at: "2026-08-10T00:00:00.000Z",
-    updated_at: "2026-08-10T00:00:00.000Z",
+    created_at: "2026-08-14T00:00:00.000Z",
+    updated_at: "2026-08-14T00:00:00.000Z",
   },
 ];
 
-const inbox: Task = {
-  id: "t-inbox",
-  note_id: "n1",
-  title: "Beatport kündigen",
-  state: "open",
-  due_date: null,
-  priority: null,
-  created_at: "2026-08-10T00:00:00.000Z",
-  updated_at: "2026-08-10T00:00:00.000Z",
-  completed_at: null,
-};
+function openTask(partial: Partial<Task> & Pick<Task, "id" | "title">): Task {
+  return {
+    note_id: "n1",
+    state: "open",
+    due_date: null,
+    priority: null,
+    created_at: "2026-08-14T00:00:00.000Z",
+    updated_at: "2026-08-14T00:00:00.000Z",
+    completed_at: null,
+    ...partial,
+  };
+}
 
-describe("TasksView inbox vs time-blocking", () => {
+describe("TasksView date grouping", () => {
   beforeEach(() => {
     calRef.current = createMemoryCalendarApi();
-    tasksRef.current = createMemoryTasksApi([inbox]);
+    tasksRef.current = createMemoryTasksApi();
   });
 
-  it("keeps time-blocked tasks on Inbox under Scheduled", async () => {
+  it("puts a Friday block with a Sunday due date on Today", async () => {
+    const task = openTask({
+      id: "t-sun",
+      title: "Pricing sync",
+      due_date: "2026-08-16",
+    });
+    tasksRef.current = createMemoryTasksApi([task]);
     calRef.current = createMemoryCalendarApi([
       {
         id: "block",
-        title: "Beatport kündigen",
-        start: minutesToIso(TODAY, 18 * 60),
-        end: minutesToIso(TODAY, 18 * 60 + 15),
-        task_id: "t-inbox",
-        created_at: "2026-08-10T00:00:00.000Z",
+        title: "Pricing sync",
+        start: minutesToIso(TODAY, 13 * 60),
+        end: minutesToIso(TODAY, 14 * 60),
+        task_id: "t-sun",
+        created_at: "2026-08-14T00:00:00.000Z",
       },
     ]);
     render(
@@ -118,20 +125,54 @@ describe("TasksView inbox vs time-blocking", () => {
       />,
     );
     const pane = await screen.findByRole("region", { name: "Tasks" });
-    const scheduled = await within(pane).findByRole("region", {
-      name: "Scheduled",
+    expect(within(pane).queryByRole("tab")).toBeNull();
+    const today = await within(pane).findByRole("region", {
+      name: /Today /,
     });
-    expect(
-      within(scheduled).getByText("Beatport kündigen"),
-    ).toBeInTheDocument();
-    expect(
-      within(pane).queryByText(
-        "Inbox is empty. Type [] at the start of a line in a note.",
-      ),
-    ).toBeNull();
+    expect(within(today).getByText("Pricing sync")).toBeInTheDocument();
+    expect(within(today).getByText("13:00–14:00")).toBeInTheDocument();
+    expect(within(today).getByText("Aug 16")).toBeInTheDocument();
+    expect(within(pane).queryByRole("region", { name: "Overdue" })).toBeNull();
   });
 
-  it("returns the task to inbox after the linked event is deleted", async () => {
+  it("keeps a Friday block with a Thursday due date in Overdue", async () => {
+    const task = openTask({
+      id: "t-thu",
+      title: "Late brief",
+      due_date: "2026-08-13",
+    });
+    tasksRef.current = createMemoryTasksApi([task]);
+    calRef.current = createMemoryCalendarApi([
+      {
+        id: "block",
+        title: "Late brief",
+        start: minutesToIso(TODAY, 13 * 60),
+        end: minutesToIso(TODAY, 14 * 60),
+        task_id: "t-thu",
+        created_at: "2026-08-14T00:00:00.000Z",
+      },
+    ]);
+    render(
+      <TasksView
+        notes={notes}
+        today={TODAY}
+        onOpenTask={vi.fn()}
+        onCreateTask={vi.fn()}
+      />,
+    );
+    const pane = await screen.findByRole("region", { name: "Tasks" });
+    const overdue = await within(pane).findByRole("region", {
+      name: "Overdue",
+    });
+    expect(within(overdue).getByText("Late brief")).toBeInTheDocument();
+    expect(within(overdue).getByText("13:00–14:00")).toBeInTheDocument();
+    expect(within(overdue).getByText("Aug 13")).toHaveClass("is-overdue");
+    expect(within(pane).queryByRole("region", { name: /Today / })).toBeNull();
+  });
+
+  it("returns an unscheduled undated task after its event is deleted", async () => {
+    const task = openTask({ id: "t-inbox", title: "Beatport kündigen" });
+    tasksRef.current = createMemoryTasksApi([task]);
     calRef.current = createMemoryCalendarApi([
       {
         id: "block",
@@ -139,7 +180,7 @@ describe("TasksView inbox vs time-blocking", () => {
         start: minutesToIso(TODAY, 18 * 60),
         end: minutesToIso(TODAY, 18 * 60 + 15),
         task_id: "t-inbox",
-        created_at: "2026-08-10T00:00:00.000Z",
+        created_at: "2026-08-14T00:00:00.000Z",
       },
     ]);
     const { emitCalendarChanged } = await import("../calendar/api");
@@ -153,17 +194,18 @@ describe("TasksView inbox vs time-blocking", () => {
     );
     const pane = await screen.findByRole("region", { name: "Tasks" });
     expect(
-      await within(pane).findByRole("region", { name: "Scheduled" }),
+      await within(pane).findByRole("region", { name: /Today / }),
     ).toBeInTheDocument();
 
     await calRef.current.deleteEvent("block");
     emitCalendarChanged();
 
     await waitFor(() => {
-      expect(
-        within(pane).queryByRole("region", { name: "Scheduled" }),
-      ).toBeNull();
+      expect(within(pane).queryByRole("region", { name: /Today / })).toBeNull();
     });
+    expect(
+      within(pane).getByRole("region", { name: "Unscheduled" }),
+    ).toBeInTheDocument();
     expect(within(pane).getByText("Beatport kündigen")).toBeInTheDocument();
   });
 });

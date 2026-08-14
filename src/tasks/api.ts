@@ -38,7 +38,7 @@ function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** Browser preview seed so Tasks overview has Inbox / Upcoming / Complete rows. */
+/** Browser preview seed so Tasks overview has overdue / today / unscheduled rows. */
 function demoTasks(): Task[] {
   const today = formatDailyTitle();
   const now = new Date().toISOString();

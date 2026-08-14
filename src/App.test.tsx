@@ -105,7 +105,7 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("opens Tasks overview with Inbox / Upcoming / Complete", async () => {
+  it("opens Tasks overview grouped by overdue / day / unscheduled", async () => {
     const user = userEvent.setup();
     const today = formatDailyTitle();
     const todayIso = new Date().toISOString();
@@ -171,31 +171,25 @@ describe("App shell", () => {
     await user.click(within(nav).getByRole("button", { name: "Tasks" }));
 
     const pane = await screen.findByRole("region", { name: "Tasks" });
-    expect(within(pane).getByRole("tab", { name: "Inbox" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(within(pane).queryByRole("tab")).toBeNull();
     expect(within(pane).getByText("Buy milk")).toBeInTheDocument();
-    expect(within(pane).queryByText("Ship it")).not.toBeInTheDocument();
+    expect(within(pane).getByText("Ship it")).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("region", { name: "Overdue" }),
+    ).toBeInTheDocument();
+    expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
+    expect(within(pane).queryByText("Wrapped up")).not.toBeInTheDocument();
 
+    const unscheduled = within(pane).getByRole("region", {
+      name: "Unscheduled",
+    });
     await user.click(
-      within(pane).getByRole("button", { name: "Mark task done" }),
+      within(unscheduled).getByRole("button", { name: "Mark task done" }),
     );
     await waitFor(() => {
       expect(within(pane).queryByText("Buy milk")).not.toBeInTheDocument();
     });
 
-    await user.click(within(pane).getByRole("tab", { name: "Upcoming" }));
-    expect(await within(pane).findByText("Ship it")).toBeInTheDocument();
-    expect(
-      within(pane).getByRole("region", { name: "Overdue" }),
-    ).toBeInTheDocument();
-    expect(within(pane).getByText("Aug 1")).toHaveClass("is-overdue");
-
-    await user.click(within(pane).getByRole("tab", { name: "Complete" }));
-    expect(await within(pane).findByText("Wrapped up")).toBeInTheDocument();
-
-    await user.click(within(pane).getByRole("tab", { name: "Upcoming" }));
     await user.click(within(pane).getByText("Ship it"));
     expect(await screen.findByLabelText("Note title")).toHaveValue(
       dailyDisplayTitle(today),
@@ -1050,7 +1044,7 @@ describe("App shell", () => {
     const pane = await screen.findByRole("region", { name: "Tasks" });
     expect(
       within(pane).getByText(
-        "Inbox is empty. Type [] at the start of a line in a note.",
+        "No open tasks. Type [] at the start of a line in a note.",
       ),
     ).toBeInTheDocument();
 

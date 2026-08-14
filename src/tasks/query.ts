@@ -156,13 +156,75 @@ export type UpcomingGroup = {
   tasks: Task[];
 };
 
+export type TaskSchedule = {
+  start: string;
+  end: string;
+  day: string;
+};
+
+/** Earliest linked calendar slot per task. */
+export function schedulesFromEvents(
+  events: ReadonlyArray<{
+    task_id: string | null;
+    start: string;
+    end: string;
+  }>,
+): Map<string, TaskSchedule> {
+  const byTask = new Map<string, TaskSchedule>();
+  for (const event of events) {
+    if (!event.task_id) {
+      continue;
+    }
+    const prev = byTask.get(event.task_id);
+    if (prev && prev.start <= event.start) {
+      continue;
+    }
+    byTask.set(event.task_id, {
+      start: event.start,
+      end: event.end,
+      day: formatDailyTitle(new Date(event.start)),
+    });
+  }
+  return byTask;
+}
+
+function sortOpenTasks(
+  tasks: Task[],
+  schedules: ReadonlyMap<string, TaskSchedule>,
+): Task[] {
+  return [...tasks].sort((a, b) => {
+    const scheduledA = schedules.get(a.id);
+    const scheduledB = schedules.get(b.id);
+    if (scheduledA && scheduledB) {
+      const start = scheduledA.start.localeCompare(scheduledB.start);
+      if (start !== 0) {
+        return start;
+      }
+    } else if (scheduledA) {
+      return -1;
+    } else if (scheduledB) {
+      return 1;
+    }
+    const priority = priorityRank(a.priority) - priorityRank(b.priority);
+    if (priority !== 0) {
+      return priority;
+    }
+    return a.created_at.localeCompare(b.created_at);
+  });
+}
+
 /**
- * Group Upcoming tasks per design mockup:
- * Overdue → Today → Tomorrow → rest of this week (per day) → Next week → later weeks.
+ * Open tasks on the Tasks page:
+ * Overdue (due date in the past, even if scheduled later) → earlier days
+ * this week → Today → Tomorrow → rest of this week → Next week → later
+ * weeks → Unscheduled (no due, no slot).
+ *
+ * A time block places the row on that day unless the due date is overdue.
  */
 export function groupUpcomingTasks(
   tasks: Task[],
   today: string,
+  schedules: ReadonlyMap<string, TaskSchedule> = new Map(),
 ): UpcomingGroup[] {
   const tomorrow = addDays(today, 1);
   const thisWeekStart = startOfWeekMonday(today);
@@ -171,23 +233,33 @@ export function groupUpcomingTasks(
   const nextWeekEnd = addDays(nextWeekStart, 6);
 
   const overdue: Task[] = [];
-  const byDue = new Map<string, Task[]>();
+  const unscheduled: Task[] = [];
+  const byDay = new Map<string, Task[]>();
 
   for (const task of tasks) {
-    const due = task.due_date;
-    if (!due) {
+    if (task.state === "done" || task.state === "cancelled") {
       continue;
     }
-    if (due < today) {
+    if (task.due_date && task.due_date < today) {
       overdue.push(task);
       continue;
     }
-    const bucket = byDue.get(due) ?? [];
+    const day = schedules.get(task.id)?.day ?? task.due_date;
+    if (!day) {
+      unscheduled.push(task);
+      continue;
+    }
+    const bucket = byDay.get(day) ?? [];
     bucket.push(task);
-    byDue.set(due, bucket);
+    byDay.set(day, bucket);
   }
 
   const groups: UpcomingGroup[] = [];
+  const takeDay = (day: string): Task[] => {
+    const listed = byDay.get(day);
+    byDay.delete(day);
+    return listed?.length ? sortOpenTasks(listed, schedules) : [];
+  };
 
   if (overdue.length > 0) {
     groups.push({
@@ -195,42 +267,17 @@ export function groupUpcomingTasks(
       label: "Overdue",
       tone: "overdue",
       showCount: true,
-      tasks: overdue,
+      tasks: sortOpenTasks(overdue, schedules),
     });
   }
 
-  const todayTasks = byDue.get(today);
-  if (todayTasks?.length) {
-    groups.push({
-      id: `day-${today}`,
-      label: `Today ${formatShortDay(today)}`,
-      tone: "today",
-      showCount: false,
-      tasks: todayTasks,
-    });
-    byDue.delete(today);
-  }
-
-  const tomorrowTasks = byDue.get(tomorrow);
-  if (tomorrowTasks?.length) {
-    groups.push({
-      id: `day-${tomorrow}`,
-      label: `Tomorrow ${formatShortDay(tomorrow)}`,
-      tone: "default",
-      showCount: false,
-      tasks: tomorrowTasks,
-    });
-    byDue.delete(tomorrow);
-  }
-
-  // Remaining days in the current week (after tomorrow), each as its own section.
   for (
-    let cursor = addDays(tomorrow, 1);
-    cursor <= thisWeekEnd;
+    let cursor = thisWeekStart;
+    cursor < today;
     cursor = addDays(cursor, 1)
   ) {
-    const dayTasks = byDue.get(cursor);
-    if (!dayTasks?.length) {
+    const dayTasks = takeDay(cursor);
+    if (!dayTasks.length) {
       continue;
     }
     groups.push({
@@ -240,21 +287,55 @@ export function groupUpcomingTasks(
       showCount: false,
       tasks: dayTasks,
     });
-    byDue.delete(cursor);
   }
 
-  // Next week as a single ranged group.
+  const todayTasks = takeDay(today);
+  if (todayTasks.length) {
+    groups.push({
+      id: `day-${today}`,
+      label: `Today ${formatShortDay(today)}`,
+      tone: "today",
+      showCount: false,
+      tasks: todayTasks,
+    });
+  }
+
+  const tomorrowTasks = takeDay(tomorrow);
+  if (tomorrowTasks.length) {
+    groups.push({
+      id: `day-${tomorrow}`,
+      label: `Tomorrow ${formatShortDay(tomorrow)}`,
+      tone: "default",
+      showCount: false,
+      tasks: tomorrowTasks,
+    });
+  }
+
+  for (
+    let cursor = addDays(tomorrow, 1);
+    cursor <= thisWeekEnd;
+    cursor = addDays(cursor, 1)
+  ) {
+    const dayTasks = takeDay(cursor);
+    if (!dayTasks.length) {
+      continue;
+    }
+    groups.push({
+      id: `day-${cursor}`,
+      label: formatWeekdayMonthDay(cursor),
+      tone: "default",
+      showCount: false,
+      tasks: dayTasks,
+    });
+  }
+
   const nextWeekTasks: Task[] = [];
   for (
     let cursor = nextWeekStart;
     cursor <= nextWeekEnd;
     cursor = addDays(cursor, 1)
   ) {
-    const dayTasks = byDue.get(cursor);
-    if (dayTasks?.length) {
-      nextWeekTasks.push(...dayTasks);
-      byDue.delete(cursor);
-    }
+    nextWeekTasks.push(...takeDay(cursor));
   }
   if (nextWeekTasks.length > 0) {
     groups.push({
@@ -262,17 +343,16 @@ export function groupUpcomingTasks(
       label: `Next week ${formatWeekRange(nextWeekStart, nextWeekEnd)}`,
       tone: "default",
       showCount: false,
-      tasks: nextWeekTasks,
+      tasks: sortOpenTasks(nextWeekTasks, schedules),
     });
   }
 
-  // Anything later: bucket by week (Mon–Sun).
-  const remainingDates = [...byDue.keys()].sort();
+  const remainingDates = [...byDay.keys()].sort();
   const weekBuckets = new Map<string, Task[]>();
-  for (const due of remainingDates) {
-    const weekStart = startOfWeekMonday(due);
+  for (const day of remainingDates) {
+    const weekStart = startOfWeekMonday(day);
     const bucket = weekBuckets.get(weekStart) ?? [];
-    bucket.push(...(byDue.get(due) ?? []));
+    bucket.push(...(byDay.get(day) ?? []));
     weekBuckets.set(weekStart, bucket);
   }
   for (const weekStart of [...weekBuckets.keys()].sort()) {
@@ -282,28 +362,21 @@ export function groupUpcomingTasks(
       label: formatWeekRange(weekStart, weekEnd),
       tone: "default",
       showCount: false,
-      tasks: weekBuckets.get(weekStart) ?? [],
+      tasks: sortOpenTasks(weekBuckets.get(weekStart) ?? [], schedules),
+    });
+  }
+
+  if (unscheduled.length > 0) {
+    groups.push({
+      id: "unscheduled",
+      label: "Unscheduled",
+      tone: "default",
+      showCount: false,
+      tasks: sortOpenTasks(unscheduled, schedules),
     });
   }
 
   return groups;
-}
-
-/** Split Inbox rows: unscheduled capture vs time-blocked on the calendar. */
-export function partitionInboxTasks(
-  tasks: Task[],
-  scheduledIds: ReadonlySet<string>,
-): { unscheduled: Task[]; scheduled: Task[] } {
-  const unscheduled: Task[] = [];
-  const scheduled: Task[] = [];
-  for (const task of tasks) {
-    if (scheduledIds.has(task.id)) {
-      scheduled.push(task);
-    } else {
-      unscheduled.push(task);
-    }
-  }
-  return { unscheduled, scheduled };
 }
 
 /** Mirror of backend `list_tasks` filters (memory API / unit checks). */
@@ -313,8 +386,8 @@ export function filterTasks(
   today: string,
 ): Task[] {
   if (filter === "inbox") {
-    // ENG-117: undated Waiting has no other home; Inbox is all undated
-    // non-terminal. Time-blocked rows stay here under Scheduled.
+    // Calendar sidebar + Due still use these filters. Tasks page merges
+    // inbox + upcoming and groups by due / schedule.
     return tasks
       .filter(
         (task) =>

@@ -20,6 +20,18 @@ export function shiftYmd(ymd: string, days: number): string {
   return shiftDailyTitle(ymd, days);
 }
 
+/** Local clock range (`13:00–14:00`) for a linked calendar slot. */
+export function formatScheduleSpan(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "";
+  }
+  const clock = (date: Date) =>
+    `${String(date.getHours())}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return `${clock(start)}–${clock(end)}`;
+}
+
 /** Short month-day label (`Aug 14`). */
 export function formatShortDue(ymd: string): string {
   const date = parseDailyTitle(ymd);

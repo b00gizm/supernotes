@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { minutesToIso } from "../calendar/layout";
 import {
   filterTasks,
   groupUpcomingTasks,
   isTaskOverdue,
-  partitionInboxTasks,
   priorityRank,
+  schedulesFromEvents,
   tasksDueOnOrBefore,
 } from "./query";
 import type { Task } from "./types";
@@ -105,17 +106,6 @@ describe("task query helpers (ENG-63)", () => {
       "waiting",
       "inbox",
     ]);
-    const inboxRows = filterTasks(tasks, "inbox", "2026-08-12");
-    expect(
-      partitionInboxTasks(inboxRows, new Set(["waiting"])).unscheduled.map(
-        (t) => t.id,
-      ),
-    ).toEqual(["inbox"]);
-    expect(
-      partitionInboxTasks(inboxRows, new Set(["waiting"])).scheduled.map(
-        (t) => t.id,
-      ),
-    ).toEqual(["waiting"]);
     expect(
       filterTasks(tasks, "upcoming", "2026-08-12").map((t) => t.id),
     ).toEqual(["up1", "up2", "up3"]);
@@ -153,6 +143,46 @@ describe("task query helpers (ENG-63)", () => {
     expect(groups[2]?.label).toMatch(/^Tomorrow /);
     expect(groups[4]?.label).toMatch(/^Next week /);
     expect(groups[5]?.label).toBe("Aug 24 – 30");
+  });
+
+  it("places time-blocked tasks on the slot day unless they are overdue", () => {
+    const friday = "2026-08-14";
+    const slot = {
+      start: minutesToIso(friday, 13 * 60),
+      end: minutesToIso(friday, 14 * 60),
+    };
+    const tasks = [
+      task({
+        id: "today-due-sun",
+        title: "Block today, due Sunday",
+        due_date: "2026-08-16",
+      }),
+      task({
+        id: "today-due-thu",
+        title: "Block today, due Thursday",
+        due_date: "2026-08-13",
+      }),
+      task({ id: "today-only", title: "Block today" }),
+      task({ id: "undated", title: "No date" }),
+    ];
+    const schedules = schedulesFromEvents([
+      { task_id: "today-due-sun", ...slot },
+      { task_id: "today-due-thu", ...slot },
+      { task_id: "today-only", ...slot },
+    ]);
+
+    const groups = groupUpcomingTasks(tasks, friday, schedules);
+    expect(groups.map((g) => g.id)).toEqual([
+      "overdue",
+      "day-2026-08-14",
+      "unscheduled",
+    ]);
+    expect(groups[0]?.tasks.map((t) => t.id)).toEqual(["today-due-thu"]);
+    expect(groups[1]?.tasks.map((t) => t.id)).toEqual([
+      "today-due-sun",
+      "today-only",
+    ]);
+    expect(groups[2]?.tasks.map((t) => t.id)).toEqual(["undated"]);
   });
 
   it("rolls unresolved due tasks onto later days and drops terminal ones", () => {
