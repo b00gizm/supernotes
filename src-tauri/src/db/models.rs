@@ -147,4 +147,12 @@ pub struct Meeting {
     pub start_time: String,
     pub end_time: String,
     pub transcript_note_id: Option<String>,
+    pub calendar_event_id: Option<String>,
+}
+
+/// Note plus meeting metadata (create / create-from-event / lookup-by-event).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeetingNote {
+    pub note: Note,
+    pub meeting: Meeting,
 }

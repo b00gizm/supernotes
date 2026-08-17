@@ -29,6 +29,12 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/003_daily_title_local.sql"),
         after: Some(merge_duplicate_dailies_and_index),
     },
+    Migration {
+        version: 4,
+        name: "004_meetings_calendar_event",
+        sql: include_str!("../../migrations/004_meetings_calendar_event.sql"),
+        after: None,
+    },
 ];
 
 pub fn migrate(conn: &Connection) -> DbResult<i64> {
@@ -277,8 +283,8 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), 0);
 
         let version = migrate(&conn).unwrap();
-        assert_eq!(version, 3);
-        assert_eq!(current_version(&conn).unwrap(), 3);
+        assert_eq!(version, 4);
+        assert_eq!(current_version(&conn).unwrap(), 4);
 
         for table in [
             "notes",
@@ -304,15 +310,15 @@ mod tests {
     #[test]
     fn migrate_is_idempotent() {
         let conn = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&conn).unwrap(), 3);
-        assert_eq!(migrate(&conn).unwrap(), 3);
+        assert_eq!(migrate(&conn).unwrap(), 4);
+        assert_eq!(migrate(&conn).unwrap(), 4);
 
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(count, 3);
+        assert_eq!(count, 4);
     }
 
     #[test]
@@ -327,7 +333,7 @@ mod tests {
                 "2026-08-10T12:00:00.000Z",
             );
 
-            assert_eq!(migrate(&conn).unwrap(), 3);
+            assert_eq!(migrate(&conn).unwrap(), 4);
 
             let title: String = conn
                 .query_row("SELECT title FROM notes WHERE id = 'd1'", [], |row| {
@@ -369,7 +375,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(migrate(&conn).unwrap(), 3);
+        assert_eq!(migrate(&conn).unwrap(), 4);
 
         let count: i64 = conn
             .query_row(
@@ -418,7 +424,7 @@ mod tests {
                 "2026-08-08T22:30:00.000Z",
             );
 
-            assert_eq!(migrate(&conn).unwrap(), 3);
+            assert_eq!(migrate(&conn).unwrap(), 4);
 
             let mut titles: Vec<(String, String)> = conn
                 .prepare("SELECT id, title FROM notes ORDER BY id")
@@ -473,7 +479,7 @@ mod tests {
                 .unwrap();
             assert_eq!(utc_title, "2026-08-08");
 
-            assert_eq!(migrate(&conn).unwrap(), 3);
+            assert_eq!(migrate(&conn).unwrap(), 4);
 
             let local_title: String = conn
                 .query_row("SELECT title FROM notes WHERE id = 'd1'", [], |row| {
@@ -482,5 +488,45 @@ mod tests {
                 .unwrap();
             assert_eq!(local_title, "2026-08-09");
         });
+    }
+
+    #[test]
+    fn migrate_004_adds_calendar_event_link_to_existing_meetings() {
+        let conn = conn_at_v1();
+        conn.execute(
+            "INSERT INTO notes (id, title, body_markdown, note_type, pinned, created_at, updated_at)
+             VALUES ('n1', 'Pricing sync', '', 'meeting', 0, '2026-08-10T12:00:00.000Z', '2026-08-10T12:00:00.000Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO meetings (note_id, meeting_date, start_time, end_time)
+             VALUES ('n1', '2026-08-10', '14:00', '14:23')",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(migrate(&conn).unwrap(), 4);
+
+        let event_id: Option<String> = conn
+            .query_row(
+                "SELECT calendar_event_id FROM meetings WHERE note_id = 'n1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(event_id.is_none());
+
+        let index_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'index' AND name = 'meetings_calendar_event_uidx'
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(index_exists);
     }
 }
