@@ -47,6 +47,7 @@ export type CalendarViewProps = {
   notes: Note[];
   onOpenDaily: (ymd: string) => void;
   onOpenTask: (task: Task, note: Note) => void;
+  onCreateMeetingNote?: (event: CalendarEvent) => void;
 };
 
 type CalMode = "week" | "agenda";
@@ -227,6 +228,7 @@ export function CalendarView({
   notes,
   onOpenDaily,
   onOpenTask,
+  onCreateMeetingNote,
 }: CalendarViewProps) {
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(today));
   const [selectedDay, setSelectedDay] = useState(today);
@@ -1435,6 +1437,20 @@ export function CalendarView({
             onDelete={() => {
               void deleteEvent(edit.id);
             }}
+            onCreateMeetingNote={
+              onCreateMeetingNote
+                ? () => {
+                    const event = events.find((item) => item.id === edit.id);
+                    if (!event) {
+                      return;
+                    }
+                    onCreateMeetingNote({
+                      ...event,
+                      title: edit.title.trim() || event.title,
+                    });
+                  }
+                : undefined
+            }
           />
         ) : null}
       </div>
@@ -1515,12 +1531,14 @@ function EventFields({
   onCommit,
   onCancel,
   onDelete,
+  onCreateMeetingNote,
 }: {
   edit: EditState;
   onChange: (next: EditState) => void;
   onCommit: () => void;
   onCancel: () => void;
   onDelete: () => void;
+  onCreateMeetingNote?: () => void;
 }) {
   return (
     <form
@@ -1590,6 +1608,18 @@ function EventFields({
             onChange({ ...edit, endMin: mins });
           }}
         />
+        {onCreateMeetingNote ? (
+          <button
+            type="button"
+            className="text-button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onCreateMeetingNote();
+            }}
+          >
+            Meeting note
+          </button>
+        ) : null}
         <button
           type="button"
           className="text-button danger"

@@ -4,6 +4,7 @@ import type { Note, NoteType } from "./notes/types";
 import { TaskStateIcon } from "./tasks/TaskStateIcon";
 import type { Task } from "./tasks/types";
 import { highlightMatch } from "./ui/highlightMatch";
+import { IconWaveform } from "./ui/IconWaveform";
 
 export type SearchPaletteProps = {
   open: boolean;
@@ -72,22 +73,12 @@ function IconNoteDoc() {
   );
 }
 
-function IconMeetingBars() {
-  return (
-    <svg className="search-type-icon" viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M4 5.5v5M8 3.5v9M12 6v4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 function TypeIcon({ type }: { type: NoteType }) {
-  return type === "meeting" ? <IconMeetingBars /> : <IconNoteDoc />;
+  return type === "meeting" ? (
+    <IconWaveform className="search-type-icon" />
+  ) : (
+    <IconNoteDoc />
+  );
 }
 
 export function SearchPalette({

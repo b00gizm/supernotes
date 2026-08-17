@@ -152,13 +152,18 @@ function mockGridRect() {
   return grid as HTMLElement;
 }
 
-function renderCalendar(onOpenDaily = vi.fn(), onOpenTask = vi.fn()) {
+function renderCalendar(
+  onOpenDaily = vi.fn(),
+  onOpenTask = vi.fn(),
+  onCreateMeetingNote = vi.fn(),
+) {
   return render(
     <CalendarView
       today={TODAY}
       notes={notes}
       onOpenDaily={onOpenDaily}
       onOpenTask={onOpenTask}
+      onCreateMeetingNote={onCreateMeetingNote}
     />,
   );
 }
@@ -245,6 +250,26 @@ describe("CalendarView (ENG-65)", () => {
     });
     const after = await calRef.current.listEvents();
     expect(after.some((item) => item.title === "Pricing sync")).toBe(false);
+  });
+
+  it("offers Meeting note from an event with the event's date and times", async () => {
+    const user = userEvent.setup();
+    const onCreateMeetingNote = vi.fn();
+    renderCalendar(vi.fn(), vi.fn(), onCreateMeetingNote);
+    await screen.findAllByText("Standup");
+    await user.click(screen.getByRole("tab", { name: "Agenda" }));
+    const hits = await screen.findAllByRole("button", { name: /Standup/ });
+    const hit = hits.at(0);
+    if (!hit) {
+      throw new Error("expected an event to click");
+    }
+    await user.click(hit);
+    await user.click(screen.getByRole("button", { name: "Meeting note" }));
+    expect(onCreateMeetingNote).toHaveBeenCalledTimes(1);
+    const event = onCreateMeetingNote.mock.calls[0]?.[0];
+    expect(event?.title).toBe("Standup");
+    expect(event?.start).toBe(minutesToIso(TODAY, 9 * 60 + 30));
+    expect(event?.end).toBe(minutesToIso(TODAY, 9 * 60 + 45));
   });
 
   it("creates an event by dragging on the week grid", async () => {

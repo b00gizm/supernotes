@@ -24,10 +24,20 @@ import {
 import { NoteEditor } from "./editor/NoteEditor";
 import { Backlinks } from "./notes/Backlinks";
 import { CalendarView } from "./calendar/CalendarView";
+import type { CalendarEvent } from "./calendar/types";
+import { meetingsApi } from "./meetings/api";
+import {
+  defaultMeetingTimes,
+  meetingTimesFromLocalIso,
+} from "./meetings/format";
+import { MeetingHeader } from "./meetings/MeetingHeader";
+import { queueMeetingPrefill } from "./meetings/pending";
+import type { MeetingPrefill } from "./meetings/types";
 import { DueSection } from "./tasks/DueSection";
 import { TasksView } from "./tasks/TasksView";
 import { tasksApi } from "./tasks/api";
 import type { Task } from "./tasks/types";
+import { IconWaveform } from "./ui/IconWaveform";
 import {
   isSearchKpiMode,
   runSearchKpi,
@@ -186,20 +196,6 @@ function IconCalendar() {
         d="M5.25 9h1.1M7.45 9h1.1M9.65 9h1.1M5.25 11.15h1.1M7.45 11.15h1.1"
         stroke="currentColor"
         strokeWidth="1.25"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function IconWaveform() {
-  return (
-    <svg className="waveform-icon" viewBox="0 0 12 12" aria-hidden="true">
-      <path
-        d="M1.25 5v2M3.1 3.25v5.5M4.95 1.75v8.5M6.8 4v4M8.65 2.75v6.5M10.5 4.75v2.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.35"
         strokeLinecap="round"
       />
     </svg>
@@ -373,11 +369,15 @@ function App() {
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
+  const [meetingActionError, setMeetingActionError] = useState<string | null>(
+    null,
+  );
   const [kpiMode] = useState(() => isSearchKpiMode());
   const [kpiResult, setKpiResult] = useState<SearchKpiResult | null>(null);
   const [lastSearchMs, setLastSearchMs] = useState<number | null>(null);
   const dailyOpening = useRef(false);
   const creatingTaskRef = useRef(false);
+  const creatingMeetingRef = useRef(false);
   const notesRef = useRef(notes);
   const selectedIdRef = useRef(selectedId);
   /** Case-insensitive titles with an in-flight createNote (ENG-97). */
@@ -764,6 +764,56 @@ function App() {
     });
   };
 
+  const createMeetingNote = (prefill?: MeetingPrefill) => {
+    if (creatingMeetingRef.current) {
+      return;
+    }
+    creatingMeetingRef.current = true;
+    setMeetingActionError(null);
+    const times = prefill ?? defaultMeetingTimes();
+    queueMeetingPrefill(times);
+    setSurface({ kind: "note", id: "" });
+    void (async () => {
+      try {
+        const created = await createNote(prefill?.title ?? "Untitled", {
+          note_type: "meeting",
+        });
+        if (!created) {
+          return;
+        }
+        try {
+          await meetingsApi.createMeeting({
+            note_id: created.id,
+            meeting_date: times.meeting_date,
+            start_time: times.start_time,
+            end_time: times.end_time,
+          });
+        } catch (err) {
+          if (!/already exists/i.test(String(err))) {
+            setMeetingActionError(
+              err instanceof Error ? err.message : "Could not save meeting",
+            );
+          }
+        }
+        setSurface({ kind: "note", id: created.id });
+      } finally {
+        creatingMeetingRef.current = false;
+      }
+    })();
+  };
+
+  const createMeetingFromEvent = (event: CalendarEvent) => {
+    const times = meetingTimesFromLocalIso(event.start, event.end);
+    if (!times) {
+      setMeetingActionError("Could not read event times");
+      return;
+    }
+    createMeetingNote({
+      title: event.title.trim() || "Untitled",
+      ...times,
+    });
+  };
+
   const openWikiLink = (link: { title: string; noteId: string | null }) => {
     const byId = link.noteId
       ? notesRef.current.find((note) => note.id === link.noteId)
@@ -959,19 +1009,30 @@ function App() {
                   {String(nonDailyNotes.length)}
                 </span>
               </div>
-              <button
-                type="button"
-                className="new-note-button"
-                onClick={() => {
-                  void createNote().then((created) => {
-                    if (created) {
-                      setSurface({ kind: "note", id: created.id });
-                    }
-                  });
-                }}
-              >
-                + New note
-              </button>
+              <div className="overview-header-actions">
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    createMeetingNote();
+                  }}
+                >
+                  + New meeting note
+                </button>
+                <button
+                  type="button"
+                  className="new-note-button"
+                  onClick={() => {
+                    void createNote().then((created) => {
+                      if (created) {
+                        setSurface({ kind: "note", id: created.id });
+                      }
+                    });
+                  }}
+                >
+                  + New note
+                </button>
+              </div>
             </div>
 
             {loading ? (
@@ -1063,6 +1124,7 @@ function App() {
               setFocusTaskId(null);
             }}
             onOpenTask={openTaskSource}
+            onCreateMeetingNote={createMeetingFromEvent}
           />
         ) : null}
 
@@ -1174,6 +1236,9 @@ function App() {
                 }}
               />
             )}
+            {selectedId && selectedNote?.note_type === "meeting" ? (
+              <MeetingHeader noteId={selectedId} />
+            ) : null}
             {selectedId ? (
               <NoteEditor
                 key={selectedId}
@@ -1211,9 +1276,9 @@ function App() {
           <p className="muted pane-loading">Loading…</p>
         ) : null}
 
-        {error || taskActionError ? (
+        {error || taskActionError || meetingActionError ? (
           <p className="error-banner" role="alert">
-            {error ?? taskActionError}
+            {error ?? taskActionError ?? meetingActionError}
           </p>
         ) : null}
 

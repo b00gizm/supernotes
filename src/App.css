@@ -639,6 +639,13 @@ button {
   background: color-mix(in srgb, var(--bg-sidebar-hover) 80%, transparent);
 }
 
+.overview-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
+
 /* Tasks overview (ENG-63) — matches design mockup grouping + row chrome */
 .tasks-pane .overview-header {
   flex-wrap: wrap;
@@ -1176,6 +1183,77 @@ button {
   width: 100%;
   padding: var(--space-3) 0 var(--space-4);
   outline: none;
+}
+
+.editor-pane:has(.meeting-meta) .title-input {
+  padding-bottom: var(--space-2);
+}
+
+.meeting-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0 0 var(--space-3);
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.meeting-meta .waveform-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.meeting-kind {
+  color: var(--text-tertiary);
+}
+
+.meeting-dot {
+  color: var(--text-tertiary);
+}
+
+.meeting-meta-text {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  color: inherit;
+  font: inherit;
+  padding: 0.05rem 0.15rem;
+  border-radius: var(--radius-sm);
+}
+
+.meeting-meta-text:hover {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
+}
+
+.meeting-meta-edit {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.meeting-meta-edit input {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  padding: 0.05rem 0.1rem;
+}
+
+.meeting-meta-edit input:focus {
+  outline: none;
+  box-shadow: 0 1px 0 var(--border-subtle);
+}
+
+.meeting-meta-error {
+  color: var(--danger);
+  font-size: var(--text-xs);
 }
 
 .body-input {
