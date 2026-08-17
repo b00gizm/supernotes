@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { meetingsApi, type MeetingsApi } from "../notes/meetings";
+import {
+  recordingApi as defaultRecordingApi,
+  RecordingError,
+  subscribeRecordingErrors,
+  subscribeRecordingSegments,
+  subscribeRecordingState,
+  type RecordingApi,
+  type RecordingState,
+  type TranscriptSegment,
+} from "../notes/recording";
 import type { Meeting } from "../notes/types";
 import { IconWaveform } from "../ui/IconWaveform";
 import {
@@ -9,20 +19,14 @@ import {
   isMeetingTime,
 } from "./format";
 import { LiveTranscript } from "./LiveTranscript";
-import {
-  formatTranscriptClock,
-  MOCK_TRANSCRIPT_LINES,
-  requestMicAccess,
-  type TranscriptSegment,
-} from "./recording";
+import { deniedMicMessage } from "./recording";
 
 export type MeetingHeaderProps = {
   noteId: string;
   api?: MeetingsApi;
-  requestMic?: () => Promise<void>;
+  recording?: RecordingApi;
   onOpenNote?: (noteId: string) => void;
   onStopped?: () => void;
-  now?: () => Date;
 };
 
 type Draft = {
@@ -39,26 +43,44 @@ function toDraft(meeting: Meeting): Draft {
   };
 }
 
+function isLiveForNote(state: RecordingState, noteId: string): boolean {
+  return state.meeting_note_id === noteId && state.status !== "idle";
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof RecordingError && err.code === "permission_denied") {
+    return deniedMicMessage();
+  }
+  if (
+    err !== null &&
+    typeof err === "object" &&
+    "code" in err &&
+    err.code === "permission_denied"
+  ) {
+    return deniedMicMessage();
+  }
+  return err instanceof Error ? err.message : "Could not start recording";
+}
+
 export function MeetingHeader({
   noteId,
   api = meetingsApi,
-  requestMic = requestMicAccess,
+  recording = defaultRecordingApi,
   onOpenNote,
   onStopped,
-  now = () => new Date(),
 }: MeetingHeaderProps) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recording, setRecording] = useState(false);
+  const [live, setLive] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const noteIdRef = useRef(noteId);
-  const nowRef = useRef(now);
   const startingRef = useRef(false);
+  const stoppingRef = useRef(false);
   noteIdRef.current = noteId;
-  nowRef.current = now;
 
   useEffect(() => {
     let cancelled = false;
@@ -66,9 +88,11 @@ export function MeetingHeader({
     setEditing(false);
     setMeeting(null);
     setDraft(null);
-    setRecording(false);
+    setLive(false);
     setStarting(false);
     startingRef.current = false;
+    setStopping(false);
+    stoppingRef.current = false;
     setSegments([]);
 
     const load = async () => {
@@ -93,6 +117,67 @@ export function MeetingHeader({
       cancelled = true;
     };
   }, [api, noteId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+
+    const attach = async () => {
+      unsubs.push(
+        await subscribeRecordingState((state) => {
+          if (cancelled) {
+            return;
+          }
+          const nextLive = isLiveForNote(state, noteIdRef.current);
+          setLive(nextLive);
+          if (!nextLive) {
+            setSegments([]);
+          }
+        }),
+      );
+      unsubs.push(
+        await subscribeRecordingSegments((segment) => {
+          if (cancelled || segment.meeting_note_id !== noteIdRef.current) {
+            return;
+          }
+          setSegments((prev) =>
+            prev.some((item) => item.id === segment.id)
+              ? prev
+              : [...prev, segment],
+          );
+        }),
+      );
+      unsubs.push(
+        await subscribeRecordingErrors((payload) => {
+          if (cancelled) {
+            return;
+          }
+          setError(
+            payload.code === "permission_denied"
+              ? deniedMicMessage()
+              : payload.message,
+          );
+        }),
+      );
+      try {
+        const current = await recording.getRecordingState();
+        if (cancelled) {
+          return;
+        }
+        setLive(isLiveForNote(current, noteId));
+      } catch {
+        // Idle chrome if state probe fails; Record still surfaces start errors.
+      }
+    };
+
+    void attach();
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) {
+        unsub();
+      }
+    };
+  }, [recording, noteId]);
 
   const persist = async (next: Draft) => {
     if (
@@ -140,51 +225,31 @@ export function MeetingHeader({
     }
   };
 
-  useEffect(() => {
-    if (!recording) {
-      return;
-    }
-    let index = 0;
-    const push = () => {
-      const text = MOCK_TRANSCRIPT_LINES[index];
-      if (text === undefined) {
-        return;
-      }
-      const id = `seg-${String(index)}`;
-      index += 1;
-      setSegments((prev) => [
-        ...prev,
-        { id, time: formatTranscriptClock(nowRef.current()), text },
-      ]);
-    };
-    push();
-    const timer = window.setInterval(push, 1400);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [recording]);
-
   const startRecording = async () => {
-    if (recording || startingRef.current) {
+    if (live || startingRef.current) {
       return;
     }
     startingRef.current = true;
     setStarting(true);
     setError(null);
+    setSegments([]);
     try {
-      await requestMic();
-      if (noteIdRef.current !== noteId) {
-        return;
+      const permission = await recording.getMicrophonePermission();
+      if (
+        permission.status === "denied" ||
+        permission.status === "restricted"
+      ) {
+        throw new RecordingError(
+          "permission_denied",
+          "Microphone access was denied.",
+        );
       }
-      setSegments([]);
-      setRecording(true);
+      await recording.startRecording(noteId);
     } catch (err) {
       if (noteIdRef.current !== noteId) {
         return;
       }
-      setError(
-        err instanceof Error ? err.message : "Could not start recording",
-      );
+      setError(errorMessage(err));
     } finally {
       startingRef.current = false;
       if (noteIdRef.current === noteId) {
@@ -193,25 +258,34 @@ export function MeetingHeader({
     }
   };
 
-  const stopRecording = () => {
-    setRecording(false);
-    setSegments([]);
-    onStopped?.();
-    void api
-      .getMeeting(noteId)
-      .then((loaded) => {
-        if (noteIdRef.current !== noteId) {
-          return;
-        }
-        setMeeting(loaded);
-        setDraft(toDraft(loaded));
-      })
-      .catch((err: unknown) => {
-        if (noteIdRef.current !== noteId) {
-          return;
-        }
-        setError(err instanceof Error ? err.message : "Could not load meeting");
-      });
+  const stopRecording = async () => {
+    if (stoppingRef.current) {
+      return;
+    }
+    stoppingRef.current = true;
+    setStopping(true);
+    setError(null);
+    try {
+      const stopped = await recording.stopRecording();
+      if (noteIdRef.current !== noteId) {
+        return;
+      }
+      setMeeting(stopped.meeting);
+      setDraft(toDraft(stopped.meeting));
+      setLive(false);
+      setSegments([]);
+      onStopped?.();
+    } catch (err) {
+      if (noteIdRef.current !== noteId) {
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Could not stop recording");
+    } finally {
+      stoppingRef.current = false;
+      if (noteIdRef.current === noteId) {
+        setStopping(false);
+      }
+    }
   };
 
   const shown = draft ?? meeting;
@@ -325,7 +399,7 @@ export function MeetingHeader({
               </button>
             </>
           ) : null}
-          {recording ? (
+          {live ? (
             <span className="recording-badge">
               <span className="recording-dot" aria-hidden="true" />
               Recording
@@ -338,11 +412,14 @@ export function MeetingHeader({
           ) : null}
         </div>
         {shown ? (
-          recording ? (
+          live ? (
             <button
               type="button"
               className="meeting-stop"
-              onClick={stopRecording}
+              disabled={stopping}
+              onClick={() => {
+                void stopRecording();
+              }}
             >
               Stop
             </button>
@@ -360,7 +437,7 @@ export function MeetingHeader({
           )
         ) : null}
       </div>
-      {recording ? <LiveTranscript segments={segments} live /> : null}
+      {live ? <LiveTranscript segments={segments} live /> : null}
     </>
   );
 }

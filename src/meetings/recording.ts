@@ -1,23 +1,3 @@
-import { formatTimeInput } from "../calendar/layout";
-
-export type TranscriptSegment = {
-  id: string;
-  time: string;
-  text: string;
-};
-
-/** Mockup 1g copy with speaker names stripped (v0 has no diarization). */
-export const MOCK_TRANSCRIPT_LINES = [
-  "Let's lock the Q3 pricing before the board deck goes out.",
-  "I still think we should keep the free tier. It's how we get people in.",
-  "Free tier stays. But we raise Pro to forty-nine and add a Team plan at ninety-nine.",
-  "Works for me. I'll update the deck tonight.",
-];
-
-export function formatTranscriptClock(date: Date): string {
-  return formatTimeInput(date.getHours() * 60 + date.getMinutes());
-}
-
 function isMacPlatform(): boolean {
   return (
     typeof navigator !== "undefined" &&
@@ -25,7 +5,7 @@ function isMacPlatform(): boolean {
   );
 }
 
-/** Maps getUserMedia failures to the meeting-header error string. */
+/** Header copy for `permission_denied` (Woz IPC) and getUserMedia-shaped errors. */
 export function micPermissionMessage(
   err: unknown,
   platform: { mac: boolean } = { mac: isMacPlatform() },
@@ -54,23 +34,11 @@ export function micPermissionMessage(
   return raw;
 }
 
-/**
- * Prompts for mic access, then drops the stream.
- * ponytail: permission UX only — Woz owns capture → whisper.cpp. Do not keep
- * this stream or invent recording IPC.
- */
-export async function requestMicAccess(): Promise<void> {
-  // jsdom / older webviews may lack mediaDevices despite the DOM typings.
-  const devices = navigator.mediaDevices as MediaDevices | undefined;
-  if (!devices || typeof devices.getUserMedia !== "function") {
-    throw new Error("Microphone is not available in this environment.");
-  }
-  try {
-    const stream = await devices.getUserMedia({ audio: true });
-    for (const track of stream.getTracks()) {
-      track.stop();
-    }
-  } catch (err) {
-    throw new Error(micPermissionMessage(err));
-  }
+export function deniedMicMessage(
+  platform: { mac: boolean } = { mac: isMacPlatform() },
+): string {
+  return micPermissionMessage(
+    new DOMException("denied", "NotAllowedError"),
+    platform,
+  );
 }

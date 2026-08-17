@@ -1,4 +1,4 @@
-import type { TranscriptSegment } from "./recording";
+import type { TranscriptSegment } from "../notes/recording";
 
 function IconClock() {
   return (
@@ -38,7 +38,7 @@ export function LiveTranscript({
           const newest = live && index === segments.length - 1;
           return (
             <li key={segment.id} className="live-transcript-line">
-              <time className="live-transcript-time">{segment.time}</time>
+              <time className="live-transcript-time">{segment.clock}</time>
               <p className="live-transcript-text">
                 {segment.text}
                 {newest ? (

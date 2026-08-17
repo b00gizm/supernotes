@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { createMemoryMeetingsApi } from "../notes/meetings";
 import { createMemoryNotesApi } from "../notes/memoryApi";
+import { createMemoryRecordingApi } from "../notes/recording";
 import type { Meeting, Note } from "../notes/types";
 import { MeetingHeader } from "./MeetingHeader";
 
@@ -25,16 +26,43 @@ const MEETING: Meeting = {
   calendar_event_id: "evt-1",
 };
 
-function meetingsApi(meetings: Meeting[] = [MEETING]) {
-  return createMemoryMeetingsApi(createMemoryNotesApi([NOTE]), { meetings });
+const LIVE_SEGMENTS = [
+  {
+    clock: "14:02",
+    text: "Let's lock the Q3 pricing before the board deck goes out.",
+    start_ms: 120_000,
+    end_ms: 128_000,
+  },
+];
+
+function setup(
+  meetings: Meeting[] = [MEETING],
+  recordingOptions: Parameters<typeof createMemoryRecordingApi>[2] = {},
+) {
+  const notes = createMemoryNotesApi([NOTE]);
+  const api = createMemoryMeetingsApi(notes, { meetings });
+  const recording = createMemoryRecordingApi(
+    notes,
+    {
+      getMeeting: (id) => api.getMeeting(id),
+      linkTranscript: (noteId, transcriptNoteId) => {
+        api.linkTranscript(noteId, transcriptNoteId);
+      },
+    },
+    {
+      segmentsFor: () => LIVE_SEGMENTS,
+      ...recordingOptions,
+    },
+  );
+  return { notes, api, recording };
 }
 
 describe("MeetingHeader (ENG-68)", () => {
   it("shows the waveform meta row and persists edits", async () => {
     const user = userEvent.setup();
-    const api = meetingsApi();
+    const { api, recording } = setup();
 
-    render(<MeetingHeader noteId="m1" api={api} />);
+    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
 
     expect(await screen.findByText("Mon, Aug 10")).toBeInTheDocument();
     expect(screen.getByText("Meeting")).toBeInTheDocument();
@@ -61,16 +89,16 @@ describe("MeetingHeader (ENG-68)", () => {
   });
 
   it("surfaces a missing meeting instead of creating one", async () => {
-    const api = meetingsApi([]);
-    render(<MeetingHeader noteId="m1" api={api} />);
+    const { api, recording } = setup([]);
+    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("not found");
     await expect(api.getMeeting("m1")).rejects.toThrow(/not found/i);
   });
 
   it("lets Escape cancel an edit without writing", async () => {
     const user = userEvent.setup();
-    const api = meetingsApi();
-    render(<MeetingHeader noteId="m1" api={api} />);
+    const { api, recording } = setup();
+    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
 
     expect(
       await screen.findByLabelText("Edit meeting time"),
@@ -88,10 +116,10 @@ describe("MeetingHeader (ENG-68)", () => {
 
   it("surfaces a failed save instead of keeping the optimistic row", async () => {
     const user = userEvent.setup();
-    const api = meetingsApi();
+    const { api, recording } = setup();
     api.updateMeeting = () => Promise.reject(new Error("disk full"));
 
-    render(<MeetingHeader noteId="m1" api={api} />);
+    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
     await user.click(
       await screen.findByRole("button", { name: "Edit meeting time" }),
     );
@@ -103,17 +131,10 @@ describe("MeetingHeader (ENG-68)", () => {
     expect(screen.getByText("Mon, Aug 10")).toBeInTheDocument();
   });
 
-  it("starts recording chrome without speaker names", async () => {
+  it("starts recording chrome from Woz segments without speaker names", async () => {
     const user = userEvent.setup();
-    const api = meetingsApi();
-    render(
-      <MeetingHeader
-        noteId="m1"
-        api={api}
-        requestMic={() => Promise.resolve()}
-        now={() => new Date(2026, 7, 10, 14, 2)}
-      />,
-    );
+    const { api, recording } = setup();
+    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
 
     await user.click(await screen.findByRole("button", { name: "Record" }));
 
@@ -123,6 +144,7 @@ describe("MeetingHeader (ENG-68)", () => {
     const panel = screen.getByLabelText("Live transcript");
     expect(panel).toHaveTextContent("Transcribing locally · summary on stop");
     expect(await screen.findByText(/Q3 pricing/)).toBeInTheDocument();
+    expect(panel).toHaveTextContent("14:02");
     expect(panel.textContent).not.toMatch(/\bSara\b|\bMarcus\b|\bYou\b/);
     expect(panel.querySelector(".live-transcript-cursor")).toBeTruthy();
     expect(
@@ -130,15 +152,10 @@ describe("MeetingHeader (ENG-68)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("stops recording and hides the live transcript", async () => {
+  it("stops recording, hides the live transcript, and links the note", async () => {
     const user = userEvent.setup();
-    render(
-      <MeetingHeader
-        noteId="m1"
-        api={meetingsApi()}
-        requestMic={() => Promise.resolve()}
-      />,
-    );
+    const { api, recording } = setup();
+    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
 
     await user.click(await screen.findByRole("button", { name: "Record" }));
     expect(await screen.findByLabelText("Live transcript")).toBeInTheDocument();
@@ -147,28 +164,22 @@ describe("MeetingHeader (ENG-68)", () => {
     expect(screen.queryByLabelText("Live transcript")).not.toBeInTheDocument();
     expect(screen.queryByText("Recording")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Record" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Transcript" }),
+    ).toBeInTheDocument();
+    const stopped = await api.getMeeting("m1");
+    expect(stopped.transcript_note_id).toEqual(expect.stringMatching(/\S/));
   });
 
-  it("surfaces a denied microphone instead of starting", async () => {
+  it("surfaces permission_denied instead of starting", async () => {
     const user = userEvent.setup();
-    render(
-      <MeetingHeader
-        noteId="m1"
-        api={meetingsApi()}
-        requestMic={() =>
-          Promise.reject(
-            new Error(
-              "Microphone access is required to record. On macOS, allow Supernotes in System Settings → Privacy & Security → Microphone.",
-            ),
-          )
-        }
-      />,
-    );
+    const { api, recording } = setup([MEETING], { permission: "denied" });
+    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
 
     await user.click(await screen.findByRole("button", { name: "Record" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      /System Settings → Privacy & Security → Microphone/,
+      /Microphone access is required to record/,
     );
     expect(screen.queryByText("Recording")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Live transcript")).not.toBeInTheDocument();
@@ -177,7 +188,7 @@ describe("MeetingHeader (ENG-68)", () => {
   it("opens a persisted transcript note from the header", async () => {
     const user = userEvent.setup();
     const opened: string[] = [];
-    const api = meetingsApi([
+    const { api, recording } = setup([
       { ...MEETING, transcript_note_id: "transcript-1" },
     ]);
 
@@ -185,6 +196,7 @@ describe("MeetingHeader (ENG-68)", () => {
       <MeetingHeader
         noteId="m1"
         api={api}
+        recording={recording}
         onOpenNote={(id) => {
           opened.push(id);
         }}

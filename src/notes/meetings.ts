@@ -64,6 +64,10 @@ export type MemoryMeetingsOptions = {
   getEvent?: (eventId: string) => Promise<CalendarEvent>;
 };
 
+export type MemoryMeetingsApi = MeetingsApi & {
+  linkTranscript: (noteId: string, transcriptNoteId: string) => void;
+};
+
 /** In-memory MeetingsApi; creates notes through the shared notes store. */
 export function createMemoryMeetingsApi(
   notes: {
@@ -75,7 +79,7 @@ export function createMemoryMeetingsApi(
     listNotes: () => Promise<Note[]>;
   },
   options: MemoryMeetingsOptions = {},
-): MeetingsApi {
+): MemoryMeetingsApi {
   let meetings = [...(options.meetings ?? [])];
   const getEvent =
     options.getEvent ?? ((eventId: string) => calendarApi.getEvent(eventId));
@@ -177,6 +181,17 @@ export function createMemoryMeetingsApi(
         throw new Error("not found");
       }
       return meetingNote(meeting);
+    },
+    linkTranscript(noteId, transcriptNoteId) {
+      const current = meetings.find((item) => item.note_id === noteId);
+      if (!current) {
+        return;
+      }
+      meetings = meetings.map((item) =>
+        item.note_id === noteId
+          ? { ...item, transcript_note_id: transcriptNoteId }
+          : item,
+      );
     },
   };
 }

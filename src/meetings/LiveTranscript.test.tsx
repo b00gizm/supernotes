@@ -10,12 +10,18 @@ describe("LiveTranscript (ENG-69 UI)", () => {
         segments={[
           {
             id: "1",
-            time: "14:02",
+            clock: "14:02",
+            meeting_note_id: "m1",
+            start_ms: 120_000,
+            end_ms: 128_000,
             text: "Let's lock the Q3 pricing before the board deck goes out.",
           },
           {
             id: "2",
-            time: "14:05",
+            clock: "14:05",
+            meeting_note_id: "m1",
+            start_ms: 300_000,
+            end_ms: 308_000,
             text: "I still think we should keep the free tier.",
           },
         ]}
@@ -35,7 +41,16 @@ describe("LiveTranscript (ENG-69 UI)", () => {
     render(
       <LiveTranscript
         live={false}
-        segments={[{ id: "1", time: "14:02", text: "Done." }]}
+        segments={[
+          {
+            id: "1",
+            clock: "14:02",
+            meeting_note_id: "m1",
+            start_ms: 0,
+            end_ms: 8000,
+            text: "Done.",
+          },
+        ]}
       />,
     );
     expect(document.querySelector(".live-transcript-cursor")).toBeNull();
