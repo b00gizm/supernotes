@@ -1007,7 +1007,7 @@ function App() {
               <div className="overview-header-actions">
                 <button
                   type="button"
-                  className="text-button"
+                  className="new-note-button"
                   onClick={() => {
                     createMeetingNote();
                   }}

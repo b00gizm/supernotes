@@ -320,7 +320,10 @@ describe("App shell", () => {
     });
     expect(
       within(overview).getByRole("button", { name: "+ New note" }),
-    ).toBeInTheDocument();
+    ).toHaveClass("new-note-button");
+    expect(
+      within(overview).getByRole("button", { name: "+ New meeting note" }),
+    ).toHaveClass("new-note-button");
     expect(within(overview).getByText("3")).toBeInTheDocument();
     expect(
       within(overview).getByRole("region", { name: "Pinned" }),
