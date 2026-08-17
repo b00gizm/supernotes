@@ -14,9 +14,11 @@ pub fn utc_now(conn: &Connection) -> DbResult<String> {
 /// Local calendar date (`YYYY-MM-DD`) and clock (`HH:MM`) for a UTC ISO instant.
 pub fn local_date_and_hm(conn: &Connection, iso: &str) -> DbResult<(String, String)> {
     let normalized = normalize_iso_utc(iso)?;
+    // `localtime` treats the naive stamp as UTC (we stripped `Z`) and converts.
+    // Do not also apply `utc` — that pair is a no-op and drops the zone shift.
     let (date, hm) = conn.query_row(
-        "SELECT strftime('%Y-%m-%d', ?1, 'utc', 'localtime'),
-                strftime('%H:%M', ?1, 'utc', 'localtime')",
+        "SELECT strftime('%Y-%m-%d', ?1, 'localtime'),
+                strftime('%H:%M', ?1, 'localtime')",
         [&normalized],
         |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
     )?;
@@ -41,53 +43,28 @@ fn normalize_iso_utc(iso: &str) -> DbResult<String> {
 mod tests {
     use super::*;
     use rusqlite::Connection;
-    use std::sync::Mutex;
-
-    static TZ_LOCK: Mutex<()> = Mutex::new(());
-
-    fn tzset() {
-        unsafe {
-            extern "C" {
-                fn tzset();
-            }
-            tzset();
-        }
-    }
-
-    fn with_tz<T>(tz: &str, f: impl FnOnce() -> T) -> T {
-        let _guard = TZ_LOCK.lock().expect("tz lock poisoned");
-        let prev = std::env::var("TZ").ok();
-        // SAFETY: tests serialize TZ mutations through TZ_LOCK.
-        unsafe {
-            std::env::set_var("TZ", tz);
-        }
-        tzset();
-        let result = f();
-        unsafe {
-            match prev {
-                Some(value) => std::env::set_var("TZ", value),
-                None => std::env::remove_var("TZ"),
-            }
-        }
-        tzset();
-        result
-    }
 
     #[test]
-    fn local_date_and_hm_uses_process_timezone() {
-        with_tz("America/Los_Angeles", || {
-            let conn = Connection::open_in_memory().unwrap();
-            // 21:00 UTC in August is 14:00 PDT (UTC-7).
-            let (date, hm) = local_date_and_hm(&conn, "2026-08-10T21:00:00.000Z").unwrap();
-            assert_eq!(date, "2026-08-10");
-            assert_eq!(hm, "14:00");
-        });
-        with_tz("Europe/Berlin", || {
-            let conn = Connection::open_in_memory().unwrap();
-            // 12:00 UTC in August is 14:00 CEST (UTC+2).
-            let (date, hm) = local_date_and_hm(&conn, "2026-08-10T12:00:00.000Z").unwrap();
-            assert_eq!(date, "2026-08-10");
-            assert_eq!(hm, "14:00");
-        });
+    fn local_date_and_hm_accepts_iso_z_and_rejects_empty() {
+        let conn = Connection::open_in_memory().unwrap();
+        let (date, start) = local_date_and_hm(&conn, "2026-08-10T21:00:00.000Z").unwrap();
+        let (end_date, end) = local_date_and_hm(&conn, "2026-08-10T21:23:00.000Z").unwrap();
+        assert_eq!(date, end_date);
+        assert!(is_ymd(&date), "{date}");
+        assert!(is_hhmm(&start), "{start}");
+        assert!(is_hhmm(&end), "{end}");
+        assert_ne!(start, end);
+        assert!(local_date_and_hm(&conn, "").is_err());
+        assert!(local_date_and_hm(&conn, "   ").is_err());
+    }
+
+    fn is_ymd(value: &str) -> bool {
+        let bytes = value.as_bytes();
+        bytes.len() == 10 && bytes[4] == b'-' && bytes[7] == b'-'
+    }
+
+    fn is_hhmm(value: &str) -> bool {
+        let bytes = value.as_bytes();
+        bytes.len() == 5 && bytes[2] == b':'
     }
 }

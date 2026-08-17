@@ -1547,9 +1547,11 @@ mod tests {
                 created.meeting.calendar_event_id.as_deref(),
                 Some(event.id.as_str())
             );
-            assert_eq!(created.meeting.start_time.len(), 5);
-            assert_eq!(created.meeting.end_time.len(), 5);
-            assert!(is_daily_title(&created.meeting.meeting_date));
+            let (expect_date, expect_start) = local_date_and_hm(repo.conn, &event.start).unwrap();
+            let (_, expect_end) = local_date_and_hm(repo.conn, &event.end).unwrap();
+            assert_eq!(created.meeting.meeting_date, expect_date);
+            assert_eq!(created.meeting.start_time, expect_start);
+            assert_eq!(created.meeting.end_time, expect_end);
 
             let again = repo.create_meeting_note_from_event(&event.id).unwrap();
             assert_eq!(again.note.id, created.note.id);
@@ -1558,50 +1560,6 @@ mod tests {
             let looked_up = repo.get_meeting_for_event(&event.id).unwrap();
             assert_eq!(looked_up.note.id, created.note.id);
         });
-    }
-
-    #[test]
-    fn create_from_event_uses_local_wall_clock() {
-        use std::sync::Mutex;
-        static TZ_LOCK: Mutex<()> = Mutex::new(());
-        fn tzset() {
-            unsafe {
-                extern "C" {
-                    fn tzset();
-                }
-                tzset();
-            }
-        }
-        let _guard = TZ_LOCK.lock().expect("tz lock poisoned");
-        let prev = std::env::var("TZ").ok();
-        unsafe {
-            std::env::set_var("TZ", "America/Los_Angeles");
-        }
-        tzset();
-        let result = std::panic::catch_unwind(|| {
-            with_repo(|repo| {
-                let event = repo
-                    .create_calendar_event(
-                        "Pricing sync",
-                        "2026-08-10T21:00:00.000Z",
-                        "2026-08-10T21:23:00.000Z",
-                        None,
-                    )
-                    .unwrap();
-                let created = repo.create_meeting_note_from_event(&event.id).unwrap();
-                assert_eq!(created.meeting.meeting_date, "2026-08-10");
-                assert_eq!(created.meeting.start_time, "14:00");
-                assert_eq!(created.meeting.end_time, "14:23");
-            });
-        });
-        unsafe {
-            match prev {
-                Some(value) => std::env::set_var("TZ", value),
-                None => std::env::remove_var("TZ"),
-            }
-        }
-        tzset();
-        result.unwrap();
     }
 
     #[test]

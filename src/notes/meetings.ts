@@ -99,7 +99,9 @@ export function createMemoryMeetingsApi(
       assertMeetingTimes(input.meeting_date, input.start_time, input.end_time);
       const note = await notes.createNote({
         title: input.title,
-        body_markdown: input.body_markdown,
+        ...(input.body_markdown !== undefined
+          ? { body_markdown: input.body_markdown }
+          : {}),
         note_type: "meeting",
       });
       const meeting: Meeting = {
