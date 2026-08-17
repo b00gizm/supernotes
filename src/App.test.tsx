@@ -474,6 +474,42 @@ describe("App shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens a linked transcript note from the meeting header", async () => {
+    const user = userEvent.setup();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "m1",
+        title: "Pricing sync",
+        body_markdown: "Decided to keep the free tier",
+        note_type: "meeting",
+        pinned: false,
+        created_at: "2026-08-09T10:00:00.000Z",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      },
+      {
+        id: "t1",
+        title: "Pricing sync transcript",
+        body_markdown: "Let's lock the Q3 pricing",
+        note_type: "regular",
+        pinned: false,
+        created_at: "2026-08-10T14:23:00.000Z",
+        updated_at: "2026-08-10T14:23:00.000Z",
+      },
+    ]);
+    meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current, {
+      meetings: [{ ...PRICING_MEETING, transcript_note_id: "t1" }],
+    });
+
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Pricing sync" }));
+    await user.click(await screen.findByRole("button", { name: "Transcript" }));
+
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Pricing sync transcript",
+    );
+    expect(screen.queryByLabelText("Meeting details")).not.toBeInTheDocument();
+  });
+
   it("creates a meeting note from the notes list with persisted metadata", async () => {
     const user = userEvent.setup();
     apiRef.current = createMemoryNotesApi([]);

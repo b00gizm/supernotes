@@ -1232,7 +1232,23 @@ function App() {
               />
             )}
             {selectedId && selectedNote?.note_type === "meeting" ? (
-              <MeetingHeader noteId={selectedId} />
+              <MeetingHeader
+                noteId={selectedId}
+                onOpenNote={(id) => {
+                  const existing = notes.find((note) => note.id === id);
+                  if (existing) {
+                    openFromSearch(existing);
+                    return;
+                  }
+                  void refresh().then(() => {
+                    selectNote(id);
+                    setSurface({ kind: "note", id });
+                  });
+                }}
+                onStopped={() => {
+                  void refresh();
+                }}
+              />
             ) : null}
             {selectedId ? (
               <NoteEditor

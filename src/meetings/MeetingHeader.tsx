@@ -8,10 +8,21 @@ import {
   isMeetingDate,
   isMeetingTime,
 } from "./format";
+import { LiveTranscript } from "./LiveTranscript";
+import {
+  formatTranscriptClock,
+  MOCK_TRANSCRIPT_LINES,
+  requestMicAccess,
+  type TranscriptSegment,
+} from "./recording";
 
 export type MeetingHeaderProps = {
   noteId: string;
   api?: MeetingsApi;
+  requestMic?: () => Promise<void>;
+  onOpenNote?: (noteId: string) => void;
+  onStopped?: () => void;
+  now?: () => Date;
 };
 
 type Draft = {
@@ -31,13 +42,23 @@ function toDraft(meeting: Meeting): Draft {
 export function MeetingHeader({
   noteId,
   api = meetingsApi,
+  requestMic = requestMicAccess,
+  onOpenNote,
+  onStopped,
+  now = () => new Date(),
 }: MeetingHeaderProps) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const noteIdRef = useRef(noteId);
+  const nowRef = useRef(now);
+  const startingRef = useRef(false);
   noteIdRef.current = noteId;
+  nowRef.current = now;
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +66,10 @@ export function MeetingHeader({
     setEditing(false);
     setMeeting(null);
     setDraft(null);
+    setRecording(false);
+    setStarting(false);
+    startingRef.current = false;
+    setSegments([]);
 
     const load = async () => {
       try {
@@ -115,6 +140,80 @@ export function MeetingHeader({
     }
   };
 
+  useEffect(() => {
+    if (!recording) {
+      return;
+    }
+    let index = 0;
+    const push = () => {
+      if (index >= MOCK_TRANSCRIPT_LINES.length) {
+        return;
+      }
+      const text = MOCK_TRANSCRIPT_LINES[index];
+      const id = `seg-${String(index)}`;
+      index += 1;
+      setSegments((prev) => [
+        ...prev,
+        { id, time: formatTranscriptClock(nowRef.current()), text },
+      ]);
+    };
+    push();
+    const timer = window.setInterval(push, 1400);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [recording]);
+
+  const startRecording = async () => {
+    if (recording || startingRef.current) {
+      return;
+    }
+    startingRef.current = true;
+    setStarting(true);
+    setError(null);
+    try {
+      await requestMic();
+      if (noteIdRef.current !== noteId) {
+        return;
+      }
+      setSegments([]);
+      setRecording(true);
+    } catch (err) {
+      if (noteIdRef.current !== noteId) {
+        return;
+      }
+      setError(
+        err instanceof Error ? err.message : "Could not start recording",
+      );
+    } finally {
+      startingRef.current = false;
+      if (noteIdRef.current === noteId) {
+        setStarting(false);
+      }
+    }
+  };
+
+  const stopRecording = () => {
+    setRecording(false);
+    setSegments([]);
+    onStopped?.();
+    void api
+      .getMeeting(noteId)
+      .then((loaded) => {
+        if (noteIdRef.current !== noteId) {
+          return;
+        }
+        setMeeting(loaded);
+        setDraft(toDraft(loaded));
+      })
+      .catch((err: unknown) => {
+        if (noteIdRef.current !== noteId) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Could not load meeting");
+      });
+  };
+
   const shown = draft ?? meeting;
   if (!shown && !error) {
     return (
@@ -125,90 +224,143 @@ export function MeetingHeader({
     );
   }
 
+  const transcriptId = meeting?.transcript_note_id ?? null;
+
   return (
-    <div className="meeting-meta" aria-label="Meeting details">
-      <IconWaveform />
-      <span className="meeting-kind">Meeting</span>
-      {shown ? (
-        editing ? (
-          <form
-            className="meeting-meta-edit"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void persist(shown);
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") {
-                return;
-              }
-              event.preventDefault();
-              setEditing(false);
-              setDraft(meeting ? toDraft(meeting) : shown);
-              setError(null);
-            }}
-          >
-            <span className="meeting-dot" aria-hidden="true">
-              ·
+    <>
+      <div className="meeting-meta" aria-label="Meeting details">
+        <div className="meeting-meta-main">
+          <IconWaveform />
+          <span className="meeting-kind">Meeting</span>
+          {shown ? (
+            editing ? (
+              <form
+                className="meeting-meta-edit"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void persist(shown);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") {
+                    return;
+                  }
+                  event.preventDefault();
+                  setEditing(false);
+                  setDraft(meeting ? toDraft(meeting) : shown);
+                  setError(null);
+                }}
+              >
+                <span className="meeting-dot" aria-hidden="true">
+                  ·
+                </span>
+                <input
+                  type="date"
+                  aria-label="Meeting date"
+                  value={shown.meeting_date}
+                  autoFocus
+                  onChange={(event) => {
+                    setDraft({ ...shown, meeting_date: event.target.value });
+                  }}
+                />
+                <span className="meeting-dot" aria-hidden="true">
+                  ·
+                </span>
+                <input
+                  type="time"
+                  aria-label="Start time"
+                  value={shown.start_time}
+                  onChange={(event) => {
+                    setDraft({ ...shown, start_time: event.target.value });
+                  }}
+                />
+                <span aria-hidden="true">–</span>
+                <input
+                  type="time"
+                  aria-label="End time"
+                  value={shown.end_time}
+                  onChange={(event) => {
+                    setDraft({ ...shown, end_time: event.target.value });
+                  }}
+                />
+                <button type="submit" className="text-button">
+                  Save
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                className="meeting-meta-text"
+                aria-label="Edit meeting time"
+                onClick={() => {
+                  setEditing(true);
+                  setError(null);
+                }}
+              >
+                <span className="meeting-dot" aria-hidden="true">
+                  ·
+                </span>
+                <span>{formatMeetingDate(shown.meeting_date)}</span>
+                <span className="meeting-dot" aria-hidden="true">
+                  ·
+                </span>
+                <span>
+                  {formatMeetingRange(shown.start_time, shown.end_time)}
+                </span>
+              </button>
+            )
+          ) : null}
+          {transcriptId ? (
+            <>
+              <span className="meeting-dot" aria-hidden="true">
+                ·
+              </span>
+              <button
+                type="button"
+                className="meeting-transcript-link"
+                onClick={() => {
+                  onOpenNote?.(transcriptId);
+                }}
+              >
+                Transcript
+              </button>
+            </>
+          ) : null}
+          {recording ? (
+            <span className="recording-badge">
+              <span className="recording-dot" aria-hidden="true" />
+              Recording
             </span>
-            <input
-              type="date"
-              aria-label="Meeting date"
-              value={shown.meeting_date}
-              autoFocus
-              onChange={(event) => {
-                setDraft({ ...shown, meeting_date: event.target.value });
-              }}
-            />
-            <span className="meeting-dot" aria-hidden="true">
-              ·
+          ) : null}
+          {error ? (
+            <span className="meeting-meta-error" role="alert">
+              {error}
             </span>
-            <input
-              type="time"
-              aria-label="Start time"
-              value={shown.start_time}
-              onChange={(event) => {
-                setDraft({ ...shown, start_time: event.target.value });
-              }}
-            />
-            <span aria-hidden="true">–</span>
-            <input
-              type="time"
-              aria-label="End time"
-              value={shown.end_time}
-              onChange={(event) => {
-                setDraft({ ...shown, end_time: event.target.value });
-              }}
-            />
-            <button type="submit" className="text-button">
-              Save
+          ) : null}
+        </div>
+        {shown ? (
+          recording ? (
+            <button
+              type="button"
+              className="meeting-stop"
+              onClick={stopRecording}
+            >
+              Stop
             </button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            className="meeting-meta-text"
-            aria-label="Edit meeting time"
-            onClick={() => {
-              setEditing(true);
-              setError(null);
-            }}
-          >
-            <span className="meeting-dot" aria-hidden="true">
-              ·
-            </span>
-            <span>{formatMeetingDate(shown.meeting_date)}</span>
-            <span className="meeting-dot" aria-hidden="true">
-              ·
-            </span>
-            <span>{formatMeetingRange(shown.start_time, shown.end_time)}</span>
-          </button>
-        )
-      ) : null}
-      {error ? (
-        <span className="meeting-meta-error" role="alert">
-          {error}
-        </span>
-      ) : null}
-    </div>
+          ) : (
+            <button
+              type="button"
+              className="meeting-record"
+              disabled={starting}
+              onClick={() => {
+                void startRecording();
+              }}
+            >
+              Record
+            </button>
+          )
+        ) : null}
+      </div>
+      {recording ? <LiveTranscript segments={segments} live /> : null}
+    </>
   );
 }

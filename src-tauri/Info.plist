@@ -2,7 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+<<<<<<< HEAD
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Supernotes records meeting audio to transcribe it on this device.</string>
+=======
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Supernotes records meeting audio for on-device transcription.</string>
+>>>>>>> d828279 (✨ feat(meetings): add recording and live transcript chrome)
 </dict>
 </plist>
