@@ -60,14 +60,13 @@ export function micPermissionMessage(
  * this stream or invent recording IPC.
  */
 export async function requestMicAccess(): Promise<void> {
-  if (
-    typeof navigator === "undefined" ||
-    !navigator.mediaDevices?.getUserMedia
-  ) {
+  // jsdom / older webviews may lack mediaDevices despite the DOM typings.
+  const devices = navigator.mediaDevices as MediaDevices | undefined;
+  if (!devices || typeof devices.getUserMedia !== "function") {
     throw new Error("Microphone is not available in this environment.");
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await devices.getUserMedia({ audio: true });
     for (const track of stream.getTracks()) {
       track.stop();
     }

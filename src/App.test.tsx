@@ -501,7 +501,9 @@ describe("App shell", () => {
     });
 
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "Pricing sync" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Pricing sync" }),
+    );
     await user.click(await screen.findByRole("button", { name: "Transcript" }));
 
     expect(await screen.findByLabelText("Note title")).toHaveValue(

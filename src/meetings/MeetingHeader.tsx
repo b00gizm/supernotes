@@ -146,10 +146,10 @@ export function MeetingHeader({
     }
     let index = 0;
     const push = () => {
-      if (index >= MOCK_TRANSCRIPT_LINES.length) {
+      const text = MOCK_TRANSCRIPT_LINES[index];
+      if (text === undefined) {
         return;
       }
-      const text = MOCK_TRANSCRIPT_LINES[index];
       const id = `seg-${String(index)}`;
       index += 1;
       setSegments((prev) => [

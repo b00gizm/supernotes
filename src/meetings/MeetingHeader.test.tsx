@@ -36,8 +36,8 @@ describe("MeetingHeader (ENG-68)", () => {
 
     render(<MeetingHeader noteId="m1" api={api} />);
 
-    expect(await screen.findByText("Meeting")).toBeInTheDocument();
-    expect(screen.getByText("Mon, Aug 10")).toBeInTheDocument();
+    expect(await screen.findByText("Mon, Aug 10")).toBeInTheDocument();
+    expect(screen.getByText("Meeting")).toBeInTheDocument();
     expect(screen.getByText("14:00 – 14:23")).toBeInTheDocument();
     expect(document.querySelector(".meeting-meta .waveform-icon")).toBeTruthy();
 
