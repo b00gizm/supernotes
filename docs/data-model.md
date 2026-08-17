@@ -80,14 +80,16 @@ Local-only events (M5). Optional `task_id` links a time block to a task.
 ### `meetings`
 
 Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
+Display (`Mon, Aug 10`, `14:00 – 14:23`) is frontend-only; storage is local date + clock.
 
-| Column               | Type                 | Notes              |
-| -------------------- | -------------------- | ------------------ |
-| `note_id`            | TEXT PK FK → notes   | ON DELETE CASCADE  |
-| `meeting_date`       | TEXT                 | `YYYY-MM-DD`       |
-| `start_time`         | TEXT                 | local `HH:MM`      |
-| `end_time`           | TEXT                 | local `HH:MM`      |
-| `transcript_note_id` | TEXT NULL FK → notes | ON DELETE SET NULL |
+| Column               | Type                           | Notes                                           |
+| -------------------- | ------------------------------ | ----------------------------------------------- |
+| `note_id`            | TEXT PK FK → notes             | ON DELETE CASCADE                               |
+| `meeting_date`       | TEXT                           | local `YYYY-MM-DD`                              |
+| `start_time`         | TEXT                           | local `HH:MM`                                   |
+| `end_time`           | TEXT                           | local `HH:MM`                                   |
+| `transcript_note_id` | TEXT NULL FK → notes           | ON DELETE SET NULL (ENG-69; unused in ENG-68)   |
+| `calendar_event_id`  | TEXT NULL FK → calendar_events | ON DELETE SET NULL; unique when set (schema v4) |
 
 ## Access layer
 
@@ -98,14 +100,20 @@ Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
   `get_task`, `list_tasks`, `list_tasks_for_note`, `update_task`, `delete_task`
   (`src-tauri/src/tasks.rs`); `create_calendar_event`, `get_calendar_event`,
   `list_calendar_events`, `update_calendar_event`, `delete_calendar_event`
-  (`src-tauri/src/calendar.rs`). `list_calendar_events` takes optional `from` /
+  (`src-tauri/src/calendar.rs`); `create_meeting_note`, `update_meeting`,
+  `get_meeting`, `create_meeting_note_from_event`, `get_meeting_for_event`
+  (`src-tauri/src/meetings.rs`). `list_calendar_events` takes optional `from` /
   `to` ISO instants and returns events overlapping that window. Saving a note
   syncs its outbound `links` rows from `[[…]]` / `#tag` / `@mention` in
-  `body_markdown` (skips `[[task:…]]`).
+  `body_markdown` (skips `[[task:…]]`). `create_meeting_note_from_event` is
+  idempotent: it prefills local date/start/end from the event instants and
+  stores `calendar_event_id`. Meeting metadata updates do not bump the note's
+  `updated_at`.
 - Frontend: `src/notes/` wraps note/link commands (`notesApi` + `useNotes` with
-  ~500ms debounced autosave). `src/tasks/` wraps task commands (`tasksApi`) and
-  the Inbox / Upcoming / Complete overview (`TasksView`). Daily notes render a
-  Due query section from `list_tasks(upcoming)` filtered to `due_date <=` that
-  day. Editor task pills create/update/delete rows immediately; note markdown
-  still autosaves the `[[task:id]]` reference. `src/calendar/` wraps event
-  commands (`calendarApi`) and the week grid / agenda views (`CalendarView`).
+  ~500ms debounced autosave) and meeting metadata (`meetingsApi`). `src/tasks/`
+  wraps task commands (`tasksApi`) and the Inbox / Upcoming / Complete overview
+  (`TasksView`). Daily notes render a Due query section from `list_tasks(upcoming)`
+  filtered to `due_date <=` that day. Editor task pills create/update/delete
+  rows immediately; note markdown still autosaves the `[[task:id]]` reference.
+  `src/calendar/` wraps event commands (`calendarApi`) and the week grid /
+  agenda views (`CalendarView`).

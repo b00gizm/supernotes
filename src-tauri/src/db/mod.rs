@@ -77,10 +77,10 @@ mod tests {
         let db = Db::open(&dir).unwrap();
         assert!(dir.join(DB_FILE_NAME).exists());
         assert_eq!(db.path(), dir.join(DB_FILE_NAME).as_path());
-        assert_eq!(db.with_conn(current_version).unwrap(), 3);
+        assert_eq!(db.with_conn(current_version).unwrap(), 4);
 
         let memory = Db::open_in_memory().unwrap();
-        assert_eq!(memory.with_conn(current_version).unwrap(), 3);
+        assert_eq!(memory.with_conn(current_version).unwrap(), 4);
 
         let _ = fs::remove_dir_all(dir);
     }

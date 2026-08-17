@@ -3,9 +3,10 @@ use uuid::Uuid;
 
 use super::error::{DbError, DbResult};
 use super::models::{
-    CalendarEvent, Link, Meeting, Note, NoteType, Task, TaskListFilter, TaskPriority, TaskState,
+    CalendarEvent, Link, Meeting, MeetingNote, Note, NoteType, Task, TaskListFilter, TaskPriority,
+    TaskState,
 };
-use super::time::utc_now;
+use super::time::{local_date_and_hm, utc_now};
 use super::wikilinks::{extract_wikilink_titles, rewrite_wikilink_title, titles_eq_folded};
 
 pub struct Repository<'a> {
@@ -27,8 +28,20 @@ impl<'a> Repository<'a> {
         pinned: bool,
     ) -> DbResult<Note> {
         let tx = self.conn.unchecked_transaction()?;
-        let repo = Repository::new(&tx);
-        let now = utc_now(repo.conn)?;
+        let note =
+            Repository::new(&tx).create_note_in_tx(title, body_markdown, note_type, pinned)?;
+        tx.commit()?;
+        Ok(note)
+    }
+
+    fn create_note_in_tx(
+        &self,
+        title: &str,
+        body_markdown: &str,
+        note_type: NoteType,
+        pinned: bool,
+    ) -> DbResult<Note> {
+        let now = utc_now(self.conn)?;
         let note = Note {
             id: Uuid::new_v4().to_string(),
             title: title.to_string(),
@@ -39,7 +52,7 @@ impl<'a> Repository<'a> {
             updated_at: now,
         };
 
-        repo.conn.execute(
+        self.conn.execute(
             "INSERT INTO notes (id, title, body_markdown, note_type, pinned, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
@@ -52,10 +65,9 @@ impl<'a> Repository<'a> {
                 note.updated_at,
             ],
         )?;
-        repo.sync_links_from_body(&note.id, body_markdown)?;
+        self.sync_links_from_body(&note.id, body_markdown)?;
         // Unresolved `[[…]]` / `#` / `@` at earlier saves gain rows once the target exists.
-        repo.backfill_incoming_links(&note)?;
-        tx.commit()?;
+        self.backfill_incoming_links(&note)?;
         Ok(note)
     }
 
@@ -178,9 +190,7 @@ impl<'a> Repository<'a> {
     }
 
     pub fn delete_note(&self, id: &str) -> DbResult<()> {
-        let changed = self
-            .conn
-            .execute("DELETE FROM notes WHERE id = ?1", [id])?;
+        let changed = self.conn.execute("DELETE FROM notes WHERE id = ?1", [id])?;
         if changed == 0 {
             return Err(DbError::NotFound);
         }
@@ -363,7 +373,8 @@ impl<'a> Repository<'a> {
         priority: Option<TaskPriority>,
     ) -> DbResult<Task> {
         let now = utc_now(self.conn)?;
-        let completed_at = matches!(state, TaskState::Done | TaskState::Cancelled).then(|| now.clone());
+        let completed_at =
+            matches!(state, TaskState::Done | TaskState::Cancelled).then(|| now.clone());
         let task = Task {
             id: Uuid::new_v4().to_string(),
             note_id: note_id.to_string(),
@@ -533,9 +544,7 @@ impl<'a> Repository<'a> {
     }
 
     pub fn delete_task(&self, id: &str) -> DbResult<()> {
-        let changed = self
-            .conn
-            .execute("DELETE FROM tasks WHERE id = ?1", [id])?;
+        let changed = self.conn.execute("DELETE FROM tasks WHERE id = ?1", [id])?;
         if changed == 0 {
             return Err(DbError::NotFound);
         }
@@ -637,6 +646,63 @@ impl<'a> Repository<'a> {
 
     // --- meetings ---
 
+    /// Create a meeting-type note and its metadata row in one transaction.
+    pub fn create_meeting_note(
+        &self,
+        title: &str,
+        body_markdown: &str,
+        meeting_date: &str,
+        start_time: &str,
+        end_time: &str,
+        calendar_event_id: Option<&str>,
+    ) -> DbResult<MeetingNote> {
+        validate_meeting_times(meeting_date, start_time, end_time)?;
+        if let Some(event_id) = calendar_event_id {
+            self.get_calendar_event(event_id)?;
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        let repo = Repository::new(&tx);
+        let note = repo.create_note_in_tx(title, body_markdown, NoteType::Meeting, false)?;
+        let meeting = repo.insert_meeting(
+            &note.id,
+            meeting_date,
+            start_time,
+            end_time,
+            None,
+            calendar_event_id,
+        )?;
+        tx.commit()?;
+        Ok(MeetingNote { note, meeting })
+    }
+
+    /// Prefill date/times from the event's local wall clock; idempotent per event.
+    pub fn create_meeting_note_from_event(&self, event_id: &str) -> DbResult<MeetingNote> {
+        if let Some(existing) = self.find_meeting_note_for_event(event_id)? {
+            return Ok(existing);
+        }
+        let event = self.get_calendar_event(event_id)?;
+        let (meeting_date, start_time) = local_date_and_hm(self.conn, &event.start)?;
+        // ponytail: no end date — overnight events store the end clock on the start's day.
+        let (_end_date, end_time) = local_date_and_hm(self.conn, &event.end)?;
+        match self.create_meeting_note(
+            &event.title,
+            "",
+            &meeting_date,
+            &start_time,
+            &end_time,
+            Some(event_id),
+        ) {
+            Ok(created) => Ok(created),
+            Err(DbError::Sqlite(rusqlite::Error::SqliteFailure(info, _)))
+                if info.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                self.find_meeting_note_for_event(event_id)?
+                    .ok_or(DbError::NotFound)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     pub fn create_meeting(
         &self,
         note_id: &str,
@@ -644,6 +710,36 @@ impl<'a> Repository<'a> {
         start_time: &str,
         end_time: &str,
         transcript_note_id: Option<&str>,
+        calendar_event_id: Option<&str>,
+    ) -> DbResult<Meeting> {
+        validate_meeting_times(meeting_date, start_time, end_time)?;
+        let note = self.get_note(note_id)?;
+        if note.note_type != NoteType::Meeting {
+            return Err(DbError::Invalid(
+                "meeting metadata requires note_type = meeting".to_string(),
+            ));
+        }
+        if let Some(event_id) = calendar_event_id {
+            self.get_calendar_event(event_id)?;
+        }
+        self.insert_meeting(
+            note_id,
+            meeting_date,
+            start_time,
+            end_time,
+            transcript_note_id,
+            calendar_event_id,
+        )
+    }
+
+    fn insert_meeting(
+        &self,
+        note_id: &str,
+        meeting_date: &str,
+        start_time: &str,
+        end_time: &str,
+        transcript_note_id: Option<&str>,
+        calendar_event_id: Option<&str>,
     ) -> DbResult<Meeting> {
         let meeting = Meeting {
             note_id: note_id.to_string(),
@@ -651,17 +747,20 @@ impl<'a> Repository<'a> {
             start_time: start_time.to_string(),
             end_time: end_time.to_string(),
             transcript_note_id: transcript_note_id.map(str::to_string),
+            calendar_event_id: calendar_event_id.map(str::to_string),
         };
         self.conn.execute(
             "INSERT INTO meetings (
-                note_id, meeting_date, start_time, end_time, transcript_note_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                note_id, meeting_date, start_time, end_time,
+                transcript_note_id, calendar_event_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 meeting.note_id,
                 meeting.meeting_date,
                 meeting.start_time,
                 meeting.end_time,
                 meeting.transcript_note_id,
+                meeting.calendar_event_id,
             ],
         )?;
         Ok(meeting)
@@ -670,7 +769,8 @@ impl<'a> Repository<'a> {
     pub fn get_meeting(&self, note_id: &str) -> DbResult<Meeting> {
         self.conn
             .query_row(
-                "SELECT note_id, meeting_date, start_time, end_time, transcript_note_id
+                "SELECT note_id, meeting_date, start_time, end_time,
+                        transcript_note_id, calendar_event_id
                  FROM meetings WHERE note_id = ?1",
                 [note_id],
                 map_meeting,
@@ -679,9 +779,35 @@ impl<'a> Repository<'a> {
             .ok_or(DbError::NotFound)
     }
 
+    pub fn get_meeting_for_event(&self, event_id: &str) -> DbResult<MeetingNote> {
+        self.find_meeting_note_for_event(event_id)?
+            .ok_or(DbError::NotFound)
+    }
+
+    fn find_meeting_note_for_event(&self, event_id: &str) -> DbResult<Option<MeetingNote>> {
+        let meeting = self
+            .conn
+            .query_row(
+                "SELECT note_id, meeting_date, start_time, end_time,
+                        transcript_note_id, calendar_event_id
+                 FROM meetings WHERE calendar_event_id = ?1",
+                [event_id],
+                map_meeting,
+            )
+            .optional()?;
+        match meeting {
+            Some(meeting) => {
+                let note = self.get_note(&meeting.note_id)?;
+                Ok(Some(MeetingNote { note, meeting }))
+            }
+            None => Ok(None),
+        }
+    }
+
     pub fn list_meetings(&self) -> DbResult<Vec<Meeting>> {
         let mut stmt = self.conn.prepare(
-            "SELECT note_id, meeting_date, start_time, end_time, transcript_note_id
+            "SELECT note_id, meeting_date, start_time, end_time,
+                    transcript_note_id, calendar_event_id
              FROM meetings
              ORDER BY meeting_date ASC, start_time ASC",
         )?;
@@ -689,25 +815,26 @@ impl<'a> Repository<'a> {
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
+    /// Metadata write: date/start/end only; does not bump the note's `updated_at`.
     pub fn update_meeting(
         &self,
         note_id: &str,
         meeting_date: &str,
         start_time: &str,
         end_time: &str,
-        transcript_note_id: Option<&str>,
     ) -> DbResult<Meeting> {
+        validate_meeting_times(meeting_date, start_time, end_time)?;
+        let note = self.get_note(note_id)?;
+        if note.note_type != NoteType::Meeting {
+            return Err(DbError::Invalid(
+                "meeting metadata requires note_type = meeting".to_string(),
+            ));
+        }
         let changed = self.conn.execute(
             "UPDATE meetings
-             SET meeting_date = ?1, start_time = ?2, end_time = ?3, transcript_note_id = ?4
-             WHERE note_id = ?5",
-            params![
-                meeting_date,
-                start_time,
-                end_time,
-                transcript_note_id,
-                note_id
-            ],
+             SET meeting_date = ?1, start_time = ?2, end_time = ?3
+             WHERE note_id = ?4",
+            params![meeting_date, start_time, end_time, note_id],
         )?;
         if changed == 0 {
             return Err(DbError::NotFound);
@@ -828,6 +955,34 @@ fn map_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     })
 }
 
+fn validate_meeting_times(meeting_date: &str, start_time: &str, end_time: &str) -> DbResult<()> {
+    if !is_daily_title(meeting_date) {
+        return Err(DbError::Invalid(format!(
+            "meeting_date must be YYYY-MM-DD, got {meeting_date:?}"
+        )));
+    }
+    if !is_hhmm(start_time) || !is_hhmm(end_time) {
+        return Err(DbError::Invalid(
+            "start_time and end_time must be HH:MM".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn is_hhmm(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 5 || bytes[2] != b':' {
+        return false;
+    }
+    let Ok(hour) = value[0..2].parse::<u32>() else {
+        return false;
+    };
+    let Ok(minute) = value[3..5].parse::<u32>() else {
+        return false;
+    };
+    hour <= 23 && minute <= 59
+}
+
 fn validate_event_range(start: &str, end: &str) -> DbResult<()> {
     if start.is_empty() || end.is_empty() {
         return Err(DbError::Invalid(
@@ -860,6 +1015,7 @@ fn map_meeting(row: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
         start_time: row.get(2)?,
         end_time: row.get(3)?,
         transcript_note_id: row.get(4)?,
+        calendar_event_id: row.get(5)?,
     })
 }
 
@@ -937,7 +1093,9 @@ mod tests {
 
             let hits = repo.search_notes_by_title("PRICING").unwrap();
             assert_eq!(hits.len(), 2);
-            assert!(hits.iter().all(|n| n.title.to_lowercase().contains("pricing")));
+            assert!(hits
+                .iter()
+                .all(|n| n.title.to_lowercase().contains("pricing")));
 
             let literal = repo.search_notes_by_title("100%").unwrap();
             assert_eq!(literal.len(), 1);
@@ -975,24 +1133,20 @@ mod tests {
                 "search took {elapsed:?}, budget {BUDGET_MS}ms"
             );
             assert!(!hits.is_empty());
-            assert!(hits.len() < COUNT, "query should not return the full corpus");
+            assert!(
+                hits.len() < COUNT,
+                "query should not return the full corpus"
+            );
         });
     }
 
     #[test]
     fn links_crud_and_cascade() {
         with_repo(|repo| {
-            let a = repo
-                .create_note("A", "", NoteType::Regular, false)
-                .unwrap();
-            let b = repo
-                .create_note("B", "", NoteType::Regular, false)
-                .unwrap();
+            let a = repo.create_note("A", "", NoteType::Regular, false).unwrap();
+            let b = repo.create_note("B", "", NoteType::Regular, false).unwrap();
             let link = repo.create_link(&a.id, &b.id).unwrap();
-            assert_eq!(
-                repo.get_link(&a.id, &b.id).unwrap().target_note_id,
-                b.id
-            );
+            assert_eq!(repo.get_link(&a.id, &b.id).unwrap().target_note_id, b.id);
             assert_eq!(repo.list_links_from(&a.id).unwrap().len(), 1);
 
             repo.delete_link(&link.source_note_id, &link.target_note_id)
@@ -1056,15 +1210,13 @@ mod tests {
                 .create_note("Über plan", "", NoteType::Regular, false)
                 .unwrap();
             let found = repo.find_note_by_title("über plan").unwrap();
-            assert_eq!(found.as_ref().map(|n| n.id.as_str()), Some(target.id.as_str()));
+            assert_eq!(
+                found.as_ref().map(|n| n.id.as_str()),
+                Some(target.id.as_str())
+            );
 
             let source = repo
-                .create_note(
-                    "Source",
-                    "See [[über plan]].",
-                    NoteType::Regular,
-                    false,
-                )
+                .create_note("Source", "See [[über plan]].", NoteType::Regular, false)
                 .unwrap();
             let links = repo.list_links_from(&source.id).unwrap();
             assert_eq!(links.len(), 1);
@@ -1132,12 +1284,8 @@ mod tests {
     #[test]
     fn replace_links_rolls_back_delete_when_insert_fails() {
         with_repo(|repo| {
-            let a = repo
-                .create_note("A", "", NoteType::Regular, false)
-                .unwrap();
-            let b = repo
-                .create_note("B", "", NoteType::Regular, false)
-                .unwrap();
+            let a = repo.create_note("A", "", NoteType::Regular, false).unwrap();
+            let b = repo.create_note("B", "", NoteType::Regular, false).unwrap();
             repo.create_link(&a.id, &b.id).unwrap();
             assert_eq!(repo.list_links_from(&a.id).unwrap().len(), 1);
 
@@ -1168,13 +1316,7 @@ mod tests {
             assert!(created.completed_at.is_none());
 
             let done = repo
-                .update_task(
-                    &created.id,
-                    None,
-                    Some(TaskState::Done),
-                    None,
-                    None,
-                )
+                .update_task(&created.id, None, Some(TaskState::Done), None, None)
                 .unwrap();
             assert_eq!(done.state, TaskState::Done);
             assert!(done.completed_at.is_some());
@@ -1311,14 +1453,13 @@ mod tests {
                 .len(),
                 1
             );
-            assert!(
-                repo.list_calendar_events(
+            assert!(repo
+                .list_calendar_events(
                     Some("2026-08-10T12:00:00.000Z"),
                     Some("2026-08-10T13:00:00.000Z"),
                 )
                 .unwrap()
-                .is_empty()
-            );
+                .is_empty());
 
             repo.delete_calendar_event(&created.id).unwrap();
             assert!(matches!(
@@ -1335,22 +1476,177 @@ mod tests {
                 .create_note("1-1", "", NoteType::Meeting, false)
                 .unwrap();
             let created = repo
-                .create_meeting(&note.id, "2026-08-10", "09:00", "09:30", None)
+                .create_meeting(&note.id, "2026-08-10", "09:00", "09:30", None, None)
                 .unwrap();
             assert_eq!(created.meeting_date, "2026-08-10");
+            assert!(created.calendar_event_id.is_none());
 
             let updated = repo
-                .update_meeting(&note.id, "2026-08-11", "10:00", "10:30", None)
+                .update_meeting(&note.id, "2026-08-11", "10:00", "10:30")
                 .unwrap();
             assert_eq!(updated.start_time, "10:00");
             assert_eq!(repo.list_meetings().unwrap().len(), 1);
 
             repo.delete_meeting(&note.id).unwrap();
+            assert!(matches!(repo.get_meeting(&note.id), Err(DbError::NotFound)));
+        });
+    }
+
+    #[test]
+    fn meeting_note_persists_type_and_times() {
+        with_repo(|repo| {
+            let created = repo
+                .create_meeting_note("Pricing sync", "", "2026-08-10", "14:00", "14:23", None)
+                .unwrap();
+            assert_eq!(created.note.note_type, NoteType::Meeting);
+            assert_eq!(created.note.title, "Pricing sync");
+            assert_eq!(created.meeting.meeting_date, "2026-08-10");
+            assert_eq!(created.meeting.start_time, "14:00");
+            assert_eq!(created.meeting.end_time, "14:23");
+            assert_eq!(created.meeting.note_id, created.note.id);
+            assert!(created.meeting.calendar_event_id.is_none());
+
+            let fetched = repo.get_meeting(&created.note.id).unwrap();
+            assert_eq!(fetched, created.meeting);
+            let note = repo.get_note(&created.note.id).unwrap();
+            assert_eq!(note.note_type, NoteType::Meeting);
+        });
+    }
+
+    #[test]
+    fn update_meeting_does_not_bump_note_updated_at() {
+        with_repo(|repo| {
+            let created = repo
+                .create_meeting_note("1-1", "", "2026-08-10", "09:00", "09:30", None)
+                .unwrap();
+            let before = created.note.updated_at.clone();
+            let updated = repo
+                .update_meeting(&created.note.id, "2026-08-11", "10:00", "10:30")
+                .unwrap();
+            assert_eq!(updated.meeting_date, "2026-08-11");
+            let note = repo.get_note(&created.note.id).unwrap();
+            assert_eq!(note.updated_at, before);
+        });
+    }
+
+    #[test]
+    fn create_meeting_note_from_event_prefills_and_links() {
+        with_repo(|repo| {
+            let event = repo
+                .create_calendar_event(
+                    "Pricing sync",
+                    "2026-08-10T21:00:00.000Z",
+                    "2026-08-10T21:23:00.000Z",
+                    None,
+                )
+                .unwrap();
+            let created = repo.create_meeting_note_from_event(&event.id).unwrap();
+            assert_eq!(created.note.note_type, NoteType::Meeting);
+            assert_eq!(created.note.title, "Pricing sync");
+            assert_eq!(
+                created.meeting.calendar_event_id.as_deref(),
+                Some(event.id.as_str())
+            );
+            // Clock values follow process localtime; other tests mutate TZ, so
+            // only assert shape here. Conversion itself is covered in time.rs.
+            assert!(is_daily_title(&created.meeting.meeting_date));
+            assert_eq!(created.meeting.start_time.len(), 5);
+            assert_eq!(created.meeting.end_time.len(), 5);
+            assert_ne!(created.meeting.start_time, created.meeting.end_time);
+
+            let again = repo.create_meeting_note_from_event(&event.id).unwrap();
+            assert_eq!(again.note.id, created.note.id);
+            assert_eq!(again.meeting.note_id, created.meeting.note_id);
+
+            let looked_up = repo.get_meeting_for_event(&event.id).unwrap();
+            assert_eq!(looked_up.note.id, created.note.id);
+        });
+    }
+
+    #[test]
+    fn meeting_notes_support_links_tasks_and_search() {
+        with_repo(|repo| {
+            let meeting = repo
+                .create_meeting_note(
+                    "Pricing sync",
+                    "Decided to keep the free tier.",
+                    "2026-08-10",
+                    "14:00",
+                    "14:23",
+                    None,
+                )
+                .unwrap();
+            let source = repo
+                .create_note(
+                    "Roadmap",
+                    "See [[Pricing sync]] and @Sam.",
+                    NoteType::Regular,
+                    false,
+                )
+                .unwrap();
+            let links = repo.list_links_from(&source.id).unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].target_note_id, meeting.note.id);
+
+            let incoming = repo.list_links_to(&meeting.note.id).unwrap();
+            assert_eq!(incoming.len(), 1);
+            assert_eq!(incoming[0].source_note_id, source.id);
+
+            let task = repo
+                .create_task(
+                    &meeting.note.id,
+                    "Send recap to team",
+                    TaskState::Open,
+                    None,
+                    None,
+                )
+                .unwrap();
+            let tasks = repo.list_tasks_for_note(&meeting.note.id).unwrap();
+            assert_eq!(tasks.len(), 1);
+            assert_eq!(tasks[0].id, task.id);
+
+            let hits = repo.search_notes_by_title("pricing").unwrap();
+            assert!(hits.iter().any(|note| note.id == meeting.note.id));
+            assert_eq!(hits[0].note_type, NoteType::Meeting);
+        });
+    }
+
+    #[test]
+    fn delete_event_unlinks_meeting_but_keeps_the_note() {
+        with_repo(|repo| {
+            let event = repo
+                .create_calendar_event(
+                    "Standup",
+                    "2026-08-10T09:30:00.000Z",
+                    "2026-08-10T09:45:00.000Z",
+                    None,
+                )
+                .unwrap();
+            let created = repo.create_meeting_note_from_event(&event.id).unwrap();
+            repo.delete_calendar_event(&event.id).unwrap();
+            let meeting = repo.get_meeting(&created.note.id).unwrap();
+            assert!(meeting.calendar_event_id.is_none());
+            let note = repo.get_note(&created.note.id).unwrap();
+            assert_eq!(note.title, "Standup");
             assert!(matches!(
-                repo.get_meeting(&note.id),
+                repo.get_meeting_for_event(&event.id),
                 Err(DbError::NotFound)
             ));
         });
     }
 
+    #[test]
+    fn rejects_invalid_meeting_times() {
+        with_repo(|repo| {
+            assert!(repo
+                .create_meeting_note("Bad", "", "Aug 10", "14:00", "14:23", None)
+                .is_err());
+            assert!(repo
+                .create_meeting_note("Bad", "", "2026-08-10", "25:00", "14:23", None)
+                .is_err());
+            assert!(repo
+                .create_meeting_note("Bad", "", "2026-08-10", "14:00", "14", None)
+                .is_err());
+        });
     }
+}
