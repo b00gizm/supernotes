@@ -12,7 +12,10 @@ use calendar::{
 };
 use db::Db;
 use media::{resolve_note_image_path, save_note_image};
-use meetings::{create_meeting, get_meeting, update_meeting};
+use meetings::{
+    create_meeting_note, create_meeting_note_from_event, get_meeting, get_meeting_for_event,
+    update_meeting,
+};
 use notes::{
     create_note, delete_note, get_note, get_or_create_daily_note, list_links_from, list_links_to,
     list_notes, search_notes, set_note_pinned, update_note,
@@ -61,9 +64,11 @@ pub fn run() {
             list_calendar_events,
             update_calendar_event,
             delete_calendar_event,
-            create_meeting,
-            get_meeting,
+            create_meeting_note,
             update_meeting,
+            get_meeting,
+            create_meeting_note_from_event,
+            get_meeting_for_event,
             save_note_image,
             resolve_note_image_path
         ])

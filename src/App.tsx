@@ -25,14 +25,9 @@ import { NoteEditor } from "./editor/NoteEditor";
 import { Backlinks } from "./notes/Backlinks";
 import { CalendarView } from "./calendar/CalendarView";
 import type { CalendarEvent } from "./calendar/types";
-import { meetingsApi } from "./meetings/api";
-import {
-  defaultMeetingTimes,
-  meetingTimesFromLocalIso,
-} from "./meetings/format";
+import { defaultMeetingTimes } from "./meetings/format";
 import { MeetingHeader } from "./meetings/MeetingHeader";
-import { queueMeetingPrefill } from "./meetings/pending";
-import type { MeetingPrefill } from "./meetings/types";
+import { meetingsApi } from "./notes/meetings";
 import { DueSection } from "./tasks/DueSection";
 import { TasksView } from "./tasks/TasksView";
 import { tasksApi } from "./tasks/api";
@@ -356,6 +351,7 @@ function App() {
     openDaily,
     deleteSelected,
     setPinned,
+    refresh,
   } = useNotes({ autoSelect: false });
 
   const [surface, setSurface] = useState<Surface>({ kind: "daily" });
@@ -764,38 +760,26 @@ function App() {
     });
   };
 
-  const createMeetingNote = (prefill?: MeetingPrefill) => {
+  const createMeetingNote = () => {
     if (creatingMeetingRef.current) {
       return;
     }
     creatingMeetingRef.current = true;
     setMeetingActionError(null);
-    const times = prefill ?? defaultMeetingTimes();
-    queueMeetingPrefill(times);
     setSurface({ kind: "note", id: "" });
     void (async () => {
       try {
-        const created = await createNote(prefill?.title ?? "Untitled", {
-          note_type: "meeting",
+        const created = await meetingsApi.createMeetingNote({
+          title: "Untitled",
+          ...defaultMeetingTimes(),
         });
-        if (!created) {
-          return;
-        }
-        try {
-          await meetingsApi.createMeeting({
-            note_id: created.id,
-            meeting_date: times.meeting_date,
-            start_time: times.start_time,
-            end_time: times.end_time,
-          });
-        } catch (err) {
-          if (!/already exists/i.test(String(err))) {
-            setMeetingActionError(
-              err instanceof Error ? err.message : "Could not save meeting",
-            );
-          }
-        }
-        setSurface({ kind: "note", id: created.id });
+        await refresh();
+        setSurface({ kind: "note", id: created.note.id });
+        selectNote(created.note.id);
+      } catch (err) {
+        setMeetingActionError(
+          err instanceof Error ? err.message : "Could not create meeting",
+        );
       } finally {
         creatingMeetingRef.current = false;
       }
@@ -803,15 +787,26 @@ function App() {
   };
 
   const createMeetingFromEvent = (event: CalendarEvent) => {
-    const times = meetingTimesFromLocalIso(event.start, event.end);
-    if (!times) {
-      setMeetingActionError("Could not read event times");
+    if (creatingMeetingRef.current) {
       return;
     }
-    createMeetingNote({
-      title: event.title.trim() || "Untitled",
-      ...times,
-    });
+    creatingMeetingRef.current = true;
+    setMeetingActionError(null);
+    setSurface({ kind: "note", id: "" });
+    void (async () => {
+      try {
+        const created = await meetingsApi.createMeetingNoteFromEvent(event.id);
+        await refresh();
+        setSurface({ kind: "note", id: created.note.id });
+        selectNote(created.note.id);
+      } catch (err) {
+        setMeetingActionError(
+          err instanceof Error ? err.message : "Could not create meeting",
+        );
+      } finally {
+        creatingMeetingRef.current = false;
+      }
+    })();
   };
 
   const openWikiLink = (link: { title: string; noteId: string | null }) => {

@@ -2,9 +2,9 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { MeetingsApi } from "./meetings/api";
-import { createMemoryMeetingsApi } from "./meetings/memoryApi";
 import type { NotesApi } from "./notes/api";
+import { createMemoryMeetingsApi, type MeetingsApi } from "./notes/meetings";
+import type { Meeting } from "./notes/types";
 import {
   formatDailyDisplayTitle,
   formatDailyTitle,
@@ -25,7 +25,16 @@ const tasksApiRef: { current: TasksApi } = {
 };
 
 const meetingsApiRef: { current: MeetingsApi } = {
-  current: createMemoryMeetingsApi(),
+  current: createMemoryMeetingsApi(apiRef.current),
+};
+
+const PRICING_MEETING: Meeting = {
+  note_id: "m1",
+  meeting_date: "2026-08-10",
+  start_time: "14:00",
+  end_time: "14:23",
+  transcript_note_id: null,
+  calendar_event_id: null,
 };
 
 vi.mock("./notes/api", async () => {
@@ -52,17 +61,24 @@ vi.mock("./notes/api", async () => {
   };
 });
 
-vi.mock("./meetings/api", async () => {
+vi.mock("./notes/meetings", async () => {
   const actual =
-    await vi.importActual<typeof import("./meetings/api")>("./meetings/api");
+    await vi.importActual<typeof import("./notes/meetings")>(
+      "./notes/meetings",
+    );
   return {
     ...actual,
     meetingsApi: {
       getMeeting: (noteId: string) => meetingsApiRef.current.getMeeting(noteId),
-      createMeeting: (input: Parameters<MeetingsApi["createMeeting"]>[0]) =>
-        meetingsApiRef.current.createMeeting(input),
+      createMeetingNote: (
+        input: Parameters<MeetingsApi["createMeetingNote"]>[0],
+      ) => meetingsApiRef.current.createMeetingNote(input),
+      createMeetingNoteFromEvent: (eventId: string) =>
+        meetingsApiRef.current.createMeetingNoteFromEvent(eventId),
       updateMeeting: (input: Parameters<MeetingsApi["updateMeeting"]>[0]) =>
         meetingsApiRef.current.updateMeeting(input),
+      getMeetingForEvent: (eventId: string) =>
+        meetingsApiRef.current.getMeetingForEvent(eventId),
     },
   };
 });
@@ -94,7 +110,7 @@ describe("App shell", () => {
   beforeEach(() => {
     apiRef.current = createMemoryNotesApi();
     tasksApiRef.current = createMemoryTasksApi();
-    meetingsApiRef.current = createMemoryMeetingsApi();
+    meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current);
   });
 
   it("opens today's daily note by default with shell chrome", async () => {
@@ -433,15 +449,9 @@ describe("App shell", () => {
         updated_at: "2026-08-09T10:00:00.000Z",
       },
     ]);
-    meetingsApiRef.current = createMemoryMeetingsApi([
-      {
-        note_id: "m1",
-        meeting_date: "2026-08-10",
-        start_time: "14:00",
-        end_time: "14:23",
-        transcript_note_id: null,
-      },
-    ]);
+    meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current, {
+      meetings: [PRICING_MEETING],
+    });
 
     render(<App />);
     await screen.findByLabelText("Note title");
@@ -463,6 +473,7 @@ describe("App shell", () => {
   it("creates a meeting note from the notes list with persisted metadata", async () => {
     const user = userEvent.setup();
     apiRef.current = createMemoryNotesApi([]);
+    meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current);
     render(<App />);
     const nav = screen.getByRole("navigation", { name: "Primary" });
     await user.click(within(nav).getByRole("button", { name: "Notes" }));
@@ -493,6 +504,44 @@ describe("App shell", () => {
     ).resolves.toEqual(
       expect.objectContaining({
         note_id: created.id,
+        calendar_event_id: null,
+      }),
+    );
+  });
+
+  it("creates a meeting note from a calendar event and persists the link", async () => {
+    const user = userEvent.setup();
+    apiRef.current = createMemoryNotesApi([]);
+    meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current);
+    render(<App />);
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    await user.click(within(nav).getByRole("button", { name: "Calendar" }));
+    const pane = await screen.findByRole("region", { name: "Calendar" });
+    await user.click(within(pane).getByRole("tab", { name: "Agenda" }));
+    const hits = await screen.findAllByRole("button", { name: /Pricing sync/ });
+    const hit = hits.at(0);
+    if (!hit) {
+      throw new Error("expected a calendar event to click");
+    }
+    await user.click(hit);
+    await user.click(screen.getByRole("button", { name: "Meeting note" }));
+
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Pricing sync",
+    );
+    const created = (await apiRef.current.listNotes()).find(
+      (note) => note.note_type === "meeting",
+    );
+    expect(created).toBeTruthy();
+    if (!created) {
+      throw new Error("expected a meeting note");
+    }
+    await expect(
+      meetingsApiRef.current.getMeeting(created.id),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        note_id: created.id,
+        calendar_event_id: "demo-pricing",
       }),
     );
   });
@@ -510,15 +559,9 @@ describe("App shell", () => {
         updated_at: "2026-08-09T10:00:00.000Z",
       },
     ]);
-    meetingsApiRef.current = createMemoryMeetingsApi([
-      {
-        note_id: "m1",
-        meeting_date: "2026-08-10",
-        start_time: "14:00",
-        end_time: "14:23",
-        transcript_note_id: null,
-      },
-    ]);
+    meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current, {
+      meetings: [PRICING_MEETING],
+    });
 
     render(<App />);
     await screen.findByLabelText("Note title");

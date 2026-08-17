@@ -1,22 +1,38 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { createMemoryMeetingsApi } from "../notes/meetings";
+import { createMemoryNotesApi } from "../notes/memoryApi";
+import type { Meeting, Note } from "../notes/types";
 import { MeetingHeader } from "./MeetingHeader";
-import { createMemoryMeetingsApi } from "./memoryApi";
-import { queueMeetingPrefill } from "./pending";
+
+const NOTE: Note = {
+  id: "m1",
+  title: "Pricing sync",
+  body_markdown: "",
+  note_type: "meeting",
+  pinned: false,
+  created_at: "2026-08-09T10:00:00.000Z",
+  updated_at: "2026-08-09T10:00:00.000Z",
+};
+
+const MEETING: Meeting = {
+  note_id: "m1",
+  meeting_date: "2026-08-10",
+  start_time: "14:00",
+  end_time: "14:23",
+  transcript_note_id: null,
+  calendar_event_id: "evt-1",
+};
+
+function meetingsApi(meetings: Meeting[] = [MEETING]) {
+  return createMemoryMeetingsApi(createMemoryNotesApi([NOTE]), { meetings });
+}
 
 describe("MeetingHeader (ENG-68)", () => {
   it("shows the waveform meta row and persists edits", async () => {
     const user = userEvent.setup();
-    const api = createMemoryMeetingsApi([
-      {
-        note_id: "m1",
-        meeting_date: "2026-08-10",
-        start_time: "14:00",
-        end_time: "14:23",
-        transcript_note_id: null,
-      },
-    ]);
+    const api = meetingsApi();
 
     render(<MeetingHeader noteId="m1" api={api} />);
 
@@ -40,37 +56,26 @@ describe("MeetingHeader (ENG-68)", () => {
       meeting_date: "2026-08-11",
       start_time: "10:00",
       end_time: "10:30",
+      calendar_event_id: "evt-1",
     });
   });
 
-  it("uses queued prefill when creating a missing row", async () => {
-    queueMeetingPrefill({
-      title: "Pricing sync",
-      meeting_date: "2026-08-10",
-      start_time: "14:00",
-      end_time: "14:23",
-    });
-    const api = createMemoryMeetingsApi();
-    render(<MeetingHeader noteId="from-cal" api={api} />);
-    expect(await screen.findByText("Mon, Aug 10")).toBeInTheDocument();
-    expect(screen.getByText("14:00 – 14:23")).toBeInTheDocument();
-    await expect(api.getMeeting("from-cal")).resolves.toMatchObject({
-      meeting_date: "2026-08-10",
-      start_time: "14:00",
-      end_time: "14:23",
-    });
+  it("surfaces a missing meeting instead of creating one", async () => {
+    const api = meetingsApi([]);
+    render(<MeetingHeader noteId="m1" api={api} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("not found");
+    await expect(api.getMeeting("m1")).rejects.toThrow(/not found/i);
   });
 
-  it("creates a row when none exists and Escape cancels an edit", async () => {
+  it("lets Escape cancel an edit without writing", async () => {
     const user = userEvent.setup();
-    const api = createMemoryMeetingsApi();
-    render(<MeetingHeader noteId="fresh" api={api} />);
+    const api = meetingsApi();
+    render(<MeetingHeader noteId="m1" api={api} />);
 
     expect(
       await screen.findByLabelText("Edit meeting time"),
     ).toBeInTheDocument();
-    const created = await api.getMeeting("fresh");
-    expect(created.note_id).toBe("fresh");
+    const loaded = await api.getMeeting("m1");
 
     await user.click(screen.getByRole("button", { name: "Edit meeting time" }));
     await user.clear(screen.getByLabelText("Meeting date"));
@@ -78,20 +83,12 @@ describe("MeetingHeader (ENG-68)", () => {
     await user.keyboard("{Escape}");
 
     expect(screen.queryByLabelText("Meeting date")).not.toBeInTheDocument();
-    await expect(api.getMeeting("fresh")).resolves.toEqual(created);
+    await expect(api.getMeeting("m1")).resolves.toEqual(loaded);
   });
 
   it("surfaces a failed save instead of keeping the optimistic row", async () => {
     const user = userEvent.setup();
-    const api = createMemoryMeetingsApi([
-      {
-        note_id: "m1",
-        meeting_date: "2026-08-10",
-        start_time: "14:00",
-        end_time: "14:23",
-        transcript_note_id: null,
-      },
-    ]);
+    const api = meetingsApi();
     api.updateMeeting = () => Promise.reject(new Error("disk full"));
 
     render(<MeetingHeader noteId="m1" api={api} />);

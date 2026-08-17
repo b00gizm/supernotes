@@ -1,16 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { meetingsApi, type MeetingsApi } from "../notes/meetings";
+import type { Meeting } from "../notes/types";
 import { IconWaveform } from "../ui/IconWaveform";
-import { meetingsApi, type MeetingsApi } from "./api";
 import {
-  defaultMeetingTimes,
   formatMeetingDate,
   formatMeetingRange,
   isMeetingDate,
   isMeetingTime,
-  isNotFoundError,
 } from "./format";
-import { takeMeetingPrefill } from "./pending";
-import type { Meeting } from "./types";
 
 export type MeetingHeaderProps = {
   noteId: string;
@@ -51,24 +48,7 @@ export function MeetingHeader({
 
     const load = async () => {
       try {
-        let loaded: Meeting;
-        try {
-          loaded = await api.getMeeting(noteId);
-        } catch (err) {
-          if (!isNotFoundError(err)) {
-            throw err;
-          }
-          try {
-            loaded = await api.createMeeting({
-              note_id: noteId,
-              ...(takeMeetingPrefill() ?? defaultMeetingTimes()),
-            });
-          } catch (createErr) {
-            loaded = await api.getMeeting(noteId).catch(() => {
-              throw createErr;
-            });
-          }
-        }
+        const loaded = await api.getMeeting(noteId);
         if (cancelled || noteIdRef.current !== noteId) {
           return;
         }
@@ -99,30 +79,27 @@ export function MeetingHeader({
       return;
     }
     const previous = meeting;
+    if (!previous) {
+      setError("Could not save meeting");
+      return;
+    }
     const optimistic: Meeting = {
-      note_id: noteId,
+      ...previous,
       meeting_date: next.meeting_date,
       start_time: next.start_time,
       end_time: next.end_time,
-      transcript_note_id: previous?.transcript_note_id ?? null,
     };
     setMeeting(optimistic);
     setDraft(next);
     setEditing(false);
     setError(null);
     try {
-      const saved = previous
-        ? await api.updateMeeting({
-            note_id: noteId,
-            meeting_date: next.meeting_date,
-            start_time: next.start_time,
-            end_time: next.end_time,
-            transcript_note_id: previous.transcript_note_id,
-          })
-        : await api.createMeeting({
-            note_id: noteId,
-            ...next,
-          });
+      const saved = await api.updateMeeting({
+        note_id: noteId,
+        meeting_date: next.meeting_date,
+        start_time: next.start_time,
+        end_time: next.end_time,
+      });
       if (noteIdRef.current !== noteId) {
         return;
       }
@@ -133,7 +110,7 @@ export function MeetingHeader({
         return;
       }
       setMeeting(previous);
-      setDraft(previous ? toDraft(previous) : next);
+      setDraft(toDraft(previous));
       setError(err instanceof Error ? err.message : "Could not save meeting");
     }
   };
