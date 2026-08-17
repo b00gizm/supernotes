@@ -15,6 +15,7 @@ import type { CalendarApi } from "./api";
 import { createMemoryCalendarApi } from "./api";
 import { CalendarView } from "./CalendarView";
 import { minutesToIso } from "./layout";
+import type { CalendarEvent } from "./types";
 
 const calRef: { current: CalendarApi } = {
   current: createMemoryCalendarApi(),
@@ -254,7 +255,7 @@ describe("CalendarView (ENG-65)", () => {
 
   it("offers Meeting note from an event with the event's date and times", async () => {
     const user = userEvent.setup();
-    const onCreateMeetingNote = vi.fn();
+    const onCreateMeetingNote = vi.fn<(event: CalendarEvent) => void>();
     renderCalendar(vi.fn(), vi.fn(), onCreateMeetingNote);
     await screen.findAllByText("Standup");
     await user.click(screen.getByRole("tab", { name: "Agenda" }));

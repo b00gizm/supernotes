@@ -1538,7 +1538,7 @@ function EventFields({
   onCommit: () => void;
   onCancel: () => void;
   onDelete: () => void;
-  onCreateMeetingNote?: () => void;
+  onCreateMeetingNote?: (() => void) | undefined;
 }) {
   return (
     <form
