@@ -58,8 +58,9 @@ describe("memory recording (ENG-69)", () => {
       },
     );
 
-    const state = await recording.startRecording(created.note.id, "tiny.en");
+    const state = await recording.startRecording(created.note.id);
     expect(state.status).toBe("recording");
+    expect(state.model_id).toBe("tiny");
     expect(state.engine_id).toBe("fake");
     expect(seen).toEqual(["Let's walk through the enterprise tier."]);
 

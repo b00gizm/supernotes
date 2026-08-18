@@ -177,7 +177,7 @@ export function createMemoryRecordingApi(
         status: "recording",
         meeting_note_id: meetingNoteId,
         session_id: `mem-${String(Date.now())}`,
-        model_id: modelId ?? "tiny.en",
+        model_id: modelId ?? "tiny",
         engine_id: engineId,
         started_at: new Date().toISOString(),
       };

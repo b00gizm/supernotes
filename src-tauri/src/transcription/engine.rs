@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{RecordingIpcError, TARGET_SAMPLE_RATE};
 
-pub const DEFAULT_MODEL_ID: &str = "tiny.en";
+pub const DEFAULT_MODEL_ID: &str = "tiny";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TranscriptSegment {
@@ -461,6 +461,13 @@ impl TranscriptionEngine for WhisperEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_model_is_multilingual_tiny() {
+        assert_eq!(DEFAULT_MODEL_ID, "tiny");
+        assert_eq!(model_spec(DEFAULT_MODEL_ID).unwrap().id, "tiny");
+        assert!(model_spec("tiny.en").is_ok());
+    }
 
     #[test]
     fn fake_engine_is_swappable_and_uses_script() {

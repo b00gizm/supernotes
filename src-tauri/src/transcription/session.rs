@@ -838,6 +838,7 @@ mod tests {
         let state = recorder
             .start(&db, sink.clone(), &meeting_id, None)
             .unwrap();
+        assert_eq!(state.model_id.as_deref(), Some("tiny"));
         assert_eq!(state.engine_id.as_deref(), Some("other"));
         assert!(wait_until(Duration::from_secs(2), || !sink
             .segments()

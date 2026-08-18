@@ -21,6 +21,7 @@ describe("tauri recording IPC arg keys (ENG-69)", () => {
   it("start / ensure / get pass camelCase keys", async () => {
     const { recordingApi } = await import("./recording");
     await recordingApi.startRecording("note-1", "tiny.en");
+    await recordingApi.startRecording("note-2");
     await recordingApi.ensureTranscriptionModel("base.en");
     await recordingApi.getRecordingState();
     await recordingApi.getMicrophonePermission();
@@ -30,6 +31,10 @@ describe("tauri recording IPC arg keys (ENG-69)", () => {
     expect(invoke).toHaveBeenCalledWith("start_recording", {
       meetingNoteId: "note-1",
       modelId: "tiny.en",
+    });
+    expect(invoke).toHaveBeenCalledWith("start_recording", {
+      meetingNoteId: "note-2",
+      modelId: null,
     });
     expect(invoke).toHaveBeenCalledWith("ensure_transcription_model", {
       modelId: "base.en",
