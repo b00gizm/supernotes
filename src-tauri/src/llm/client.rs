@@ -157,7 +157,7 @@ impl LlmClient for OpenAiCompatibleClient {
         let response = match builder.send_json(body) {
             Ok(response) => response,
             Err(ureq::Error::Status(code, response)) => {
-                return Err(map_http_status(code, response));
+                return Err(map_http_status(code, response, request.api_key.as_deref()));
             }
             Err(ureq::Error::Transport(err)) => {
                 return Err(LlmIpcError::unreachable(transport_message(&err)));
@@ -222,22 +222,84 @@ fn sse_token(line: &str) -> SseLine {
     SseLine::Token(text.to_string())
 }
 
-fn map_http_status(code: u16, response: ureq::Response) -> LlmIpcError {
-    let _ = read_body_discard(response);
+fn map_http_status(code: u16, response: ureq::Response, api_key: Option<&str>) -> LlmIpcError {
+    let body = read_body(response);
+    let message = extract_error_message(&body).map(|text| redact_secret(&text, api_key));
     match code {
-        401 | 403 => LlmIpcError::invalid_key(),
+        401 | 403 => map_auth_status(&body, message.as_deref()),
         429 => LlmIpcError::rate_limited(),
         _ => LlmIpcError::new(
             "request_failed",
-            format!("The LLM server returned HTTP {code}."),
+            message.unwrap_or_else(|| format!("The LLM server returned HTTP {code}.")),
         ),
     }
 }
 
-fn read_body_discard(response: ureq::Response) {
-    let mut buf = [0u8; 256];
-    let mut reader = response.into_reader();
-    let _ = reader.read(&mut buf);
+/// 401/403 is not always a bad key (OpenCode: valid key, upstream blocked).
+fn map_auth_status(body: &str, message: Option<&str>) -> LlmIpcError {
+    match message {
+        None => LlmIpcError::invalid_key(),
+        Some(text) if is_credential_failure(body, text) => LlmIpcError::new("invalid_key", text),
+        Some(text) => LlmIpcError::new("request_failed", text),
+    }
+}
+
+fn extract_error_message(body: &str) -> Option<String> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(text) = value
+            .pointer("/error/message")
+            .and_then(|v| v.as_str())
+            .or_else(|| value.pointer("/message").and_then(|v| v.as_str()))
+            .or_else(|| value.get("error").and_then(|v| v.as_str()))
+        {
+            let text = text.trim();
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn is_credential_failure(body: &str, message: &str) -> bool {
+    let hay = format!("{body}\n{message}").to_ascii_lowercase();
+    const NEEDLES: &[&str] = &[
+        "invalid_api_key",
+        "incorrect api key",
+        "invalid api key",
+        "invalid api-key",
+        "wrong api key",
+        "unknown api key",
+        "api key is invalid",
+        "api key was rejected",
+        "no api key",
+        "missing api key",
+        "api key required",
+        "incorrect api_key",
+    ];
+    NEEDLES.iter().any(|needle| hay.contains(needle))
+}
+
+fn redact_secret(message: &str, api_key: Option<&str>) -> String {
+    let Some(key) = api_key.map(str::trim).filter(|key| key.len() >= 8) else {
+        return message.to_string();
+    };
+    if message.contains(key) {
+        message.replace(key, "***")
+    } else {
+        message.to_string()
+    }
+}
+
+fn read_body(response: ureq::Response) -> String {
+    let mut buf = String::new();
+    let mut reader = response.into_reader().take(4096);
+    let _ = reader.read_to_string(&mut buf);
+    buf
 }
 
 fn transport_message(err: &ureq::Transport) -> String {
@@ -338,12 +400,86 @@ data: {\"choices\":[{\"delta\":{\"content\":\"nope\"}}]}\n";
     }
 
     #[test]
-    fn openai_client_maps_401_to_invalid_key() {
-        let url = serve_once(401, "application/json", "{\"error\":\"nope\"}");
-        let err = request_against(&url, Some("sk-bad")).unwrap_err();
+    fn extract_error_message_reads_openai_and_opencode_shapes() {
+        assert_eq!(
+            extract_error_message(
+                r#"{"error":{"message":"Incorrect API key provided","code":"invalid_api_key"}}"#
+            )
+            .as_deref(),
+            Some("Incorrect API key provided")
+        );
+        assert_eq!(
+            extract_error_message(
+                r#"{"type":"error","error":{"type":"AuthError","message":"Request blocked by upstream provider."}}"#
+            )
+            .as_deref(),
+            Some("Request blocked by upstream provider.")
+        );
+        assert_eq!(extract_error_message("  "), None);
+        assert_eq!(
+            extract_error_message(r#"{"error":"nope"}"#).as_deref(),
+            Some("nope")
+        );
+    }
+
+    #[test]
+    fn auth_status_empty_or_credential_is_invalid_key() {
+        let empty = map_auth_status("", None);
+        assert_eq!(empty.code, "invalid_key");
+        assert!(empty.message.contains("API key was rejected"));
+
+        let classic = map_auth_status(
+            r#"{"error":{"code":"invalid_api_key","message":"Incorrect API key provided"}}"#,
+            Some("Incorrect API key provided"),
+        );
+        assert_eq!(classic.code, "invalid_key");
+        assert_eq!(classic.message, "Incorrect API key provided");
+    }
+
+    #[test]
+    fn auth_status_upstream_block_is_not_invalid_key() {
+        let err = map_auth_status(
+            r#"{"type":"error","error":{"type":"AuthError","message":"Request blocked by upstream provider."}}"#,
+            Some("Request blocked by upstream provider."),
+        );
+        assert_eq!(err.code, "request_failed");
+        assert_eq!(err.message, "Request blocked by upstream provider.");
+    }
+
+    #[test]
+    fn openai_client_maps_empty_401_to_invalid_key() {
+        let url = serve_once(401, "application/json", "");
+        let err = request_against(&url, Some("sk-test-key")).unwrap_err();
         assert_eq!(err.code, "invalid_key");
+        assert!(err.message.contains("API key was rejected"));
+        assert!(!format!("{err:?}").contains("sk-test-key"));
+    }
+
+    #[test]
+    fn openai_client_maps_classic_invalid_key_401() {
+        let url = serve_once(
+            401,
+            "application/json",
+            r#"{"error":{"message":"Incorrect API key provided: sk-test-key","code":"invalid_api_key"}}"#,
+        );
+        let err = request_against(&url, Some("sk-test-key")).unwrap_err();
+        assert_eq!(err.code, "invalid_key");
+        assert!(err.message.contains("Incorrect API key provided"));
+        assert!(!err.message.contains("sk-test-key"));
+        assert!(!format!("{err:?}").contains("sk-test-key"));
+    }
+
+    #[test]
+    fn openai_client_maps_401_with_upstream_body_to_request_failed() {
+        let url = serve_once(
+            401,
+            "application/json",
+            r#"{"type":"error","error":{"type":"AuthError","message":"Request blocked by upstream provider."}}"#,
+        );
+        let err = request_against(&url, Some("sk-test-key")).unwrap_err();
+        assert_eq!(err.code, "request_failed");
+        assert_eq!(err.message, "Request blocked by upstream provider.");
         assert!(!err.message.contains("sk-"));
-        assert!(!format!("{err:?}").contains("sk-bad"));
     }
 
     #[test]
