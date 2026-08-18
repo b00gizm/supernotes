@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { agendaHeading, startOfWeekMonday, weekDays } from "./calendar/layout";
 import type { NotesApi } from "./notes/api";
 import { createMemoryMeetingsApi, type MeetingsApi } from "./notes/meetings";
 import type { Meeting } from "./notes/types";
@@ -521,6 +522,18 @@ describe("App shell", () => {
     await user.click(within(nav).getByRole("button", { name: "Calendar" }));
     const pane = await screen.findByRole("region", { name: "Calendar" });
     await user.click(within(pane).getByRole("tab", { name: "Agenda" }));
+    // Demo "Pricing sync" is Monday of the current week; Agenda is today-only.
+    const today = formatDailyTitle();
+    const monday = startOfWeekMonday(today);
+    const offset = weekDays(monday).indexOf(today);
+    for (let step = 0; step < offset; step += 1) {
+      await user.click(
+        within(pane).getByRole("button", { name: "Previous day" }),
+      );
+    }
+    expect(within(pane).getByRole("heading", { level: 1 })).toHaveTextContent(
+      agendaHeading(monday),
+    );
     const hits = await screen.findAllByRole("button", { name: /Pricing sync/ });
     const hit = hits.at(0);
     if (!hit) {
