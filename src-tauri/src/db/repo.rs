@@ -34,7 +34,7 @@ impl<'a> Repository<'a> {
         Ok(note)
     }
 
-    fn create_note_in_tx(
+    pub(crate) fn create_note_in_tx(
         &self,
         title: &str,
         body_markdown: &str,
@@ -842,6 +842,30 @@ impl<'a> Repository<'a> {
             return Err(DbError::NotFound);
         }
         self.get_meeting(note_id)
+    }
+
+    pub fn load_meeting_summary_json(&self, note_id: &str) -> DbResult<Option<String>> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT summary_json FROM meetings WHERE note_id = ?1",
+                [note_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or(DbError::NotFound)?;
+        Ok(json.filter(|raw| !raw.trim().is_empty()))
+    }
+
+    pub fn save_meeting_summary_json(&self, note_id: &str, json: &str) -> DbResult<()> {
+        let changed = self.conn.execute(
+            "UPDATE meetings SET summary_json = ?1 WHERE note_id = ?2",
+            params![json, note_id],
+        )?;
+        if changed == 0 {
+            return Err(DbError::NotFound);
+        }
+        Ok(())
     }
 
     pub fn delete_meeting(&self, note_id: &str) -> DbResult<()> {
