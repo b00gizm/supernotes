@@ -1,7 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { createMemoryLlmApi, type LlmErrorCode, type LlmSettings } from "./api";
+import {
+  createMemoryLlmApi,
+  type LlmErrorCode,
+  type LlmSettings as LlmSettingsState,
+} from "./api";
 import { LlmSettings } from "./LlmSettings";
 
 describe("memory LLM settings (ENG-70 UI)", () => {
@@ -131,7 +135,7 @@ describe("LlmSettings (ENG-70 UI)", () => {
 
   it("persists base URL and model without sending a key when the field is empty", async () => {
     const user = userEvent.setup();
-    const saved: LlmSettings[] = [];
+    const saved: LlmSettingsState[] = [];
     const api = createMemoryLlmApi({
       settings: { base_url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
     });
