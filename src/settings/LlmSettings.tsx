@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import {
   llmApi as defaultLlmApi,
-  llmErrorFromUnknown,
-  llmErrorMessage,
-  subscribeLlmTestErrors,
-  subscribeLlmTestTokens,
-  type LlmSettingsApi,
-} from "./api";
+  subscribeLlmDone,
+  subscribeLlmErrors,
+  subscribeLlmTokens,
+  type LlmApi,
+} from "../llm/api";
+import { llmErrorCopy } from "./errors";
 
 export type LlmSettingsProps = {
-  api?: LlmSettingsApi;
+  api?: LlmApi;
 };
 
 export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
@@ -43,7 +43,7 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(llmErrorFromUnknown(err));
+          setError(llmErrorCopy(err));
         }
       })
       .finally(() => {
@@ -61,22 +61,27 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
     const unsubs: Array<() => void> = [];
     void (async () => {
       unsubs.push(
-        await subscribeLlmTestTokens((event) => {
+        await subscribeLlmTokens((event) => {
           if (cancelled) {
             return;
           }
-          if (event.done) {
-            return;
-          }
-          setStream((prev) => prev + event.token);
+          setStream((prev) => prev + event.text);
         }),
       );
       unsubs.push(
-        await subscribeLlmTestErrors((event) => {
+        await subscribeLlmDone((event) => {
           if (cancelled) {
             return;
           }
-          setError(llmErrorMessage(event.code));
+          setStream(event.text);
+        }),
+      );
+      unsubs.push(
+        await subscribeLlmErrors((event) => {
+          if (cancelled) {
+            return;
+          }
+          setError(llmErrorCopy(event));
         }),
       );
     })();
@@ -101,7 +106,7 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
       setHasKey(saved.has_api_key);
       setError(null);
     } catch (err) {
-      setError(llmErrorFromUnknown(err));
+      setError(llmErrorCopy(err));
       throw err;
     } finally {
       savingRef.current = false;
@@ -114,18 +119,13 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
     }
     const next = apiKeyDraft.trim();
     try {
-      if (next) {
-        await api.setApiKey(next);
-        setHasKey(true);
-      } else {
-        await api.clearApiKey();
-        setHasKey(false);
-      }
+      const saved = next ? await api.setApiKey(next) : await api.clearApiKey();
+      setHasKey(saved.has_api_key);
       setApiKeyDraft("");
       setKeyDirty(false);
       setError(null);
     } catch (err) {
-      setError(llmErrorFromUnknown(err));
+      setError(llmErrorCopy(err));
       throw err;
     }
   };
@@ -143,7 +143,7 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
       await persistKey();
       await api.testConnection();
     } catch (err) {
-      setError(llmErrorFromUnknown(err));
+      setError(llmErrorCopy(err));
     } finally {
       testingRef.current = false;
       setTesting(false);
