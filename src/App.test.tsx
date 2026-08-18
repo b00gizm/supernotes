@@ -198,6 +198,30 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("opens Settings from the sidebar footer", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Base URL")).toBeInTheDocument();
+    expect(screen.getByLabelText("API key")).toHaveAttribute(
+      "type",
+      "password",
+    );
+    expect(screen.getByLabelText("Model")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Test connection" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
   it("opens Tasks overview grouped by overdue / day / unscheduled", async () => {
     const user = userEvent.setup();
     const today = formatDailyTitle();
