@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   llmApi as defaultLlmApi,
-  subscribeLlmDone,
   subscribeLlmErrors,
-  subscribeLlmTokens,
   type LlmApi,
 } from "../llm/api";
 import { llmErrorCopy } from "./errors";
@@ -19,7 +17,7 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
   const [hasKey, setHasKey] = useState(false);
   const [keyDirty, setKeyDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stream, setStream] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [loading, setLoading] = useState(true);
   const testingRef = useRef(false);
@@ -61,27 +59,12 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
     const unsubs: Array<() => void> = [];
     void (async () => {
       unsubs.push(
-        await subscribeLlmTokens((event) => {
-          if (cancelled) {
-            return;
-          }
-          setStream((prev) => prev + event.text);
-        }),
-      );
-      unsubs.push(
-        await subscribeLlmDone((event) => {
-          if (cancelled) {
-            return;
-          }
-          setStream(event.text);
-        }),
-      );
-      unsubs.push(
         await subscribeLlmErrors((event) => {
           if (cancelled) {
             return;
           }
           setError(llmErrorCopy(event));
+          setStatus(null);
         }),
       );
     })();
@@ -137,13 +120,15 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
     testingRef.current = true;
     setTesting(true);
     setError(null);
-    setStream("");
+    setStatus(null);
     try {
       await persistMeta();
       await persistKey();
       await api.testConnection();
+      setStatus("Successfully connected");
     } catch (err) {
       setError(llmErrorCopy(err));
+      setStatus(null);
     } finally {
       testingRef.current = false;
       setTesting(false);
@@ -241,17 +226,14 @@ export function LlmSettings({ api = defaultLlmApi }: LlmSettingsProps) {
             </p>
           ) : null}
 
-          {stream || testing ? (
-            <pre
+          {status ? (
+            <p
               className="settings-stream"
               aria-live="polite"
               aria-label="Test connection output"
             >
-              {stream}
-              {testing ? (
-                <span className="live-transcript-cursor" aria-hidden="true" />
-              ) : null}
-            </pre>
+              {status}
+            </p>
           ) : null}
         </form>
       )}

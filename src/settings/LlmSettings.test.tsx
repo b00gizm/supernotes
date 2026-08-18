@@ -68,7 +68,7 @@ describe("LlmSettings (ENG-70 UI)", () => {
     error.mockRestore();
   });
 
-  it("streams test tokens as they arrive without requiring a key", async () => {
+  it("shows generic success copy, not streamed tokens", async () => {
     const user = userEvent.setup();
     const api = createMemoryLlmApi({ tokens: ["ping", " pong"] });
     render(<LlmSettingsScreen api={api} />);
@@ -79,8 +79,10 @@ describe("LlmSettings (ENG-70 UI)", () => {
 
     const output = await screen.findByLabelText("Test connection output");
     await waitFor(() => {
-      expect(output).toHaveTextContent("ping pong");
+      expect(output).toHaveTextContent("Successfully connected");
     });
+    expect(output).not.toHaveTextContent("ping");
+    expect(output).not.toHaveTextContent("pong");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -128,6 +130,9 @@ describe("LlmSettings (ENG-70 UI)", () => {
     expect(screen.getByRole("alert")).not.toHaveTextContent(
       "The API key was rejected",
     );
+    expect(
+      screen.queryByLabelText("Test connection output"),
+    ).not.toBeInTheDocument();
   });
 
   it("falls back to the short invalid_key copy when the backend message is empty", async () => {
