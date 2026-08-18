@@ -5,19 +5,12 @@ import { subscribeTasksChanged } from "../tasks/events";
 import { priorityDotClass } from "../tasks/priority";
 import { TaskStateIcon } from "../tasks/TaskStateIcon";
 import type { Task, TaskState } from "../tasks/types";
+import { formatTranscriptDuration, formatTranscriptWords } from "./format";
 import type {
   MeetingSummary as MeetingSummaryData,
   SummaryKeyPoint,
   SummaryParticipant,
 } from "./summaryApi";
-
-export function formatTranscriptDuration(seconds: number): string {
-  return `${Math.max(0, Math.round(seconds / 60))} min`;
-}
-
-export function formatTranscriptWords(count: number): string {
-  return `${count.toLocaleString("en-US")} words`;
-}
 
 function SummaryProse({ text }: { text: string }) {
   const parts = text.split(/(`[^`]+`)/g);
@@ -51,7 +44,7 @@ function KeyPoints({ points }: { points: SummaryKeyPoint[] }) {
   return (
     <ul className="meeting-summary-points">
       {points.map((point, index) => (
-        <li key={`${point.text}-${index}`}>
+        <li key={`${point.text}-${String(index)}`}>
           <span className="meeting-summary-point-row">
             <span>{point.text}</span>
             {point.timestamp ? (
@@ -104,9 +97,9 @@ async function loadTasksById(
 
 export type MeetingSummaryProps = {
   summary: MeetingSummaryData;
-  tasks?: TasksApi;
-  today?: string;
-  onOpenNote?: (noteId: string) => void;
+  tasks?: TasksApi | undefined;
+  today?: string | undefined;
+  onOpenNote?: ((noteId: string) => void) | undefined;
 };
 
 export function MeetingSummary({
@@ -170,7 +163,7 @@ export function MeetingSummary({
             if (linked) {
               return (
                 <button
-                  key={`${participant.name}-${participant.note_id}`}
+                  key={`${participant.name}-${participant.note_id ?? "linked"}`}
                   type="button"
                   className="meeting-participant is-linked"
                   onClick={() => {

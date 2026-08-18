@@ -162,7 +162,8 @@ export function MeetingHeader({
   useEffect(() => {
     let cancelled = false;
     setSummary(null);
-    void (async () => {
+
+    const load = async () => {
       try {
         const loaded = await summaryClient.getSummary(noteId);
         if (cancelled || noteIdRef.current !== noteId) {
@@ -175,7 +176,9 @@ export function MeetingHeader({
         }
         setError(summaryErrorMessage(err));
       }
-    })();
+    };
+
+    void load();
     return () => {
       cancelled = true;
     };
