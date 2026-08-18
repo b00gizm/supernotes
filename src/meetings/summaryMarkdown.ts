@@ -80,7 +80,11 @@ export function findSummaryBlock(
   const headingRe = /^## (.+)$/gm;
   const headings: Array<{ title: string; index: number }> = [];
   for (const match of body.matchAll(headingRe)) {
-    headings.push({ title: match[1], index: match.index });
+    const title = match[1];
+    if (!title) {
+      continue;
+    }
+    headings.push({ title, index: match.index });
   }
   let startAt = -1;
   for (let i = headings.length - 1; i >= 0; i -= 1) {

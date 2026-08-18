@@ -35,7 +35,7 @@ const MEETING: Meeting = {
   calendar_event_id: "evt-1",
 };
 
-function flushGenerate(): Promise<void> {
+function waitForGenerate(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
@@ -203,7 +203,7 @@ describe("MeetingHeader summary → note body (ENG-71)", () => {
     await user.click(
       screen.getByRole("button", { name: "Regenerate summary" }),
     );
-    await flushGenerate();
+    await waitForGenerate();
     await waitFor(() => {
       expect(onWriteBody.mock.calls.length).toBeGreaterThan(1);
     });
