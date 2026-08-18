@@ -42,6 +42,14 @@ describe("summaryMarkdown", () => {
     expect(md).toContain("- @Marcus Webb");
     expect(md).toContain("- (Maybe) Steve");
     expect(md).not.toContain("@Steve");
+    expect(md).toContain(
+      "- Free tier stays; importer moves behind the paid line `14:02`",
+    );
+    expect(md).toContain(
+      "  - revisit only if activation dips, September at the earliest `14:05`",
+    );
+    expect(md).toContain("- Annual pricing blocked on refund language `14:11`");
+    expect(md).not.toMatch(/paid line 14:02(?!`)/);
     expect(md).toContain("[[task:mem-task-1]] Send updated tier table");
     expect(md).toContain("[[task:mem-task-2]] Legal review of annual terms");
     expect(mentionMarkdown("Ada Lovelace")).toBe("@Ada Lovelace");
@@ -73,6 +81,12 @@ describe("summaryMarkdown", () => {
     expect(once).toContain("## Purpose");
     expect(once).toContain("@Sara Kim");
     expect(once).toContain("(Maybe) Steve");
+    expect(once).toContain(
+      "- Free tier stays; importer moves behind the paid line `14:02`",
+    );
+    expect(once).toContain(
+      "  - revisit only if activation dips, September at the earliest `14:05`",
+    );
     expect(once).toContain("[[task:mem-task-1]] Send updated tier table");
     editor.destroy();
     editor = createEditor(once);

@@ -29,7 +29,7 @@ function participantLine(participant: SummaryParticipant): string {
 function keyPointLines(points: SummaryKeyPoint[], depth = 0): string[] {
   const indent = "  ".repeat(depth);
   return points.flatMap((point) => {
-    const stamp = point.timestamp ? ` ${point.timestamp}` : "";
+    const stamp = point.timestamp ? ` \`${point.timestamp}\`` : "";
     return [
       `${indent}- ${point.text}${stamp}`,
       ...keyPointLines(point.children, depth + 1),
