@@ -28,6 +28,7 @@ import type { CalendarEvent } from "./calendar/types";
 import { defaultMeetingTimes } from "./meetings/format";
 import { MeetingHeader } from "./meetings/MeetingHeader";
 import { meetingsApi } from "./notes/meetings";
+import { recordingApi } from "./notes/recording";
 import { DueSection } from "./tasks/DueSection";
 import { TasksView } from "./tasks/TasksView";
 import { tasksApi } from "./tasks/api";
@@ -1232,7 +1233,24 @@ function App() {
               />
             )}
             {selectedId && selectedNote?.note_type === "meeting" ? (
-              <MeetingHeader noteId={selectedId} />
+              <MeetingHeader
+                noteId={selectedId}
+                recording={recordingApi}
+                onOpenNote={(id) => {
+                  const existing = notes.find((note) => note.id === id);
+                  if (existing) {
+                    openFromSearch(existing);
+                    return;
+                  }
+                  void refresh().then(() => {
+                    selectNote(id);
+                    setSurface({ kind: "note", id });
+                  });
+                }}
+                onStopped={() => {
+                  void refresh();
+                }}
+              />
             ) : null}
             {selectedId ? (
               <NoteEditor

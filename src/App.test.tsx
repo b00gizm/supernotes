@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { agendaHeading, startOfWeekMonday, weekDays } from "./calendar/layout";
 import type { NotesApi } from "./notes/api";
-import { createMemoryMeetingsApi, type MeetingsApi } from "./notes/meetings";
+import {
+  createMemoryMeetingsApi,
+  type MeetingsApi,
+  type MemoryMeetingsApi,
+} from "./notes/meetings";
+import { createMemoryRecordingApi, type RecordingApi } from "./notes/recording";
 import type { Meeting } from "./notes/types";
 import {
   formatDailyDisplayTitle,
@@ -25,8 +30,34 @@ const tasksApiRef: { current: TasksApi } = {
   current: createMemoryTasksApi(),
 };
 
-const meetingsApiRef: { current: MeetingsApi } = {
+const meetingsApiRef: { current: MemoryMeetingsApi } = {
   current: createMemoryMeetingsApi(apiRef.current),
+};
+
+function bindRecordingApi(): RecordingApi {
+  return createMemoryRecordingApi(
+    apiRef.current,
+    {
+      getMeeting: (noteId) => meetingsApiRef.current.getMeeting(noteId),
+      linkTranscript: (noteId, transcriptNoteId) => {
+        meetingsApiRef.current.linkTranscript(noteId, transcriptNoteId);
+      },
+    },
+    {
+      segmentsFor: () => [
+        {
+          clock: "14:02",
+          text: "Let's lock the Q3 pricing before the board deck goes out.",
+          start_ms: 120_000,
+          end_ms: 128_000,
+        },
+      ],
+    },
+  );
+}
+
+const recordingApiRef: { current: RecordingApi } = {
+  current: bindRecordingApi(),
 };
 
 const PRICING_MEETING: Meeting = {
@@ -84,6 +115,28 @@ vi.mock("./notes/meetings", async () => {
   };
 });
 
+vi.mock("./notes/recording", async () => {
+  const actual =
+    await vi.importActual<typeof import("./notes/recording")>(
+      "./notes/recording",
+    );
+  return {
+    ...actual,
+    recordingApi: {
+      startRecording: (meetingNoteId: string, modelId?: string) =>
+        recordingApiRef.current.startRecording(meetingNoteId, modelId),
+      stopRecording: () => recordingApiRef.current.stopRecording(),
+      getRecordingState: () => recordingApiRef.current.getRecordingState(),
+      getMicrophonePermission: () =>
+        recordingApiRef.current.getMicrophonePermission(),
+      listTranscriptionModels: () =>
+        recordingApiRef.current.listTranscriptionModels(),
+      ensureTranscriptionModel: (modelId: string) =>
+        recordingApiRef.current.ensureTranscriptionModel(modelId),
+    },
+  };
+});
+
 vi.mock("./tasks/api", async () => {
   const actual =
     await vi.importActual<typeof import("./tasks/api")>("./tasks/api");
@@ -112,6 +165,7 @@ describe("App shell", () => {
     apiRef.current = createMemoryNotesApi();
     tasksApiRef.current = createMemoryTasksApi();
     meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current);
+    recordingApiRef.current = bindRecordingApi();
   });
 
   it("opens today's daily note by default with shell chrome", async () => {
@@ -456,6 +510,7 @@ describe("App shell", () => {
     meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current, {
       meetings: [PRICING_MEETING],
     });
+    recordingApiRef.current = bindRecordingApi();
 
     render(<App />);
     await screen.findByLabelText("Note title");
@@ -474,10 +529,86 @@ describe("App shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens a linked transcript note from the meeting header", async () => {
+    const user = userEvent.setup();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "m1",
+        title: "Pricing sync",
+        body_markdown: "Decided to keep the free tier",
+        note_type: "meeting",
+        pinned: false,
+        created_at: "2026-08-09T10:00:00.000Z",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      },
+      {
+        id: "t1",
+        title: "Pricing sync transcript",
+        body_markdown: "Let's lock the Q3 pricing",
+        note_type: "regular",
+        pinned: false,
+        created_at: "2026-08-10T14:23:00.000Z",
+        updated_at: "2026-08-10T14:23:00.000Z",
+      },
+    ]);
+    meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current, {
+      meetings: [{ ...PRICING_MEETING, transcript_note_id: "t1" }],
+    });
+    recordingApiRef.current = bindRecordingApi();
+
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Pricing sync" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Transcript" }));
+
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Pricing sync transcript",
+    );
+    expect(screen.queryByLabelText("Meeting details")).not.toBeInTheDocument();
+  });
+
+  it("records via Woz IPC mock and opens the persisted transcript note", async () => {
+    const user = userEvent.setup();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "m1",
+        title: "Pricing sync",
+        body_markdown: "Decided to keep the free tier",
+        note_type: "meeting",
+        pinned: false,
+        created_at: "2026-08-09T10:00:00.000Z",
+        updated_at: "2026-08-09T10:00:00.000Z",
+      },
+    ]);
+    meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current, {
+      meetings: [PRICING_MEETING],
+    });
+    recordingApiRef.current = bindRecordingApi();
+
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Pricing sync" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Record" }));
+
+    const panel = await screen.findByLabelText("Live transcript");
+    expect(panel).toHaveTextContent(/Q3 pricing/);
+    expect(panel.textContent).not.toMatch(/\bSara\b|\bMarcus\b|\bYou\b/);
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(await screen.findByRole("button", { name: "Transcript" }));
+
+    expect(await screen.findByLabelText("Note title")).toHaveValue(
+      "Pricing sync — transcript",
+    );
+  });
+
   it("creates a meeting note from the notes list with persisted metadata", async () => {
     const user = userEvent.setup();
     apiRef.current = createMemoryNotesApi([]);
     meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current);
+    recordingApiRef.current = bindRecordingApi();
     render(<App />);
     const nav = screen.getByRole("navigation", { name: "Primary" });
     await user.click(within(nav).getByRole("button", { name: "Notes" }));
@@ -517,6 +648,7 @@ describe("App shell", () => {
     const user = userEvent.setup();
     apiRef.current = createMemoryNotesApi([]);
     meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current);
+    recordingApiRef.current = bindRecordingApi();
     render(<App />);
     const nav = screen.getByRole("navigation", { name: "Primary" });
     await user.click(within(nav).getByRole("button", { name: "Calendar" }));
@@ -578,6 +710,7 @@ describe("App shell", () => {
     meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current, {
       meetings: [PRICING_MEETING],
     });
+    recordingApiRef.current = bindRecordingApi();
 
     render(<App />);
     await screen.findByLabelText("Note title");
