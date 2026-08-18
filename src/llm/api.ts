@@ -82,15 +82,20 @@ function toLlmError(err: unknown): LlmError {
   }
   const raw = err instanceof Error ? err.message : String(err);
   const match = raw.match(/^([a-z_]+):\s*(.*)$/);
-  if (match) {
+  if (match?.[1] && match[2] !== undefined) {
     return new LlmError(match[1], match[2]);
   }
   return new LlmError("request_failed", raw || "The LLM request failed.");
 }
 
-async function invokeLlm<T>(cmd: string, args?: object): Promise<T> {
+async function invokeLlm<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
   try {
-    return await invoke<T>(cmd, args);
+    return args === undefined
+      ? await invoke<T>(cmd)
+      : await invoke<T>(cmd, args);
   } catch (err) {
     throw toLlmError(err);
   }
@@ -162,47 +167,63 @@ export function createMemoryLlmApi(options: MemoryLlmOptions = {}): LlmApi {
   };
 
   return {
-    async getSettings() {
-      return snapshot();
+    getSettings() {
+      return Promise.resolve(snapshot());
     },
-    async saveSettings(input) {
+    saveSettings(input) {
       const base_url = input.base_url.trim();
       const model = input.model.trim();
       if (!base_url.startsWith("http://") && !base_url.startsWith("https://")) {
-        throw new LlmError(
-          "invalid",
-          "Base URL must start with http:// or https://.",
+        return Promise.reject(
+          new LlmError(
+            "invalid",
+            "Base URL must start with http:// or https://.",
+          ),
         );
       }
       if (!model) {
-        throw new LlmError("invalid", "Model name is required.");
+        return Promise.reject(
+          new LlmError("invalid", "Model name is required."),
+        );
       }
       settings = { ...settings, base_url, model };
-      return snapshot();
+      return Promise.resolve(snapshot());
     },
-    async setApiKey(key) {
+    setApiKey(key) {
       const trimmed = key.trim();
       if (!trimmed) {
-        throw new LlmError(
-          "invalid",
-          "API key cannot be empty. Use clear if you want to remove it.",
+        return Promise.reject(
+          new LlmError(
+            "invalid",
+            "API key cannot be empty. Use clear if you want to remove it.",
+          ),
         );
       }
       apiKey = trimmed;
-      return snapshot();
+      return Promise.resolve(snapshot());
     },
-    async clearApiKey() {
+    clearApiKey() {
       apiKey = null;
-      return snapshot();
+      return Promise.resolve(snapshot());
     },
-    async testConnection() {
-      return runStream(`mem-${String(Date.now())}`);
-    },
-    async streamChat(input) {
-      if (input.messages.length === 0) {
-        throw new LlmError("invalid", "messages cannot be empty");
+    testConnection() {
+      try {
+        return Promise.resolve(runStream(`mem-${String(Date.now())}`));
+      } catch (err) {
+        return Promise.reject(toLlmError(err));
       }
-      return runStream(`mem-${String(Date.now())}`);
+    },
+    streamChat(input) {
+      if (input.messages.length === 0) {
+        return Promise.reject(
+          new LlmError("invalid", "messages cannot be empty"),
+        );
+      }
+      try {
+        return Promise.resolve(runStream(`mem-${String(Date.now())}`));
+      } catch (err) {
+        return Promise.reject(toLlmError(err));
+      }
     },
   };
 }

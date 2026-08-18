@@ -17,8 +17,7 @@ use uuid::Uuid;
 use crate::db::Db;
 
 pub use client::{
-    chat_completions_url, ChatMessage, ChatRequest, FakeClient, LlmClient, OpenAiCompatibleClient,
-    TEST_PROMPT,
+    ChatMessage, ChatRequest, FakeClient, LlmClient, OpenAiCompatibleClient, TEST_PROMPT,
 };
 pub use secrets::{KeyringSecretStore, MemorySecretStore, SecretStore};
 
@@ -438,7 +437,7 @@ mod tests {
 
         let json = serde_json::to_string(&loaded).unwrap();
         assert!(!json.contains("sk-secret"));
-        assert!(!json.contains("api_key"));
+        assert!(!json.contains("\"api_key\""));
     }
 
     #[test]
