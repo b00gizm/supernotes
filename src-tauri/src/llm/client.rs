@@ -141,9 +141,11 @@ impl LlmClient for OpenAiCompatibleClient {
             body["max_tokens"] = json!(max_tokens);
         }
 
+        // Match curl-ish defaults: some gateways 401 empty bodies on `User-Agent: ureq`.
         let mut builder = ureq::post(&url)
             .set("Content-Type", "application/json")
-            .set("Accept", "text/event-stream")
+            .set("Accept", "*/*")
+            .set("User-Agent", "Supernotes")
             .timeout(self.timeout);
         if let Some(key) = request
             .api_key
@@ -212,14 +214,24 @@ fn sse_token(line: &str) -> SseLine {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
         return SseLine::Ignore;
     };
-    let Some(text) = value
-        .pointer("/choices/0/delta/content")
-        .and_then(|v| v.as_str())
-        .filter(|text| !text.is_empty())
-    else {
-        return SseLine::Ignore;
-    };
-    SseLine::Token(text.to_string())
+    match sse_delta_text(&value) {
+        Some(text) => SseLine::Token(text),
+        None => SseLine::Ignore,
+    }
+}
+
+fn sse_delta_text(value: &serde_json::Value) -> Option<String> {
+    let delta = value.pointer("/choices/0/delta")?;
+    for key in ["content", "reasoning_content"] {
+        if let Some(text) = delta
+            .get(key)
+            .and_then(|v| v.as_str())
+            .filter(|text| !text.is_empty())
+        {
+            return Some(text.to_string());
+        }
+    }
+    None
 }
 
 fn map_http_status(code: u16, response: ureq::Response, api_key: Option<&str>) -> LlmIpcError {
@@ -311,6 +323,54 @@ fn transport_message(err: &ureq::Transport) -> String {
 }
 
 #[cfg(test)]
+fn authorization_header(request: &str) -> Option<String> {
+    request.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("authorization")
+            .then(|| value.trim().to_string())
+    })
+}
+
+/// OpenCode-style gate: missing/wrong Bearer → 401 `Missing API key.`; match → SSE.
+/// Reports the captured `Authorization` value (`None` if the header was absent).
+#[cfg(test)]
+pub(crate) fn serve_bearer_gate(
+    expected_key: &str,
+    sse_body: &str,
+) -> (String, std::sync::mpsc::Receiver<Option<String>>) {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let expected = format!("Bearer {expected_key}");
+    let sse_body = sse_body.to_string();
+    let (auth_tx, auth_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = vec![0u8; 8192];
+        let n = stream.read(&mut buf).unwrap_or(0);
+        let req = String::from_utf8_lossy(&buf[..n]);
+        let auth = authorization_header(&req);
+        let authorized = auth.as_deref() == Some(expected.as_str());
+        let _ = auth_tx.send(auth);
+        let response = if authorized {
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{sse_body}"
+            )
+        } else {
+            let body = r#"{"error":{"message":"Missing API key."}}"#;
+            format!(
+                "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+        };
+        let _ = stream.write_all(response.as_bytes());
+    });
+    (format!("http://{addr}/v1"), auth_rx)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
@@ -361,6 +421,26 @@ data: {\"choices\":[{\"delta\":{\"content\":\"nope\"}}]}\n";
     }
 
     #[test]
+    fn consume_sse_emits_reasoning_content_when_content_is_empty() {
+        let body = "\
+data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"Hel\"}}]}\n\
+data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"lo\"}}]}\n\
+data: [DONE]\n";
+        let mut seen = Vec::new();
+        consume_sse(body.as_bytes(), &mut |token| seen.push(token.to_string())).unwrap();
+        assert_eq!(seen, ["Hel", "lo"]);
+    }
+
+    #[test]
+    fn consume_sse_prefers_content_over_reasoning_content() {
+        let body =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\",\"reasoning_content\":\"think\"}}]}\n";
+        let mut seen = Vec::new();
+        consume_sse(body.as_bytes(), &mut |token| seen.push(token.to_string())).unwrap();
+        assert_eq!(seen, ["hi"]);
+    }
+
+    #[test]
     fn fake_client_streams_tokens_incrementally() {
         let client = FakeClient::scripted(&["p", "ong"]);
         let mut seen = Vec::new();
@@ -397,6 +477,87 @@ data: {\"choices\":[{\"delta\":{\"content\":\"nope\"}}]}\n";
             .stream_chat(&req, &mut |token| seen.push(token.to_string()))
             .unwrap();
         assert_eq!(seen, ["Hel", "lo"]);
+    }
+
+    #[test]
+    fn openai_client_sends_bearer_when_key_is_set() {
+        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n\
+             data: [DONE]\n\n";
+        let (url, auth_rx) = serve_bearer_gate("sk-test-key", sse);
+        let mut seen = Vec::new();
+        let client = OpenAiCompatibleClient::with_timeout(Duration::from_secs(2));
+        let mut req = dummy_request();
+        req.base_url = url;
+        req.api_key = Some("sk-test-key".into());
+        client
+            .stream_chat(&req, &mut |token| seen.push(token.to_string()))
+            .unwrap();
+        assert_eq!(
+            auth_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+            Some("Bearer sk-test-key".into())
+        );
+        assert_eq!(seen, ["pong"]);
+    }
+
+    #[test]
+    fn openai_client_omits_authorization_without_key() {
+        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n\
+             data: [DONE]\n\n";
+        let (url, auth_rx) = serve_bearer_gate("sk-test-key", sse);
+        let err = request_against(&url, None).unwrap_err();
+        assert_eq!(auth_rx.recv_timeout(Duration::from_secs(2)).unwrap(), None);
+        assert_eq!(err.code, "invalid_key");
+        assert!(
+            err.message.contains("Missing API key"),
+            "got {}",
+            err.message
+        );
+        assert_ne!(err.message, LlmIpcError::invalid_key().message);
+    }
+
+    #[test]
+    fn openai_client_emits_reasoning_content_before_stream_ends() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (started_tx, started_rx) = mpsc::channel::<()>();
+        let (resume_tx, resume_rx) = mpsc::channel::<()>();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let head = "\
+HTTP/1.1 200 OK\r\n\
+Content-Type: text/event-stream\r\n\
+Connection: close\r\n\
+\r\n\
+data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"Hel\"}}]}\n\n";
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.flush().unwrap();
+            let _ = started_tx.send(());
+            let _ = resume_rx.recv_timeout(Duration::from_secs(2));
+            stream
+                .write_all(
+                    b"data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"lo\"}}]}\n\ndata: [DONE]\n\n",
+                )
+                .unwrap();
+        });
+
+        let (token_tx, token_rx) = mpsc::channel::<String>();
+        let client = OpenAiCompatibleClient::with_timeout(Duration::from_secs(2));
+        let mut req = dummy_request();
+        req.base_url = format!("http://{addr}/v1");
+        let handle = thread::spawn(move || {
+            client.stream_chat(&req, &mut |token| {
+                let _ = token_tx.send(token.to_string());
+            })
+        });
+
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let first = token_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(first, "Hel");
+        resume_tx.send(()).unwrap();
+        handle.join().unwrap().unwrap();
+        assert_eq!(token_rx.recv_timeout(Duration::from_secs(2)).unwrap(), "lo");
     }
 
     #[test]

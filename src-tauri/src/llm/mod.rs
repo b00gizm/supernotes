@@ -543,6 +543,76 @@ mod tests {
     }
 
     #[test]
+    fn test_connection_sends_saved_bearer_to_auth_gate() {
+        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n\
+             data: [DONE]\n\n";
+        let (url, auth_rx) = client::serve_bearer_gate("sk-test-key", sse);
+        let db = Db::open_in_memory().unwrap();
+        let llm = Llm::new(
+            Arc::new(OpenAiCompatibleClient::with_timeout(
+                std::time::Duration::from_secs(2),
+            )),
+            Arc::new(MemorySecretStore::default()),
+        );
+        llm.save_settings(
+            &db,
+            &SaveLlmSettingsInput {
+                base_url: url,
+                model: "gpt-4o-mini".into(),
+            },
+        )
+        .unwrap();
+        llm.set_api_key(&db, "sk-test-key").unwrap();
+
+        let sink = CollectingSink::default();
+        let result = llm.test_connection(&db, &sink).unwrap();
+        assert_eq!(
+            auth_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap(),
+            Some("Bearer sk-test-key".into())
+        );
+        assert_eq!(sink.tokens(), ["pong"]);
+        assert_eq!(result.text, "pong");
+        assert_eq!(result.engine_id, "openai_compatible");
+    }
+
+    #[test]
+    fn test_connection_without_key_is_missing_api_key_not_canned_reject() {
+        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n\
+             data: [DONE]\n\n";
+        let (url, auth_rx) = client::serve_bearer_gate("sk-test-key", sse);
+        let db = Db::open_in_memory().unwrap();
+        let llm = Llm::new(
+            Arc::new(OpenAiCompatibleClient::with_timeout(
+                std::time::Duration::from_secs(2),
+            )),
+            Arc::new(MemorySecretStore::default()),
+        );
+        llm.save_settings(
+            &db,
+            &SaveLlmSettingsInput {
+                base_url: url,
+                model: "gpt-4o-mini".into(),
+            },
+        )
+        .unwrap();
+
+        let sink = CollectingSink::default();
+        let err = llm.test_connection(&db, &sink).unwrap_err();
+        assert_eq!(
+            auth_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap(),
+            None
+        );
+        assert_eq!(err.code, "invalid_key");
+        assert!(err.message.contains("Missing API key"));
+        assert_ne!(err.message, LlmIpcError::invalid_key().message);
+        assert_eq!(sink.errors()[0].code, "invalid_key");
+    }
+
+    #[test]
     fn migration_creates_settings_table_without_key_column() {
         let db = Db::open_in_memory().unwrap();
         assert_eq!(db.with_conn(current_version).unwrap(), 5);
