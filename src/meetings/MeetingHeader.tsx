@@ -11,7 +11,7 @@ import {
   type RecordingState,
   type TranscriptSegment,
 } from "../notes/recording";
-import type { Meeting } from "../notes/types";
+import type { Meeting, Note } from "../notes/types";
 import { tasksApi as defaultTasksApi, type TasksApi } from "../tasks/api";
 import { IconWaveform } from "../ui/IconWaveform";
 import {
@@ -24,6 +24,9 @@ import { LiveTranscript } from "./LiveTranscript";
 import { MeetingSummary } from "./MeetingSummary";
 import { deniedMicMessage } from "./recording";
 import {
+  subscribeSummaryDone,
+  subscribeSummaryErrors,
+  subscribeSummaryProgress,
   summaryApi as defaultSummaryApi,
   type MeetingSummary as MeetingSummaryData,
   type MeetingSummaryApi,
@@ -31,6 +34,7 @@ import {
 
 export type MeetingHeaderProps = {
   noteId: string;
+  note?: Note | undefined;
   api?: MeetingsApi;
   recording?: RecordingApi;
   summary?: MeetingSummaryApi;
@@ -98,6 +102,7 @@ function errorMessage(err: unknown): string {
 
 export function MeetingHeader({
   noteId,
+  note,
   api = meetingsApi,
   recording = defaultRecordingApi,
   summary: summaryClient = defaultSummaryApi,
@@ -245,6 +250,52 @@ export function MeetingHeader({
     };
   }, [recording, noteId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+
+    const attach = async () => {
+      unsubs.push(
+        await subscribeSummaryProgress((event) => {
+          if (cancelled || event.meeting_note_id !== noteIdRef.current) {
+            return;
+          }
+          setGenerating(true);
+          generatingRef.current = true;
+        }),
+      );
+      unsubs.push(
+        await subscribeSummaryDone((event) => {
+          if (cancelled || event.meeting_note_id !== noteIdRef.current) {
+            return;
+          }
+          setSummary(event.summary);
+          setGenerating(false);
+          generatingRef.current = false;
+          setError(null);
+        }),
+      );
+      unsubs.push(
+        await subscribeSummaryErrors((event) => {
+          if (cancelled || event.meeting_note_id !== noteIdRef.current) {
+            return;
+          }
+          setGenerating(false);
+          generatingRef.current = false;
+          setError(event.message);
+        }),
+      );
+    };
+
+    void attach();
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) {
+        unsub();
+      }
+    };
+  }, [noteId]);
+
   const persist = async (next: Draft) => {
     if (
       !isMeetingDate(next.meeting_date) ||
@@ -341,6 +392,7 @@ export function MeetingHeader({
       setLive(false);
       setSegments([]);
       onStopped?.();
+      void startGenerate();
     } catch (err) {
       if (noteIdRef.current !== noteId) {
         return;
@@ -354,29 +406,22 @@ export function MeetingHeader({
     }
   };
 
-  const generateSummary = async () => {
-    if (generatingRef.current || live) {
+  const startGenerate = async () => {
+    if (generatingRef.current) {
       return;
     }
     generatingRef.current = true;
     setGenerating(true);
     setError(null);
     try {
-      const next = await summaryClient.generateSummary(noteId);
-      if (noteIdRef.current !== noteId) {
-        return;
-      }
-      setSummary(next);
+      await summaryClient.generateSummary(noteId);
     } catch (err) {
       if (noteIdRef.current !== noteId) {
         return;
       }
-      setError(summaryErrorMessage(err));
-    } finally {
       generatingRef.current = false;
-      if (noteIdRef.current === noteId) {
-        setGenerating(false);
-      }
+      setGenerating(false);
+      setError(summaryErrorMessage(err));
     }
   };
 
@@ -489,7 +534,7 @@ export function MeetingHeader({
               >
                 Transcript
               </button>
-              {live ? null : (
+              {error && !generating ? (
                 <>
                   <span className="meeting-dot" aria-hidden="true">
                     ·
@@ -497,18 +542,33 @@ export function MeetingHeader({
                   <button
                     type="button"
                     className="meeting-transcript-link"
-                    disabled={generating}
                     onClick={() => {
-                      void generateSummary();
+                      void startGenerate();
                     }}
                   >
-                    Generate summary
+                    Retry summary
                   </button>
                 </>
-              )}
+              ) : null}
             </>
           ) : null}
-          {summary ? (
+          {generating ? (
+            <>
+              <span className="meeting-dot" aria-hidden="true">
+                ·
+              </span>
+              <span
+                className="meeting-summary-progress"
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <IconStar />
+                <span>Summarizing…</span>
+                <span className="meeting-summary-spinner" aria-hidden="true" />
+              </span>
+            </>
+          ) : null}
+          {summary && !generating ? (
             <>
               <span className="meeting-dot" aria-hidden="true">
                 ·
@@ -517,9 +577,9 @@ export function MeetingHeader({
                 type="button"
                 className="meeting-summary-mark"
                 aria-label="Regenerate summary"
-                disabled={generating || live}
+                disabled={live}
                 onClick={() => {
-                  void generateSummary();
+                  void startGenerate();
                 }}
               >
                 <IconStar />
@@ -569,8 +629,11 @@ export function MeetingHeader({
       {summary && !live ? (
         <MeetingSummary
           summary={summary}
+          summaryApi={summaryClient}
           tasks={tasks}
+          note={note}
           onOpenNote={onOpenNote}
+          onSummaryChange={setSummary}
         />
       ) : null}
     </>

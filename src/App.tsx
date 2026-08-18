@@ -1280,6 +1280,7 @@ function App() {
             {selectedId && selectedNote?.note_type === "meeting" ? (
               <MeetingHeader
                 noteId={selectedId}
+                note={selectedNote}
                 recording={recordingApi}
                 onOpenNote={(id) => {
                   const existing = notes.find((note) => note.id === id);

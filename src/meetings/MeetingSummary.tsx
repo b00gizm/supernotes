@@ -1,13 +1,20 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import type { Note } from "../notes/types";
 import { tasksApi as defaultTasksApi, type TasksApi } from "../tasks/api";
-import { dueChip, todayYmd } from "../tasks/due";
+import { todayYmd } from "../tasks/due";
 import { subscribeTasksChanged } from "../tasks/events";
-import { priorityDotClass } from "../tasks/priority";
-import { TaskStateIcon } from "../tasks/TaskStateIcon";
+import { TaskMetaPopover, type TaskMetaPatch } from "../tasks/TaskMetaPopover";
+import { TaskRow } from "../tasks/TaskRow";
 import type { Task, TaskState } from "../tasks/types";
 import { formatTranscriptDuration, formatTranscriptWords } from "./format";
 import type {
   MeetingSummary as MeetingSummaryData,
+  MeetingSummaryApi,
   SummaryKeyPoint,
   SummaryParticipant,
 } from "./summaryApi";
@@ -28,13 +35,6 @@ function SummaryProse({ text }: { text: string }) {
       })}
     </p>
   );
-}
-
-function participantLabel(participant: SummaryParticipant): string {
-  if (participant.certainty === "certain") {
-    return `@${participant.name}`;
-  }
-  return `(Maybe) ${participant.name}`;
 }
 
 function KeyPoints({ points }: { points: SummaryKeyPoint[] }) {
@@ -60,16 +60,77 @@ function KeyPoints({ points }: { points: SummaryKeyPoint[] }) {
   );
 }
 
-function iconState(
-  state: TaskState,
-  due: string | null,
-  today: string,
-): TaskState {
-  if (state !== "open" || !due || due <= today) {
-    return state;
+function participantPrefix(participant: SummaryParticipant): string {
+  return participant.certainty === "certain" ? "@" : "(Maybe) ";
+}
+
+function ParticipantChip({
+  participant,
+  onCommit,
+}: {
+  participant: SummaryParticipant;
+  onCommit: (name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(participant.name);
+  const linked = participant.certainty === "certain" && participant.note_id;
+  const className = `meeting-participant${linked ? " is-linked" : " is-maybe"}`;
+
+  useEffect(() => {
+    setDraft(participant.name);
+  }, [participant.name]);
+
+  const commit = () => {
+    const name = draft.trim();
+    setEditing(false);
+    if (!name || name === participant.name) {
+      setDraft(participant.name);
+      return;
+    }
+    onCommit(name);
+  };
+
+  if (editing) {
+    return (
+      <span className={className}>
+        <span aria-hidden="true">{participantPrefix(participant)}</span>
+        <input
+          className="meeting-participant-input"
+          aria-label={`Edit participant ${participant.name}`}
+          value={draft}
+          autoFocus
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setDraft(participant.name);
+              setEditing(false);
+            }
+          }}
+        />
+      </span>
+    );
   }
-  // ponytail: future due uses the waiting clock; real state stays open.
-  return "waiting";
+
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={`Edit participant ${participant.name}`}
+      onClick={() => {
+        setEditing(true);
+      }}
+    >
+      {`${participantPrefix(participant)}${participant.name}`}
+    </button>
+  );
 }
 
 async function loadTasksById(
@@ -81,7 +142,6 @@ async function loadTasksById(
       try {
         return [id, await client.getTask(id)] as const;
       } catch {
-        // Render still uses summary JSON; live task state is optional.
         return [id, null] as const;
       }
     }),
@@ -95,21 +155,66 @@ async function loadTasksById(
   return next;
 }
 
+function taskFromItem(
+  item: MeetingSummaryData["action_items"][number],
+  loaded: Task | undefined,
+  noteId: string,
+): Task {
+  return (
+    loaded ?? {
+      id: item.task_id,
+      note_id: noteId,
+      title: item.title,
+      state: "open",
+      due_date: item.due_date,
+      priority: item.priority,
+      created_at: "",
+      updated_at: "",
+      completed_at: null,
+    }
+  );
+}
+
 export type MeetingSummaryProps = {
   summary: MeetingSummaryData;
+  summaryApi?: MeetingSummaryApi | undefined;
   tasks?: TasksApi | undefined;
+  note?: Note | undefined;
   today?: string | undefined;
   onOpenNote?: ((noteId: string) => void) | undefined;
+  onSummaryChange?: ((summary: MeetingSummaryData) => void) | undefined;
 };
 
 export function MeetingSummary({
   summary,
+  summaryApi,
   tasks: tasksClient = defaultTasksApi,
+  note,
   today = todayYmd(),
   onOpenNote,
+  onSummaryChange,
 }: MeetingSummaryProps) {
   const [tasks, setTasks] = useState<Record<string, Task>>({});
   const [error, setError] = useState<string | null>(null);
+  const [popover, setPopover] = useState<{
+    taskId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const sourceNote = useMemo<Note>(
+    () =>
+      note ?? {
+        id: summary.meeting_note_id,
+        title: "Meeting",
+        body_markdown: "",
+        note_type: "meeting",
+        pinned: false,
+        created_at: "",
+        updated_at: "",
+      },
+    [note, summary.meeting_note_id],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -133,19 +238,69 @@ export function MeetingSummary({
     [summary, tasksClient],
   );
 
-  const toggleTask = async (task: Task) => {
+  const applyUpdate = async (task: Task, patch: TaskMetaPatch) => {
     const previous = task;
-    const state: TaskState = task.state === "done" ? "open" : "done";
-    setTasks((prev) => ({ ...prev, [task.id]: { ...task, state } }));
+    const nextState = patch.state ?? task.state;
+    setTasks((prev) => ({
+      ...prev,
+      [task.id]: {
+        ...task,
+        state: nextState,
+        due_date: patch.due_date === undefined ? task.due_date : patch.due_date,
+        priority: patch.priority === undefined ? task.priority : patch.priority,
+      },
+    }));
     setError(null);
     try {
-      const saved = await tasksClient.updateTask({ id: task.id, state });
+      const saved = await tasksClient.updateTask({
+        id: task.id,
+        title: task.title,
+        state: nextState,
+        due_date: patch.due_date === undefined ? task.due_date : patch.due_date,
+        priority: patch.priority === undefined ? task.priority : patch.priority,
+      });
       setTasks((prev) => ({ ...prev, [saved.id]: saved }));
     } catch (err) {
       setTasks((prev) => ({ ...prev, [task.id]: previous }));
       setError(err instanceof Error ? err.message : "Could not update task");
     }
   };
+
+  const toggleDone = (task: Task) => {
+    const state: TaskState = task.state === "done" ? "open" : "done";
+    void applyUpdate(task, { state });
+  };
+
+  const saveParticipant = async (index: number, name: string) => {
+    const current = summary.participants[index];
+    if (!current || !summaryApi) {
+      return;
+    }
+    const participants = summary.participants.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, name } : item,
+    );
+    onSummaryChange?.({ ...summary, participants });
+    try {
+      const saved = await summaryApi.saveParticipants(
+        summary.meeting_note_id,
+        participants,
+      );
+      onSummaryChange?.(saved);
+      setError(null);
+    } catch (err) {
+      onSummaryChange?.(summary);
+      setError(
+        err instanceof Error ? err.message : "Could not save participant",
+      );
+    }
+  };
+
+  const listed = summary.action_items.map((item) =>
+    taskFromItem(item, tasks[item.task_id], summary.meeting_note_id),
+  );
+  const popoverTask = popover
+    ? (listed.find((task) => task.id === popover.taskId) ?? null)
+    : null;
 
   return (
     <div className="meeting-summary" aria-label="Meeting summary">
@@ -156,33 +311,15 @@ export function MeetingSummary({
       <section className="meeting-summary-section" aria-label="Participants">
         <h2 className="meeting-summary-label">Participants</h2>
         <div className="meeting-summary-participants">
-          {summary.participants.map((participant) => {
-            const label = participantLabel(participant);
-            const linked =
-              participant.certainty === "certain" && participant.note_id;
-            if (linked) {
-              return (
-                <button
-                  key={`${participant.name}-${participant.note_id ?? "linked"}`}
-                  type="button"
-                  className="meeting-participant is-linked"
-                  onClick={() => {
-                    onOpenNote?.(participant.note_id as string);
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            }
-            return (
-              <span
-                key={`${participant.certainty}-${participant.name}`}
-                className="meeting-participant is-maybe"
-              >
-                {label}
-              </span>
-            );
-          })}
+          {summary.participants.map((participant, index) => (
+            <ParticipantChip
+              key={`${participant.certainty}-${participant.name}-${String(index)}`}
+              participant={participant}
+              onCommit={(name) => {
+                void saveParticipant(index, name);
+              }}
+            />
+          ))}
         </div>
       </section>
       <section className="meeting-summary-section" aria-label="Key points">
@@ -200,51 +337,45 @@ export function MeetingSummary({
             {error}
           </p>
         ) : null}
-        <ul className="meeting-summary-actions">
-          {summary.action_items.map((item) => {
-            const task = tasks[item.task_id];
-            const due = task?.due_date ?? item.due_date;
-            const priority = task?.priority ?? item.priority;
-            const state = task?.state ?? "open";
-            const chip = dueChip(due, today, {
-              terminal: state === "done" || state === "cancelled",
-            });
-            const dot = priorityDotClass(priority);
-            return (
-              <li key={item.task_id} className="meeting-summary-action">
-                <button
-                  type="button"
-                  className="meeting-summary-action-toggle"
-                  aria-label={
-                    state === "done" ? "Mark task open" : "Mark task done"
-                  }
-                  disabled={!task}
-                  onClick={() => {
-                    if (task) {
-                      void toggleTask(task);
-                    }
-                  }}
-                >
-                  <TaskStateIcon state={iconState(state, due, today)} />
-                </button>
-                <span className="meeting-summary-action-title">
-                  {item.title}
-                </span>
-                {chip ? (
-                  <span className={`meeting-summary-due is-${chip.tone}`}>
-                    {chip.label}
-                  </span>
-                ) : null}
-                {dot ? (
-                  <span
-                    className={`task-priority-dot ${dot}`}
-                    aria-hidden="true"
-                  />
-                ) : null}
-              </li>
-            );
-          })}
+        <ul className="tasks-list meeting-summary-actions">
+          {listed.map((task) => (
+            <li key={task.id}>
+              <TaskRow
+                task={task}
+                note={sourceNote}
+                today={today}
+                showDue={Boolean(task.due_date)}
+                onToggle={() => {
+                  toggleDone(task);
+                }}
+                onOpen={() => {
+                  onOpenNote?.(sourceNote.id);
+                }}
+                onMeta={(event: ReactMouseEvent) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setPopover({
+                    taskId: task.id,
+                    x: event.clientX,
+                    y: event.clientY,
+                  });
+                }}
+              />
+            </li>
+          ))}
         </ul>
+        {popover && popoverTask ? (
+          <TaskMetaPopover
+            task={popoverTask}
+            anchor={{ x: popover.x, y: popover.y }}
+            onClose={() => {
+              setPopover(null);
+            }}
+            onUpdate={(patch) => {
+              void applyUpdate(popoverTask, patch);
+            }}
+          />
+        ) : null}
       </section>
       <p className="meeting-summary-footer">
         <button

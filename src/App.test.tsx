@@ -21,6 +21,15 @@ import { createMemoryNotesApi } from "./notes/memoryApi";
 import type { TasksApi } from "./tasks/api";
 import { createMemoryTasksApi } from "./tasks/memoryApi";
 import type { Task } from "./tasks/types";
+import {
+  createMemoryMeetingSummaryApi,
+  type MeetingSummaryApi,
+  type SummaryParticipant,
+} from "./meetings/summaryApi";
+
+const summaryApiRef: { current: MeetingSummaryApi } = {
+  current: createMemoryMeetingSummaryApi(),
+};
 
 const apiRef: { current: NotesApi } = {
   current: createMemoryNotesApi(),
@@ -137,6 +146,25 @@ vi.mock("./notes/recording", async () => {
   };
 });
 
+vi.mock("./meetings/summaryApi", async () => {
+  const actual = await vi.importActual<typeof import("./meetings/summaryApi")>(
+    "./meetings/summaryApi",
+  );
+  return {
+    ...actual,
+    summaryApi: {
+      getSummary: (meetingNoteId: string) =>
+        summaryApiRef.current.getSummary(meetingNoteId),
+      generateSummary: (meetingNoteId: string) =>
+        summaryApiRef.current.generateSummary(meetingNoteId),
+      saveParticipants: (
+        meetingNoteId: string,
+        participants: SummaryParticipant[],
+      ) => summaryApiRef.current.saveParticipants(meetingNoteId, participants),
+    },
+  };
+});
+
 vi.mock("./tasks/api", async () => {
   const actual =
     await vi.importActual<typeof import("./tasks/api")>("./tasks/api");
@@ -166,6 +194,7 @@ describe("App shell", () => {
     tasksApiRef.current = createMemoryTasksApi();
     meetingsApiRef.current = createMemoryMeetingsApi(apiRef.current);
     recordingApiRef.current = bindRecordingApi();
+    summaryApiRef.current = createMemoryMeetingSummaryApi();
   });
 
   it("opens today's daily note by default with shell chrome", async () => {
@@ -609,6 +638,12 @@ describe("App shell", () => {
       meetings: [PRICING_MEETING],
     });
     recordingApiRef.current = bindRecordingApi();
+    summaryApiRef.current = {
+      getSummary: () => Promise.resolve(null),
+      generateSummary: (meetingNoteId) =>
+        Promise.resolve({ stream_id: "quiet", meeting_note_id: meetingNoteId }),
+      saveParticipants: () => Promise.reject(new Error("unused")),
+    };
 
     render(<App />);
     await user.click(

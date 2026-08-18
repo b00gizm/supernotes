@@ -1401,6 +1401,39 @@ button {
   opacity: 0.65;
 }
 
+.meeting-summary-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-tertiary);
+}
+
+.meeting-summary-spinner {
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1.5px solid var(--text-tertiary);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: meeting-summary-spin 0.7s linear infinite;
+}
+
+@keyframes meeting-summary-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.meeting-participant-input {
+  min-width: 4rem;
+  max-width: 10rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  outline: none;
+}
+
 .summary-star-icon {
   width: 0.85rem;
   height: 0.85rem;
@@ -1505,84 +1538,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-}
-
-.meeting-summary-action {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 1.6rem;
-}
-
-.meeting-summary-action-toggle {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  height: 1rem;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-}
-
-.meeting-summary-action-toggle:hover:not(:disabled) {
-  color: var(--accent);
-}
-
-.meeting-summary-action-toggle:disabled {
-  opacity: 0.7;
-}
-
-.meeting-summary-action .task-pill-icon {
-  width: 0.95rem;
-  height: 0.95rem;
-  display: block;
-}
-
-.meeting-summary-action-title {
-  flex: 1;
-  min-width: 0;
-}
-
-.meeting-summary-due {
-  flex: 0 0 auto;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.meeting-summary-due.is-today {
-  color: var(--accent);
-}
-
-.meeting-summary-due.is-tomorrow {
-  color: #c9851a;
-}
-
-.meeting-summary-due.is-overdue {
-  color: var(--danger);
-}
-
-.meeting-summary-action .task-priority-dot {
-  flex: 0 0 auto;
-  width: 5.5px;
-  height: 5.5px;
-  border-radius: 50%;
-}
-
-.meeting-summary-action .task-priority-dot.is-p1 {
-  background: #e5484d;
-}
-
-.meeting-summary-action .task-priority-dot.is-p2 {
-  background: #e2a336;
-}
-
-.meeting-summary-action .task-priority-dot.is-p3 {
-  background: #8e8e93;
 }
 
 .meeting-summary-footer {
