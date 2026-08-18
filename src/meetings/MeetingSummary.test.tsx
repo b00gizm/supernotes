@@ -97,11 +97,12 @@ describe("MeetingSummary render (ENG-71 UI)", () => {
     expect(within(block).getByText("Purpose")).toBeInTheDocument();
     expect(block).toHaveTextContent(/pricing v2 tier structure/);
     expect(
-      within(block).getByRole("button", { name: "Edit participant Sara Kim" }),
+      within(block).getByRole("button", { name: "Open Sara Kim" }),
     ).toHaveTextContent("@Sara Kim");
+    expect(block).toHaveTextContent("(Maybe) Steve");
     expect(
-      within(block).getByRole("button", { name: "Edit participant Steve" }),
-    ).toHaveTextContent("(Maybe) Steve");
+      within(block).queryByRole("button", { name: "Open Steve" }),
+    ).toBeNull();
     expect(block).toHaveTextContent("Free tier stays");
     expect(block.querySelector(".meeting-summary-time")?.textContent).toBe(
       "14:02",
@@ -152,12 +153,12 @@ describe("MeetingSummary render (ENG-71 UI)", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Edit participant Steve" }),
+      screen.getByRole("button", { name: "Rename participant Steve" }),
     );
-    const input = screen.getByLabelText("Edit participant Steve");
+    const input = screen.getByLabelText("Rename participant Steve");
     await user.clear(input);
     await user.type(input, "Steven");
-    await user.tab();
+    await user.keyboard("{Enter}");
 
     await waitFor(() => {
       expect(save).toHaveBeenCalledWith("demo-sync", [
@@ -172,6 +173,49 @@ describe("MeetingSummary render (ENG-71 UI)", () => {
     expect(saved?.action_items.map((item) => item.task_id)).toEqual(
       loaded.action_items.map((item) => item.task_id),
     );
+  });
+
+  it("opens the people note from a certain pill click", async () => {
+    const user = userEvent.setup();
+    const onOpenNote = vi.fn();
+    render(
+      <MeetingSummary
+        summary={demoMeetingSummary()}
+        today="2026-08-10"
+        onOpenNote={onOpenNote}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open Sara Kim" }));
+    expect(onOpenNote).toHaveBeenCalledWith("person-sara");
+  });
+
+  it("does not navigate from a maybe or unknown pill click", async () => {
+    const user = userEvent.setup();
+    const onOpenNote = vi.fn();
+    const summary = demoMeetingSummary();
+    summary.participants.push({
+      name: "Alex",
+      certainty: "unknown",
+      note_id: null,
+    });
+    render(
+      <MeetingSummary
+        summary={summary}
+        today="2026-08-10"
+        onOpenNote={onOpenNote}
+      />,
+    );
+
+    await user.click(screen.getByText("(Maybe) Steve"));
+    await user.click(screen.getByText("(Maybe) Alex"));
+    expect(onOpenNote).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Open Steve" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open Alex" }),
+    ).not.toBeInTheDocument();
   });
 });
 

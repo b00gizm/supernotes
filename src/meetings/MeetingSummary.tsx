@@ -64,17 +64,40 @@ function participantPrefix(participant: SummaryParticipant): string {
   return participant.certainty === "certain" ? "@" : "(Maybe) ";
 }
 
+function IconPencil() {
+  return (
+    <svg
+      className="meeting-participant-pencil"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
+      <path
+        d="M11.7 2.5l1.8 1.8-8.1 8.1-2.3.5.5-2.3z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ParticipantChip({
   participant,
   onCommit,
+  onOpen,
 }: {
   participant: SummaryParticipant;
   onCommit: (name: string) => void;
+  onOpen?: ((noteId: string) => void) | undefined;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(participant.name);
-  const linked = participant.certainty === "certain" && participant.note_id;
+  const linkedNoteId =
+    participant.certainty === "certain" ? participant.note_id : null;
+  const linked = Boolean(linkedNoteId);
   const className = `meeting-participant${linked ? " is-linked" : " is-maybe"}`;
+  const label = `${participantPrefix(participant)}${participant.name}`;
 
   useEffect(() => {
     setDraft(participant.name);
@@ -96,7 +119,7 @@ function ParticipantChip({
         <span aria-hidden="true">{participantPrefix(participant)}</span>
         <input
           className="meeting-participant-input"
-          aria-label={`Edit participant ${participant.name}`}
+          aria-label={`Rename participant ${participant.name}`}
           value={draft}
           autoFocus
           onChange={(event) => {
@@ -120,16 +143,39 @@ function ParticipantChip({
   }
 
   return (
-    <button
-      type="button"
+    <span
       className={className}
-      aria-label={`Edit participant ${participant.name}`}
-      onClick={() => {
+      onDoubleClick={() => {
         setEditing(true);
       }}
     >
-      {`${participantPrefix(participant)}${participant.name}`}
-    </button>
+      {linkedNoteId ? (
+        <button
+          type="button"
+          className="meeting-participant-open"
+          aria-label={`Open ${participant.name}`}
+          onClick={() => {
+            onOpen?.(linkedNoteId);
+          }}
+        >
+          {label}
+        </button>
+      ) : (
+        <span>{label}</span>
+      )}
+      <button
+        type="button"
+        className="meeting-participant-rename"
+        aria-label={`Rename participant ${participant.name}`}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        <IconPencil />
+      </button>
+    </span>
   );
 }
 
@@ -315,6 +361,7 @@ export function MeetingSummary({
             <ParticipantChip
               key={`${participant.certainty}-${participant.name}-${String(index)}`}
               participant={participant}
+              onOpen={onOpenNote}
               onCommit={(name) => {
                 void saveParticipant(index, name);
               }}

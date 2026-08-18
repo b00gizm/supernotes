@@ -1479,11 +1479,29 @@ button {
 .meeting-participant {
   display: inline-flex;
   align-items: center;
+  gap: 0.2rem;
   padding: 0.12rem 0.55rem;
   border-radius: var(--radius-pill);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   line-height: 1.35;
+}
+
+.meeting-participant-open {
+  color: inherit;
+  font: inherit;
+}
+
+.meeting-participant-rename {
+  display: inline-flex;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.meeting-participant-pencil {
+  width: 0.7rem;
+  height: 0.7rem;
+  display: block;
 }
 
 .meeting-participant.is-linked {
