@@ -19,7 +19,9 @@ use llm::{
     stream_llm_chat, test_llm_connection,
 };
 use media::{resolve_note_image_path, save_note_image};
-use meeting_summary::{generate_meeting_summary, get_meeting_summary};
+use meeting_summary::{
+    generate_meeting_summary, get_meeting_summary, save_meeting_summary_participants,
+};
 use meetings::{
     create_meeting_note, create_meeting_note_from_event, get_meeting, get_meeting_for_event,
     update_meeting,
@@ -85,6 +87,7 @@ pub fn run() {
             get_meeting_for_event,
             get_meeting_summary,
             generate_meeting_summary,
+            save_meeting_summary_participants,
             start_recording,
             stop_recording,
             get_recording_state,

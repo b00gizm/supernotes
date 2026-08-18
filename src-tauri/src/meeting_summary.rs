@@ -3,13 +3,21 @@
 //! Persists JSON on `meetings.summary_json`. Never writes the transcript note
 //! or LLM markdown into the meeting note body.
 
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
+
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, State};
+use uuid::Uuid;
 
 use crate::db::{Db, Meeting, Note, NoteType, Repository, TaskPriority, TaskState};
 use crate::llm::{
     ChatMessage, EventSink, Llm, LlmDoneEvent, LlmIpcError, LlmStreamError, LlmTokenEvent,
 };
+
+pub const PROGRESS_EVENT: &str = "summary://progress";
+pub const DONE_EVENT: &str = "summary://done";
+pub const ERROR_EVENT: &str = "summary://error";
 
 const SYSTEM_PROMPT: &str = r#"You summarize a meeting transcript into JSON only.
 No markdown, no prose outside the JSON object.
@@ -77,6 +85,74 @@ pub struct MeetingSummary {
     pub outcome: String,
     pub action_items: Vec<SummaryActionItem>,
     pub transcript: SummaryTranscriptMeta,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GenerateSummaryJob {
+    pub stream_id: String,
+    pub meeting_note_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SummaryProgressEvent {
+    pub stream_id: String,
+    pub meeting_note_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SummaryDoneEvent {
+    pub stream_id: String,
+    pub meeting_note_id: String,
+    pub summary: MeetingSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SummaryErrorEvent {
+    pub stream_id: String,
+    pub meeting_note_id: String,
+    pub code: String,
+    pub message: String,
+}
+
+pub trait SummarySink: Send + Sync {
+    fn emit_progress(&self, event: &SummaryProgressEvent);
+    fn emit_done(&self, event: &SummaryDoneEvent);
+    fn emit_error(&self, event: &SummaryErrorEvent);
+}
+
+impl SummarySink for AppHandle {
+    fn emit_progress(&self, event: &SummaryProgressEvent) {
+        let _ = self.emit(PROGRESS_EVENT, event);
+    }
+    fn emit_done(&self, event: &SummaryDoneEvent) {
+        let _ = self.emit(DONE_EVENT, event);
+    }
+    fn emit_error(&self, event: &SummaryErrorEvent) {
+        let _ = self.emit(ERROR_EVENT, event);
+    }
+}
+
+fn inflight() -> &'static Mutex<HashSet<String>> {
+    // ponytail: one in-flight generate per meeting; a queue if we need cancel.
+    static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    SET.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn reserve_inflight(meeting_note_id: &str) -> Result<(), LlmIpcError> {
+    let mut set = inflight().lock().expect("summary inflight poisoned");
+    if !set.insert(meeting_note_id.to_string()) {
+        return Err(LlmIpcError::invalid(
+            "A summary is already generating for this meeting.",
+        ));
+    }
+    Ok(())
+}
+
+fn release_inflight(meeting_note_id: &str) {
+    inflight()
+        .lock()
+        .expect("summary inflight poisoned")
+        .remove(meeting_note_id);
 }
 
 #[derive(Debug, Deserialize)]
@@ -333,35 +409,13 @@ fn persist_summary(
             }
         }
 
-        let mut participants = Vec::new();
-        for raw in draft.participants {
-            let Some(name) = normalize_name(&raw.name) else {
-                if matches!(raw.certainty, ParticipantCertainty::Unknown) {
-                    participants.push(SummaryParticipant {
-                        name: "Unknown speaker".into(),
-                        certainty: ParticipantCertainty::Unknown,
-                        note_id: None,
-                    });
-                }
-                continue;
-            };
-            let mut certainty = raw.certainty;
-            if matches!(certainty, ParticipantCertainty::Certain)
-                && name.to_ascii_lowercase().starts_with("unknown")
-            {
-                certainty = ParticipantCertainty::Unknown;
-            }
-            let note_id = if matches!(certainty, ParticipantCertainty::Certain) {
-                Some(resolve_or_create_person(&repo, &name)?.id)
-            } else {
-                None
-            };
-            participants.push(SummaryParticipant {
-                name,
-                certainty,
-                note_id,
-            });
-        }
+        let participants = resolve_participants(
+            &repo,
+            draft
+                .participants
+                .into_iter()
+                .map(|raw| (raw.name, raw.certainty)),
+        )?;
 
         let mut action_items = Vec::new();
         for raw in draft.action_items {
@@ -419,11 +473,117 @@ fn persist_summary(
     .map_err(map_db_err)
 }
 
+fn resolve_participants(
+    repo: &Repository<'_>,
+    items: impl IntoIterator<Item = (String, ParticipantCertainty)>,
+) -> crate::db::DbResult<Vec<SummaryParticipant>> {
+    let mut participants = Vec::new();
+    for (raw_name, raw_certainty) in items {
+        let Some(name) = normalize_name(&raw_name) else {
+            if matches!(raw_certainty, ParticipantCertainty::Unknown) {
+                participants.push(SummaryParticipant {
+                    name: "Unknown speaker".into(),
+                    certainty: ParticipantCertainty::Unknown,
+                    note_id: None,
+                });
+            }
+            continue;
+        };
+        let mut certainty = raw_certainty;
+        if matches!(certainty, ParticipantCertainty::Certain)
+            && name.to_ascii_lowercase().starts_with("unknown")
+        {
+            certainty = ParticipantCertainty::Unknown;
+        }
+        let note_id = if matches!(certainty, ParticipantCertainty::Certain) {
+            Some(resolve_or_create_person(repo, &name)?.id)
+        } else {
+            None
+        };
+        participants.push(SummaryParticipant {
+            name,
+            certainty,
+            note_id,
+        });
+    }
+    Ok(participants)
+}
+
 fn resolve_or_create_person(repo: &Repository<'_>, name: &str) -> crate::db::DbResult<Note> {
     if let Some(existing) = repo.find_note_by_title(name)? {
         return Ok(existing);
     }
     repo.create_note_in_tx(name, "", NoteType::Regular, false)
+}
+
+pub fn begin_generate(db: &Db, meeting_note_id: &str) -> Result<GenerateSummaryJob, LlmIpcError> {
+    load_transcript_context(db, meeting_note_id)?;
+    reserve_inflight(meeting_note_id)?;
+    Ok(GenerateSummaryJob {
+        stream_id: Uuid::new_v4().to_string(),
+        meeting_note_id: meeting_note_id.to_string(),
+    })
+}
+
+pub fn emit_generate_result(
+    sink: &dyn SummarySink,
+    job: &GenerateSummaryJob,
+    result: Result<MeetingSummary, LlmIpcError>,
+) {
+    match result {
+        Ok(summary) => sink.emit_done(&SummaryDoneEvent {
+            stream_id: job.stream_id.clone(),
+            meeting_note_id: job.meeting_note_id.clone(),
+            summary,
+        }),
+        Err(error) => sink.emit_error(&SummaryErrorEvent {
+            stream_id: job.stream_id.clone(),
+            meeting_note_id: job.meeting_note_id.clone(),
+            code: error.code,
+            message: error.message,
+        }),
+    }
+    release_inflight(&job.meeting_note_id);
+}
+
+pub fn save_participants(
+    db: &Db,
+    meeting_note_id: &str,
+    participants: Vec<SummaryParticipant>,
+) -> Result<MeetingSummary, LlmIpcError> {
+    let Some(existing) = get_summary(db, meeting_note_id)? else {
+        return Err(LlmIpcError::invalid(
+            "No summary to edit. Generate one first.",
+        ));
+    };
+    db.with_conn(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        let repo = Repository::new(&tx);
+        let previous_task_ids: Vec<String> = existing
+            .action_items
+            .iter()
+            .map(|item| item.task_id.clone())
+            .collect();
+        let resolved = resolve_participants(
+            &repo,
+            participants
+                .into_iter()
+                .map(|item| (item.name, item.certainty)),
+        )?;
+        let summary = MeetingSummary {
+            participants: resolved,
+            ..existing
+        };
+        let json = serde_json::to_string(&summary)
+            .map_err(|err| crate::db::DbError::Invalid(err.to_string()))?;
+        repo.save_meeting_summary_json(meeting_note_id, &json)?;
+        for task_id in &previous_task_ids {
+            repo.get_task(task_id)?;
+        }
+        tx.commit()?;
+        Ok(summary)
+    })
+    .map_err(map_db_err)
 }
 
 fn map_db_err(err: crate::db::DbError) -> LlmIpcError {
@@ -444,11 +604,33 @@ pub fn get_meeting_summary(
 
 #[tauri::command]
 pub fn generate_meeting_summary(
+    app: AppHandle,
     db: State<'_, Db>,
-    llm: State<'_, Llm>,
     meeting_note_id: String,
+) -> Result<GenerateSummaryJob, LlmIpcError> {
+    let job = begin_generate(&db, &meeting_note_id)?;
+    app.emit_progress(&SummaryProgressEvent {
+        stream_id: job.stream_id.clone(),
+        meeting_note_id: job.meeting_note_id.clone(),
+    });
+    let app = app.clone();
+    let job_for_thread = job.clone();
+    std::thread::spawn(move || {
+        let db = app.state::<Db>();
+        let llm = app.state::<Llm>();
+        let result = generate_summary(&db, &llm, &job_for_thread.meeting_note_id);
+        emit_generate_result(&app, &job_for_thread, result);
+    });
+    Ok(job)
+}
+
+#[tauri::command]
+pub fn save_meeting_summary_participants(
+    db: State<'_, Db>,
+    meeting_note_id: String,
+    participants: Vec<SummaryParticipant>,
 ) -> Result<MeetingSummary, LlmIpcError> {
-    generate_summary(&db, &llm, &meeting_note_id)
+    save_participants(&db, &meeting_note_id, participants)
 }
 
 #[cfg(test)]
@@ -698,5 +880,165 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.code, "invalid");
         assert!(err.message.contains("transcript"));
+    }
+
+    #[derive(Default)]
+    struct CollectingSink {
+        progress: std::sync::Mutex<Vec<SummaryProgressEvent>>,
+        done: std::sync::Mutex<Vec<SummaryDoneEvent>>,
+        errors: std::sync::Mutex<Vec<SummaryErrorEvent>>,
+    }
+
+    impl SummarySink for CollectingSink {
+        fn emit_progress(&self, event: &SummaryProgressEvent) {
+            self.progress
+                .lock()
+                .expect("sink poisoned")
+                .push(event.clone());
+        }
+        fn emit_done(&self, event: &SummaryDoneEvent) {
+            self.done.lock().expect("sink poisoned").push(event.clone());
+        }
+        fn emit_error(&self, event: &SummaryErrorEvent) {
+            self.errors
+                .lock()
+                .expect("sink poisoned")
+                .push(event.clone());
+        }
+    }
+
+    struct HoldClient {
+        hold: std::sync::Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+        tokens: Vec<String>,
+    }
+
+    impl crate::llm::LlmClient for HoldClient {
+        fn id(&self) -> &'static str {
+            "hold"
+        }
+
+        fn stream_chat(
+            &self,
+            _request: &crate::llm::ChatRequest,
+            on_token: &mut dyn FnMut(&str),
+        ) -> Result<(), LlmIpcError> {
+            if let Some(rx) = self.hold.lock().expect("hold poisoned").take() {
+                let _ = rx.recv();
+            }
+            for token in &self.tokens {
+                on_token(token);
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn begin_generate_returns_before_llm_runs() {
+        let db = Db::open_in_memory().unwrap();
+        let (meeting_id, _) = meeting_with_transcript(&db, "14:02  Decide the tiers");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let llm = Llm::new(
+            Arc::new(HoldClient {
+                hold: std::sync::Mutex::new(Some(rx)),
+                tokens: vec![SAMPLE_JSON.to_string()],
+            }),
+            Arc::new(MemorySecretStore::default()),
+        );
+        let job = begin_generate(&db, &meeting_id).unwrap();
+        assert_eq!(job.meeting_note_id, meeting_id);
+        assert!(!job.stream_id.is_empty());
+        assert!(get_summary(&db, &meeting_id).unwrap().is_none());
+
+        std::thread::scope(|scope| {
+            let handle = scope.spawn(|| generate_summary(&db, &llm, &meeting_id));
+            assert!(get_summary(&db, &meeting_id).unwrap().is_none());
+            tx.send(()).unwrap();
+            handle.join().expect("generate thread").unwrap();
+        });
+        assert!(get_summary(&db, &meeting_id).unwrap().is_some());
+        release_inflight(&meeting_id);
+    }
+
+    #[test]
+    fn emit_generate_result_surfaces_llm_failure() {
+        let db = Db::open_in_memory().unwrap();
+        let (meeting_id, transcript_id) =
+            meeting_with_transcript(&db, "14:02  This text must survive");
+        let job = begin_generate(&db, &meeting_id).unwrap();
+        let sink = CollectingSink::default();
+        let err = generate_summary(
+            &db,
+            &llm_with(FakeClient::failing(LlmIpcError::unreachable(
+                "Could not reach the LLM server.",
+            ))),
+            &meeting_id,
+        )
+        .unwrap_err();
+        emit_generate_result(&sink, &job, Err(err));
+        assert_eq!(sink.errors.lock().unwrap()[0].code, "unreachable");
+        assert!(get_summary(&db, &meeting_id).unwrap().is_none());
+        let transcript = db
+            .with_conn(|conn| Repository::new(conn).get_note(&transcript_id))
+            .unwrap();
+        assert!(transcript.body_markdown.contains("must survive"));
+    }
+
+    #[test]
+    fn save_participants_does_not_delete_tasks() {
+        let db = Db::open_in_memory().unwrap();
+        let (meeting_id, _) = meeting_with_transcript(&db, "14:02  Decide the tiers");
+        let first = generate_summary(
+            &db,
+            &llm_with(FakeClient::scripted(&[SAMPLE_JSON])),
+            &meeting_id,
+        )
+        .unwrap();
+        let task_ids: Vec<_> = first
+            .action_items
+            .iter()
+            .map(|item| item.task_id.clone())
+            .collect();
+
+        let saved = save_participants(
+            &db,
+            &meeting_id,
+            vec![
+                SummaryParticipant {
+                    name: "Sara Kim".into(),
+                    certainty: ParticipantCertainty::Certain,
+                    note_id: None,
+                },
+                SummaryParticipant {
+                    name: "Steve".into(),
+                    certainty: ParticipantCertainty::Certain,
+                    note_id: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(saved.participants.len(), 2);
+        assert_eq!(saved.participants[1].name, "Steve");
+        assert!(saved.participants[1].note_id.is_some());
+        assert_eq!(
+            saved
+                .action_items
+                .iter()
+                .map(|item| item.task_id.clone())
+                .collect::<Vec<_>>(),
+            task_ids
+        );
+        let tasks = db
+            .with_conn(|conn| Repository::new(conn).list_tasks_for_note(&meeting_id))
+            .unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(
+            get_summary(&db, &meeting_id)
+                .unwrap()
+                .unwrap()
+                .participants
+                .len(),
+            2
+        );
     }
 }

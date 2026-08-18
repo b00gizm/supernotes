@@ -18,16 +18,23 @@ describe("tauri meeting summary IPC arg keys (ENG-71)", () => {
     });
   });
 
-  it("get / generate pass camelCase meetingNoteId", async () => {
+  it("get / generate / saveParticipants pass camelCase keys", async () => {
     const { summaryApi } = await import("./summaryApi");
     await summaryApi.getSummary("note-1");
     await summaryApi.generateSummary("note-1");
+    await summaryApi.saveParticipants("note-1", [
+      { name: "Steve", certainty: "maybe", note_id: null },
+    ]);
 
     expect(invoke).toHaveBeenCalledWith("get_meeting_summary", {
       meetingNoteId: "note-1",
     });
     expect(invoke).toHaveBeenCalledWith("generate_meeting_summary", {
       meetingNoteId: "note-1",
+    });
+    expect(invoke).toHaveBeenCalledWith("save_meeting_summary_participants", {
+      meetingNoteId: "note-1",
+      participants: [{ name: "Steve", certainty: "maybe", note_id: null }],
     });
   });
 });

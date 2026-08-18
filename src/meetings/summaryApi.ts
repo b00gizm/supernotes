@@ -4,6 +4,10 @@ import type { TaskPriority } from "../tasks/types";
 
 export { LlmError } from "../llm/api";
 
+export const SUMMARY_PROGRESS_EVENT = "summary://progress";
+export const SUMMARY_DONE_EVENT = "summary://done";
+export const SUMMARY_ERROR_EVENT = "summary://error";
+
 export type ParticipantCertainty = "certain" | "maybe" | "unknown";
 
 export type SummaryParticipant = {
@@ -42,9 +46,37 @@ export type MeetingSummary = {
   transcript: SummaryTranscriptMeta;
 };
 
+export type GenerateSummaryJob = {
+  stream_id: string;
+  meeting_note_id: string;
+};
+
+export type SummaryProgressEvent = {
+  stream_id: string;
+  meeting_note_id: string;
+};
+
+export type SummaryDoneEvent = {
+  stream_id: string;
+  meeting_note_id: string;
+  summary: MeetingSummary;
+};
+
+export type SummaryErrorEvent = {
+  stream_id: string;
+  meeting_note_id: string;
+  code: string;
+  message: string;
+};
+
 export type MeetingSummaryApi = {
   getSummary: (meetingNoteId: string) => Promise<MeetingSummary | null>;
-  generateSummary: (meetingNoteId: string) => Promise<MeetingSummary>;
+  /** Starts generate on a worker thread. Listen to summary://* for the result. */
+  generateSummary: (meetingNoteId: string) => Promise<GenerateSummaryJob>;
+  saveParticipants: (
+    meetingNoteId: string,
+    participants: SummaryParticipant[],
+  ) => Promise<MeetingSummary>;
 };
 
 function toLlmError(err: unknown): LlmError {
@@ -82,8 +114,13 @@ const tauriSummaryApi: MeetingSummaryApi = {
       meetingNoteId,
     }),
   generateSummary: (meetingNoteId) =>
-    invokeSummary<MeetingSummary>("generate_meeting_summary", {
+    invokeSummary<GenerateSummaryJob>("generate_meeting_summary", {
       meetingNoteId,
+    }),
+  saveParticipants: (meetingNoteId, participants) =>
+    invokeSummary<MeetingSummary>("save_meeting_summary_participants", {
+      meetingNoteId,
+      participants,
     }),
 };
 
@@ -162,33 +199,108 @@ export function createMemoryMeetingSummaryApi(
 ): MeetingSummaryApi {
   const store = new Map<string, MeetingSummary>();
   let taskSeq = 0;
+  let streamSeq = 0;
+
+  const emit = (name: string, detail: object) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  };
 
   return {
     getSummary(meetingNoteId) {
-      if (options.fail) {
-        return Promise.reject(
-          new LlmError(options.fail.code, options.fail.message),
-        );
-      }
       return Promise.resolve(store.get(meetingNoteId) ?? null);
     },
     generateSummary(meetingNoteId) {
-      if (options.fail) {
+      streamSeq += 1;
+      const job: GenerateSummaryJob = {
+        stream_id: `mem-${String(streamSeq)}`,
+        meeting_note_id: meetingNoteId,
+      };
+      emit(SUMMARY_PROGRESS_EVENT, job);
+      setTimeout(() => {
+        if (options.fail) {
+          emit(SUMMARY_ERROR_EVENT, {
+            ...job,
+            code: options.fail.code,
+            message: options.fail.message,
+          });
+          return;
+        }
+        const base = demoMeetingSummary(meetingNoteId);
+        const summary: MeetingSummary = {
+          ...base,
+          action_items: base.action_items.map((item) => {
+            taskSeq += 1;
+            return { ...item, task_id: `mem-task-${String(taskSeq)}` };
+          }),
+        };
+        store.set(meetingNoteId, summary);
+        emit(SUMMARY_DONE_EVENT, { ...job, summary });
+      }, 0);
+      return Promise.resolve(job);
+    },
+    saveParticipants(meetingNoteId, participants) {
+      const current = store.get(meetingNoteId);
+      if (!current) {
         return Promise.reject(
-          new LlmError(options.fail.code, options.fail.message),
+          new LlmError("invalid", "No summary to edit. Generate one first."),
         );
       }
-      const base = demoMeetingSummary(meetingNoteId);
       const summary: MeetingSummary = {
-        ...base,
-        action_items: base.action_items.map((item) => {
-          taskSeq += 1;
-          return { ...item, task_id: `mem-task-${String(taskSeq)}` };
-        }),
+        ...current,
+        participants: participants.map((item) => ({ ...item })),
       };
       store.set(meetingNoteId, summary);
       return Promise.resolve(summary);
     },
+  };
+}
+
+export async function subscribeSummaryProgress(
+  handler: (event: SummaryProgressEvent) => void,
+): Promise<() => void> {
+  return subscribeEvent(SUMMARY_PROGRESS_EVENT, (payload) => {
+    handler(payload as SummaryProgressEvent);
+  });
+}
+
+export async function subscribeSummaryDone(
+  handler: (event: SummaryDoneEvent) => void,
+): Promise<() => void> {
+  return subscribeEvent(SUMMARY_DONE_EVENT, (payload) => {
+    handler(payload as SummaryDoneEvent);
+  });
+}
+
+export async function subscribeSummaryErrors(
+  handler: (event: SummaryErrorEvent) => void,
+): Promise<() => void> {
+  return subscribeEvent(SUMMARY_ERROR_EVENT, (payload) => {
+    handler(payload as SummaryErrorEvent);
+  });
+}
+
+async function subscribeEvent(
+  name: string,
+  handler: (payload: unknown) => void,
+): Promise<() => void> {
+  if (isTauriRuntime()) {
+    const { listen } = await import("@tauri-apps/api/event");
+    return listen(name, (event) => {
+      handler(event.payload);
+    });
+  }
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+  const wrapped = (event: Event) => {
+    handler((event as CustomEvent<unknown>).detail);
+  };
+  window.addEventListener(name, wrapped);
+  return () => {
+    window.removeEventListener(name, wrapped);
   };
 }
 
