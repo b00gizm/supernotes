@@ -237,6 +237,15 @@ impl Llm {
             ));
         }
         self.secrets.set_api_key(api_key)?;
+        match self.secrets.get_api_key()? {
+            Some(got) if got == api_key => {}
+            _ => {
+                return Err(LlmIpcError::new(
+                    "request_failed",
+                    "Could not persist the API key in the OS keychain. Test would send no Authorization header.",
+                ));
+            }
+        }
         self.settings(db)
     }
 
@@ -575,6 +584,111 @@ mod tests {
         assert_eq!(sink.tokens(), ["pong"]);
         assert_eq!(result.text, "pong");
         assert_eq!(result.engine_id, "openai_compatible");
+    }
+
+    #[test]
+    fn set_api_key_fails_if_store_cannot_read_back() {
+        struct LieStore;
+        impl SecretStore for LieStore {
+            fn set_api_key(&self, _key: &str) -> Result<(), LlmIpcError> {
+                Ok(())
+            }
+            fn get_api_key(&self) -> Result<Option<String>, LlmIpcError> {
+                Ok(None)
+            }
+            fn clear_api_key(&self) -> Result<(), LlmIpcError> {
+                Ok(())
+            }
+        }
+
+        let db = Db::open_in_memory().unwrap();
+        let llm = Llm::new(Arc::new(FakeClient::default()), Arc::new(LieStore));
+        let err = llm.set_api_key(&db, "sk-test-key").unwrap_err();
+        assert_eq!(err.code, "request_failed");
+        assert!(err.message.contains("keychain"));
+        assert!(!llm.settings(&db).unwrap().has_api_key);
+    }
+
+    #[test]
+    fn keychain_get_error_surfaces_before_test_without_a_key() {
+        struct FailStore;
+        impl SecretStore for FailStore {
+            fn set_api_key(&self, _key: &str) -> Result<(), LlmIpcError> {
+                Err(LlmIpcError::new(
+                    "request_failed",
+                    "Could not access the OS keychain (locked).",
+                ))
+            }
+            fn get_api_key(&self) -> Result<Option<String>, LlmIpcError> {
+                Err(LlmIpcError::new(
+                    "request_failed",
+                    "Could not access the OS keychain (locked).",
+                ))
+            }
+            fn clear_api_key(&self) -> Result<(), LlmIpcError> {
+                Ok(())
+            }
+        }
+
+        let db = Db::open_in_memory().unwrap();
+        let llm = Llm::new(
+            Arc::new(OpenAiCompatibleClient::with_timeout(
+                std::time::Duration::from_millis(200),
+            )),
+            Arc::new(FailStore),
+        );
+        let set_err = llm.set_api_key(&db, "sk-test-key").unwrap_err();
+        assert_eq!(set_err.code, "request_failed");
+        assert!(set_err.message.contains("keychain"));
+
+        let sink = CollectingSink::default();
+        let test_err = llm.test_connection(&db, &sink).unwrap_err();
+        assert_eq!(test_err.code, "request_failed");
+        assert!(test_err.message.contains("keychain"));
+        assert!(sink.tokens().is_empty());
+    }
+
+    #[test]
+    fn keyring_set_then_test_connection_sends_bearer() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let store = KeyringSecretStore::for_test(
+            "cloud.snowfire.supernotes.test",
+            format!("llm_api_key_{nanos}"),
+        );
+        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n\
+             data: [DONE]\n\n";
+        let (url, auth_rx) = client::serve_bearer_gate("sk-test-key", sse);
+        let db = Db::open_in_memory().unwrap();
+        let llm = Llm::new(
+            Arc::new(OpenAiCompatibleClient::with_timeout(
+                std::time::Duration::from_secs(2),
+            )),
+            Arc::new(store),
+        );
+        llm.save_settings(
+            &db,
+            &SaveLlmSettingsInput {
+                base_url: url,
+                model: "gpt-4o-mini".into(),
+            },
+        )
+        .unwrap();
+        let saved = llm.set_api_key(&db, "sk-test-key").unwrap();
+        assert!(saved.has_api_key);
+
+        let sink = CollectingSink::default();
+        let result = llm.test_connection(&db, &sink).unwrap();
+        assert_eq!(
+            auth_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap(),
+            Some("Bearer sk-test-key".into())
+        );
+        assert_eq!(result.text, "pong");
+        llm.clear_api_key(&db).unwrap();
     }
 
     #[test]

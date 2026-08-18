@@ -21,7 +21,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "2"
 ureq = { version = "2.12", features = ["json", "tls"] }
-keyring = "3"
+# keyring 3 has no default features. Without a platform store, macOS/Windows/Linux
+# silently use an in-memory mock that does not persist across Entry::new — set
+# returns Ok and the next get is NoEntry, so Test omits Authorization.
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 cpal = "0.15"
