@@ -24,14 +24,18 @@ pub trait MicPermission: Send + Sync {
     }
 }
 
+#[cfg(test)]
 pub struct GrantedPermission;
+#[cfg(test)]
 impl MicPermission for GrantedPermission {
     fn status(&self) -> PermissionStatus {
         PermissionStatus::Granted
     }
 }
 
+#[cfg(test)]
 pub struct DeniedPermission;
+#[cfg(test)]
 impl MicPermission for DeniedPermission {
     fn status(&self) -> PermissionStatus {
         PermissionStatus::Denied
@@ -86,12 +90,14 @@ pub trait AudioCapture: Send + Sync {
 }
 
 /// Test / `SUPERNOTES_FAKE_TRANSCRIBE` source: push a finite PCM buffer.
+#[cfg(test)]
 pub struct ScriptedCapture {
     samples: Vec<f32>,
     sample_rate: u32,
     frame_len: usize,
 }
 
+#[cfg(test)]
 impl ScriptedCapture {
     pub fn from_samples(samples: Vec<f32>, sample_rate: u32, frame_len: usize) -> Self {
         Self {
@@ -102,6 +108,7 @@ impl ScriptedCapture {
     }
 }
 
+#[cfg(test)]
 impl AudioCapture for ScriptedCapture {
     fn capture(
         &self,
@@ -129,8 +136,10 @@ impl AudioCapture for ScriptedCapture {
     }
 }
 
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub struct UnavailableCapture;
 
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 impl AudioCapture for UnavailableCapture {
     fn capture(
         &self,
@@ -170,7 +179,6 @@ impl AudioCapture for CpalCapture {
         })?;
         let sample_rate = config.sample_rate().0;
         let channels = config.channels() as usize;
-        let err_tx = frames.clone();
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => {
                 build_stream::<f32>(&device, &config.into(), channels, sample_rate, frames)?
@@ -188,7 +196,6 @@ impl AudioCapture for CpalCapture {
                 ));
             }
         };
-        let _ = err_tx;
         stream.play().map_err(|err| {
             if looks_like_permission(&err.to_string()) {
                 RecordingIpcError::permission_denied()

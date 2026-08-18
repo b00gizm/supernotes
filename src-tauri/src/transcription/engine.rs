@@ -70,6 +70,7 @@ pub struct FakeEngine {
 }
 
 impl FakeEngine {
+    #[cfg(test)]
     pub fn scripted(lines: &[(u64, &str)]) -> Self {
         let mut script = HashMap::new();
         for (start_ms, text) in lines {
@@ -163,6 +164,7 @@ pub const MODEL_CATALOG: &[ModelSpec] = &[
 ];
 
 /// `.en` ggml files stay pinned; multilingual models use FullParams auto-detect (`None`).
+#[cfg(any(test, target_os = "macos"))]
 fn whisper_language(model_id: &str) -> Option<&'static str> {
     if model_id.ends_with(".en") {
         Some("en")
@@ -213,10 +215,12 @@ impl ModelFetcher for UreqFetcher {
     }
 }
 
+#[cfg(test)]
 pub struct BytesFetcher {
     pub url_to_bytes: HashMap<String, Vec<u8>>,
 }
 
+#[cfg(test)]
 impl ModelFetcher for BytesFetcher {
     fn fetch(
         &self,

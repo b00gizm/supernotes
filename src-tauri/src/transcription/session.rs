@@ -3,7 +3,6 @@
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -87,10 +86,12 @@ impl AudioChunker {
         }
     }
 
+    #[cfg(test)]
     pub fn max_buffered_samples(&self) -> usize {
         self.window_samples + self.overlap_samples
     }
 
+    #[cfg(test)]
     pub fn buffered_samples(&self) -> usize {
         self.buf.len()
     }
@@ -263,6 +264,7 @@ impl Recorder {
         }
     }
 
+    #[cfg(test)]
     pub fn with_clock_origin_ms(mut self, ms_of_day: u64) -> Self {
         self.clock_origin_ms = Some(ms_of_day);
         self
@@ -557,6 +559,7 @@ pub fn format_clock(origin_ms_of_day: u64, offset_ms: u64) -> String {
     format!("{:02}:{:02}", mins / 60, mins % 60)
 }
 
+#[cfg(test)]
 pub fn hhmm_to_ms_of_day(hour: u64, minute: u64) -> u64 {
     hour.saturating_mul(3_600_000)
         .saturating_add(minute.saturating_mul(60_000))
@@ -607,13 +610,14 @@ fn civil_from_days(z: i64) -> (i32, u32, u32) {
 }
 
 /// Wait until `pred` or timeout. Used by tests so we don't sleep blindly.
-pub fn wait_until(timeout: Duration, mut pred: impl FnMut() -> bool) -> bool {
+#[cfg(test)]
+pub fn wait_until(timeout: std::time::Duration, mut pred: impl FnMut() -> bool) -> bool {
     let start = std::time::Instant::now();
     while start.elapsed() < timeout {
         if pred() {
             return true;
         }
-        thread::sleep(Duration::from_millis(5));
+        thread::sleep(std::time::Duration::from_millis(5));
     }
     pred()
 }
@@ -625,6 +629,7 @@ mod tests {
     use crate::transcription::engine::FakeEngine;
     use crate::transcription::platform::{GrantedPermission, ScriptedCapture};
     use crate::transcription::{CollectingSink, TARGET_SAMPLE_RATE};
+    use std::time::Duration;
 
     fn test_recorder(
         engine: Arc<dyn TranscriptionEngine>,

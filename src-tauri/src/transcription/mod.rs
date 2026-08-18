@@ -87,17 +87,20 @@ impl EventSink for AppHandle {
     }
 }
 
+#[cfg(test)]
 #[derive(Default)]
 pub struct CollectingSink {
     segments: std::sync::Mutex<Vec<TranscriptSegment>>,
 }
 
+#[cfg(test)]
 impl CollectingSink {
     pub fn segments(&self) -> Vec<TranscriptSegment> {
         self.segments.lock().expect("sink poisoned").clone()
     }
 }
 
+#[cfg(test)]
 impl EventSink for CollectingSink {
     fn emit_state(&self, _state: &RecordingState) {}
     fn emit_segment(&self, segment: &TranscriptSegment) {
