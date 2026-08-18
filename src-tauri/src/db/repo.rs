@@ -129,6 +129,7 @@ impl<'a> Repository<'a> {
     }
 
     pub fn update_note(&self, id: &str, title: &str, body_markdown: &str) -> DbResult<Note> {
+        self.ensure_mutable_note(id)?;
         let tx = self.conn.unchecked_transaction()?;
         let repo = Repository::new(&tx);
         let previous = repo.get_note(id)?;
@@ -190,6 +191,7 @@ impl<'a> Repository<'a> {
     }
 
     pub fn delete_note(&self, id: &str) -> DbResult<()> {
+        self.ensure_mutable_note(id)?;
         let changed = self.conn.execute("DELETE FROM notes WHERE id = ?1", [id])?;
         if changed == 0 {
             return Err(DbError::NotFound);
@@ -850,6 +852,66 @@ impl<'a> Repository<'a> {
             return Err(DbError::NotFound);
         }
         Ok(())
+    }
+
+    pub fn is_transcript_note(&self, id: &str) -> DbResult<bool> {
+        let found: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM meetings WHERE transcript_note_id = ?1)",
+            [id],
+            |row| row.get(0),
+        )?;
+        Ok(found)
+    }
+
+    fn ensure_mutable_note(&self, id: &str) -> DbResult<()> {
+        if self.is_transcript_note(id)? {
+            return Err(DbError::Invalid(
+                "transcript notes are read-only".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Create or overwrite the linked transcript note. Engine path only —
+    /// user `update_note` / `delete_note` stay blocked once linked.
+    pub fn save_meeting_transcript(
+        &self,
+        meeting_note_id: &str,
+        body_markdown: &str,
+    ) -> DbResult<(Meeting, Note)> {
+        let meeting = self.get_meeting(meeting_note_id)?;
+        let meeting_note = self.get_note(meeting_note_id)?;
+        let title = format!("{} — transcript", meeting_note.title);
+        let tx = self.conn.unchecked_transaction()?;
+        let repo = Repository::new(&tx);
+        let transcript = match &meeting.transcript_note_id {
+            Some(id) => repo.overwrite_transcript_note(id, &title, body_markdown)?,
+            None => repo.create_note_in_tx(&title, body_markdown, NoteType::Regular, false)?,
+        };
+        let changed = repo.conn.execute(
+            "UPDATE meetings SET transcript_note_id = ?1 WHERE note_id = ?2",
+            params![transcript.id, meeting_note_id],
+        )?;
+        if changed == 0 {
+            return Err(DbError::NotFound);
+        }
+        let meeting = repo.get_meeting(meeting_note_id)?;
+        let transcript = repo.get_note(&transcript.id)?;
+        tx.commit()?;
+        Ok((meeting, transcript))
+    }
+
+    fn overwrite_transcript_note(&self, id: &str, title: &str, body: &str) -> DbResult<Note> {
+        let updated_at = utc_now(self.conn)?;
+        let changed = self.conn.execute(
+            "UPDATE notes SET title = ?1, body_markdown = ?2, updated_at = ?3 WHERE id = ?4",
+            params![title, body, updated_at, id],
+        )?;
+        if changed == 0 {
+            return Err(DbError::NotFound);
+        }
+        self.sync_links_from_body(id, body)?;
+        self.get_note(id)
     }
 }
 
@@ -1647,6 +1709,44 @@ mod tests {
             assert!(repo
                 .create_meeting_note("Bad", "", "2026-08-10", "14:00", "14", None)
                 .is_err());
+        });
+    }
+
+    #[test]
+    fn save_meeting_transcript_links_readonly_note() {
+        with_repo(|repo| {
+            let created = repo
+                .create_meeting_note("Pricing sync", "", "2026-08-10", "14:00", "14:23", None)
+                .unwrap();
+            let (meeting, transcript) = repo
+                .save_meeting_transcript(
+                    &created.note.id,
+                    "14:02  Let's walk through the enterprise tier.",
+                )
+                .unwrap();
+            assert_eq!(
+                meeting.transcript_note_id.as_deref(),
+                Some(transcript.id.as_str())
+            );
+            assert_eq!(transcript.note_type, NoteType::Regular);
+            assert_eq!(transcript.title, "Pricing sync — transcript");
+            assert!(repo.is_transcript_note(&transcript.id).unwrap());
+            assert!(repo
+                .update_note(&transcript.id, "x", "y")
+                .unwrap_err()
+                .to_string()
+                .contains("read-only"));
+            assert!(repo
+                .delete_note(&transcript.id)
+                .unwrap_err()
+                .to_string()
+                .contains("read-only"));
+
+            let (_, again) = repo
+                .save_meeting_transcript(&created.note.id, "14:02  overwritten")
+                .unwrap();
+            assert_eq!(again.id, transcript.id);
+            assert_eq!(again.body_markdown, "14:02  overwritten");
         });
     }
 }

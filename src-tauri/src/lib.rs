@@ -5,6 +5,7 @@ mod meetings;
 mod menu_nav;
 mod notes;
 mod tasks;
+mod transcription;
 
 use calendar::{
     create_calendar_event, delete_calendar_event, get_calendar_event, list_calendar_events,
@@ -24,6 +25,10 @@ use tasks::{
     create_task, delete_task, get_task, list_tasks, list_tasks_for_note, search_tasks, update_task,
 };
 use tauri::Manager;
+use transcription::{
+    ensure_transcription_model, get_microphone_permission, get_recording_state,
+    list_transcription_models, production_recorder, start_recording, stop_recording,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +43,7 @@ pub fn run() {
                 panic!("failed to open sqlite database: {err}");
             });
             app.manage(db);
+            app.manage(production_recorder(data_dir.join("models")));
             menu_nav::install_app_menu(app)?;
             Ok(())
         })
@@ -69,6 +75,12 @@ pub fn run() {
             get_meeting,
             create_meeting_note_from_event,
             get_meeting_for_event,
+            start_recording,
+            stop_recording,
+            get_recording_state,
+            get_microphone_permission,
+            list_transcription_models,
+            ensure_transcription_model,
             save_note_image,
             resolve_note_image_path
         ])

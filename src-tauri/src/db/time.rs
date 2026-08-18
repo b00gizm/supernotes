@@ -30,6 +30,32 @@ pub fn local_date_and_hm(conn: &Connection, iso: &str) -> DbResult<(String, Stri
     Ok((date, hm))
 }
 
+/// Local ms since midnight (`localtime`). Used for utterance clocks, not scheduled meeting start.
+pub fn local_ms_of_day(conn: &Connection) -> DbResult<u64> {
+    let (hour, minute, frac): (String, String, String) = conn.query_row(
+        "SELECT strftime('%H', 'now', 'localtime'),
+                strftime('%M', 'now', 'localtime'),
+                strftime('%f', 'now', 'localtime')",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    let hour: u64 = hour
+        .parse()
+        .map_err(|_| DbError::Invalid(format!("could not parse local hour {hour:?}")))?;
+    let minute: u64 = minute
+        .parse()
+        .map_err(|_| DbError::Invalid(format!("could not parse local minute {minute:?}")))?;
+    let frac: f64 = frac
+        .parse()
+        .map_err(|_| DbError::Invalid(format!("could not parse local seconds {frac:?}")))?;
+    // `%f` is SS.sss
+    let ms = (frac * 1000.0).round() as u64;
+    Ok(hour
+        .saturating_mul(3_600_000)
+        .saturating_add(minute.saturating_mul(60_000))
+        .saturating_add(ms))
+}
+
 /// SQLite datetime() wants `YYYY-MM-DD HH:MM:SS`; treat a trailing `Z` as UTC.
 fn normalize_iso_utc(iso: &str) -> DbResult<String> {
     let trimmed = iso.trim();
@@ -56,6 +82,12 @@ mod tests {
         assert_ne!(start, end);
         assert!(local_date_and_hm(&conn, "").is_err());
         assert!(local_date_and_hm(&conn, "   ").is_err());
+
+        let now = utc_now(&conn).unwrap();
+        let (_date, hm) = local_date_and_hm(&conn, &now).unwrap();
+        let ms = local_ms_of_day(&conn).unwrap();
+        let from_ms = format!("{:02}:{:02}", (ms / 60_000) / 60 % 24, (ms / 60_000) % 60);
+        assert_eq!(from_ms, hm);
     }
 
     fn is_ymd(value: &str) -> bool {

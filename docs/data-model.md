@@ -82,14 +82,14 @@ Local-only events (M5). Optional `task_id` links a time block to a task.
 Meeting metadata for `note_type = meeting` notes (M6). One row per meeting note.
 Display (`Mon, Aug 10`, `14:00 – 14:23`) is frontend-only; storage is local date + clock.
 
-| Column               | Type                           | Notes                                           |
-| -------------------- | ------------------------------ | ----------------------------------------------- |
-| `note_id`            | TEXT PK FK → notes             | ON DELETE CASCADE                               |
-| `meeting_date`       | TEXT                           | local `YYYY-MM-DD`                              |
-| `start_time`         | TEXT                           | local `HH:MM`                                   |
-| `end_time`           | TEXT                           | local `HH:MM`                                   |
-| `transcript_note_id` | TEXT NULL FK → notes           | ON DELETE SET NULL (ENG-69; unused in ENG-68)   |
-| `calendar_event_id`  | TEXT NULL FK → calendar_events | ON DELETE SET NULL; unique when set (schema v4) |
+| Column               | Type                           | Notes                                              |
+| -------------------- | ------------------------------ | -------------------------------------------------- |
+| `note_id`            | TEXT PK FK → notes             | ON DELETE CASCADE                                  |
+| `meeting_date`       | TEXT                           | local `YYYY-MM-DD`                                 |
+| `start_time`         | TEXT                           | local `HH:MM`                                      |
+| `end_time`           | TEXT                           | local `HH:MM`                                      |
+| `transcript_note_id` | TEXT NULL FK → notes           | ON DELETE SET NULL; set on recording stop (ENG-69) |
+| `calendar_event_id`  | TEXT NULL FK → calendar_events | ON DELETE SET NULL; unique when set (schema v4)    |
 
 ## Access layer
 
@@ -102,13 +102,20 @@ Display (`Mon, Aug 10`, `14:00 – 14:23`) is frontend-only; storage is local da
   `list_calendar_events`, `update_calendar_event`, `delete_calendar_event`
   (`src-tauri/src/calendar.rs`); `create_meeting_note`, `update_meeting`,
   `get_meeting`, `create_meeting_note_from_event`, `get_meeting_for_event`
-  (`src-tauri/src/meetings.rs`). `list_calendar_events` takes optional `from` /
+  (`src-tauri/src/meetings.rs`); `start_recording`, `stop_recording`,
+  `get_recording_state`, `get_microphone_permission`,
+  `list_transcription_models`, `ensure_transcription_model`
+  (`src-tauri/src/transcription/`). `list_calendar_events` takes optional `from` /
   `to` ISO instants and returns events overlapping that window. Saving a note
   syncs its outbound `links` rows from `[[…]]` / `#tag` / `@mention` in
   `body_markdown` (skips `[[task:…]]`). `create_meeting_note_from_event` is
   idempotent: it prefills local date/start/end from the event instants and
   stores `calendar_event_id`. Meeting metadata updates do not bump the note's
-  `updated_at`.
+  `updated_at`. Stopping a recording writes a regular note (`{title} — transcript`)
+  and sets `meetings.transcript_note_id`. That note is read-only:
+  `update_note` / `delete_note` are rejected. No schema migration (column already
+  existed). Live transcript lines are pushed on `recording://segment` (see
+  `src/notes/recording.ts`).
 - Frontend: `src/notes/` wraps note/link commands (`notesApi` + `useNotes` with
   ~500ms debounced autosave) and meeting metadata (`meetingsApi`). `src/tasks/`
   wraps task commands (`tasksApi`) and the Inbox / Upcoming / Complete overview
