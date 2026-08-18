@@ -15,7 +15,7 @@ pub use error::{DbError, DbResult};
 pub use migrate::{current_version, migrate};
 pub use models::*;
 pub use repo::Repository;
-pub use time::local_ms_of_day;
+pub use time::{local_ms_of_day, utc_now};
 pub use wikilinks::{extract_wikilink_titles, rewrite_wikilink_title};
 
 const DB_FILE_NAME: &str = "supernotes.sqlite3";
@@ -78,10 +78,10 @@ mod tests {
         let db = Db::open(&dir).unwrap();
         assert!(dir.join(DB_FILE_NAME).exists());
         assert_eq!(db.path(), dir.join(DB_FILE_NAME).as_path());
-        assert_eq!(db.with_conn(current_version).unwrap(), 4);
+        assert_eq!(db.with_conn(current_version).unwrap(), 5);
 
         let memory = Db::open_in_memory().unwrap();
-        assert_eq!(memory.with_conn(current_version).unwrap(), 4);
+        assert_eq!(memory.with_conn(current_version).unwrap(), 5);
 
         let _ = fs::remove_dir_all(dir);
     }

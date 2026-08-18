@@ -35,6 +35,12 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/004_meetings_calendar_event.sql"),
         after: None,
     },
+    Migration {
+        version: 5,
+        name: "005_llm_settings",
+        sql: include_str!("../../migrations/005_llm_settings.sql"),
+        after: None,
+    },
 ];
 
 pub fn migrate(conn: &Connection) -> DbResult<i64> {
@@ -283,8 +289,8 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), 0);
 
         let version = migrate(&conn).unwrap();
-        assert_eq!(version, 4);
-        assert_eq!(current_version(&conn).unwrap(), 4);
+        assert_eq!(version, 5);
+        assert_eq!(current_version(&conn).unwrap(), 5);
 
         for table in [
             "notes",
@@ -292,6 +298,7 @@ mod tests {
             "tasks",
             "calendar_events",
             "meetings",
+            "llm_settings",
             "schema_migrations",
         ] {
             let exists: bool = conn
@@ -310,15 +317,15 @@ mod tests {
     #[test]
     fn migrate_is_idempotent() {
         let conn = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&conn).unwrap(), 4);
-        assert_eq!(migrate(&conn).unwrap(), 4);
+        assert_eq!(migrate(&conn).unwrap(), 5);
+        assert_eq!(migrate(&conn).unwrap(), 5);
 
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(count, 4);
+        assert_eq!(count, 5);
     }
 
     #[test]
@@ -333,7 +340,7 @@ mod tests {
                 "2026-08-10T12:00:00.000Z",
             );
 
-            assert_eq!(migrate(&conn).unwrap(), 4);
+            assert_eq!(migrate(&conn).unwrap(), 5);
 
             let title: String = conn
                 .query_row("SELECT title FROM notes WHERE id = 'd1'", [], |row| {
@@ -375,7 +382,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(migrate(&conn).unwrap(), 4);
+        assert_eq!(migrate(&conn).unwrap(), 5);
 
         let count: i64 = conn
             .query_row(
@@ -424,7 +431,7 @@ mod tests {
                 "2026-08-08T22:30:00.000Z",
             );
 
-            assert_eq!(migrate(&conn).unwrap(), 4);
+            assert_eq!(migrate(&conn).unwrap(), 5);
 
             let mut titles: Vec<(String, String)> = conn
                 .prepare("SELECT id, title FROM notes ORDER BY id")
@@ -479,7 +486,7 @@ mod tests {
                 .unwrap();
             assert_eq!(utc_title, "2026-08-08");
 
-            assert_eq!(migrate(&conn).unwrap(), 4);
+            assert_eq!(migrate(&conn).unwrap(), 5);
 
             let local_title: String = conn
                 .query_row("SELECT title FROM notes WHERE id = 'd1'", [], |row| {
@@ -506,7 +513,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(migrate(&conn).unwrap(), 4);
+        assert_eq!(migrate(&conn).unwrap(), 5);
 
         let event_id: Option<String> = conn
             .query_row(
