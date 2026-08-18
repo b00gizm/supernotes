@@ -91,6 +91,21 @@ Display (`Mon, Aug 10`, `14:00 – 14:23`) is frontend-only; storage is local da
 | `transcript_note_id` | TEXT NULL FK → notes           | ON DELETE SET NULL; set on recording stop (ENG-69) |
 | `calendar_event_id`  | TEXT NULL FK → calendar_events | ON DELETE SET NULL; unique when set (schema v4)    |
 
+### `llm_settings`
+
+Single-row LLM client config (schema v5 / ENG-70). The API key is **not** stored
+here — it lives in the OS keychain (`cloud.snowfire.supernotes` / `llm_api_key`).
+
+| Column       | Type    | Notes                                     |
+| ------------ | ------- | ----------------------------------------- |
+| `id`         | INTEGER | always `1`                                |
+| `base_url`   | TEXT    | OpenAI-compatible root, e.g. `…/v1`       |
+| `model`      | TEXT    | model name (`gpt-4o-mini`, `llama3.2`, …) |
+| `updated_at` | TEXT    |                                           |
+
+Defaults when no row exists: `https://api.openai.com/v1` + `gpt-4o-mini`.
+`SUPERNOTES_FAKE_LLM=1` uses an in-memory client and secret store (no live API).
+
 ## Access layer
 
 - Rust: `src-tauri/src/db/` — open/migrate, models, `Repository` CRUD.
@@ -105,7 +120,9 @@ Display (`Mon, Aug 10`, `14:00 – 14:23`) is frontend-only; storage is local da
   (`src-tauri/src/meetings.rs`); `start_recording`, `stop_recording`,
   `get_recording_state`, `get_microphone_permission`,
   `list_transcription_models`, `ensure_transcription_model`
-  (`src-tauri/src/transcription/`). `list_calendar_events` takes optional `from` /
+  (`src-tauri/src/transcription/`); `get_llm_settings`, `save_llm_settings`,
+  `set_llm_api_key`, `clear_llm_api_key`, `test_llm_connection`,
+  `stream_llm_chat` (`src-tauri/src/llm/`). `list_calendar_events` takes optional `from` /
   `to` ISO instants and returns events overlapping that window. Saving a note
   syncs its outbound `links` rows from `[[…]]` / `#tag` / `@mention` in
   `body_markdown` (skips `[[task:…]]`). `create_meeting_note_from_event` is
@@ -123,4 +140,5 @@ Display (`Mon, Aug 10`, `14:00 – 14:23`) is frontend-only; storage is local da
   filtered to `due_date <=` that day. Editor task pills create/update/delete
   rows immediately; note markdown still autosaves the `[[task:id]]` reference.
   `src/calendar/` wraps event commands (`calendarApi`) and the week grid /
-  agenda views (`CalendarView`).
+  agenda views (`CalendarView`). `src/llm/api.ts` wraps LLM settings / keychain /
+  streaming (`llmApi`); live tokens arrive on `llm://token`.

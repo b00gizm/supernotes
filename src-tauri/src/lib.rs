@@ -1,5 +1,6 @@
 mod calendar;
 pub mod db;
+mod llm;
 mod media;
 mod meetings;
 mod menu_nav;
@@ -12,6 +13,10 @@ use calendar::{
     update_calendar_event,
 };
 use db::Db;
+use llm::{
+    clear_llm_api_key, get_llm_settings, production_llm, save_llm_settings, set_llm_api_key,
+    stream_llm_chat, test_llm_connection,
+};
 use media::{resolve_note_image_path, save_note_image};
 use meetings::{
     create_meeting_note, create_meeting_note_from_event, get_meeting, get_meeting_for_event,
@@ -44,6 +49,7 @@ pub fn run() {
             });
             app.manage(db);
             app.manage(production_recorder(data_dir.join("models")));
+            app.manage(production_llm());
             menu_nav::install_app_menu(app)?;
             Ok(())
         })
@@ -81,6 +87,12 @@ pub fn run() {
             get_microphone_permission,
             list_transcription_models,
             ensure_transcription_model,
+            get_llm_settings,
+            save_llm_settings,
+            set_llm_api_key,
+            clear_llm_api_key,
+            test_llm_connection,
+            stream_llm_chat,
             save_note_image,
             resolve_note_image_path
         ])
