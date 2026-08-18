@@ -12,7 +12,6 @@ import {
   type TranscriptSegment,
 } from "../notes/recording";
 import type { Meeting, Note } from "../notes/types";
-import { tasksApi as defaultTasksApi, type TasksApi } from "../tasks/api";
 import { IconWaveform } from "../ui/IconWaveform";
 import {
   formatMeetingDate,
@@ -21,7 +20,6 @@ import {
   isMeetingTime,
 } from "./format";
 import { LiveTranscript } from "./LiveTranscript";
-import { MeetingSummary } from "./MeetingSummary";
 import { deniedMicMessage } from "./recording";
 import {
   subscribeSummaryDone,
@@ -31,16 +29,21 @@ import {
   type MeetingSummary as MeetingSummaryData,
   type MeetingSummaryApi,
 } from "./summaryApi";
+import {
+  renderSummaryMarkdown,
+  upsertSummaryMarkdown,
+} from "./summaryMarkdown";
 
 export type MeetingHeaderProps = {
   noteId: string;
   note?: Note | undefined;
+  body?: string | undefined;
   api?: MeetingsApi;
   recording?: RecordingApi;
   summary?: MeetingSummaryApi;
-  tasks?: TasksApi;
   onOpenNote?: (noteId: string) => void;
   onStopped?: () => void;
+  onWriteBody?: ((body: string) => void) | undefined;
 };
 
 function IconStar() {
@@ -103,12 +106,13 @@ function errorMessage(err: unknown): string {
 export function MeetingHeader({
   noteId,
   note,
+  body,
   api = meetingsApi,
   recording = defaultRecordingApi,
   summary: summaryClient = defaultSummaryApi,
-  tasks = defaultTasksApi,
   onOpenNote,
   onStopped,
+  onWriteBody,
 }: MeetingHeaderProps) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -124,7 +128,17 @@ export function MeetingHeader({
   const startingRef = useRef(false);
   const stoppingRef = useRef(false);
   const generatingRef = useRef(false);
+  const bodyRef = useRef(body ?? note?.body_markdown ?? "");
+  const onWriteBodyRef = useRef(onWriteBody);
   noteIdRef.current = noteId;
+  bodyRef.current = body ?? note?.body_markdown ?? "";
+  onWriteBodyRef.current = onWriteBody;
+
+  const writeSummary = (next: MeetingSummaryData) => {
+    onWriteBodyRef.current?.(
+      upsertSummaryMarkdown(bodyRef.current, renderSummaryMarkdown(next)),
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -270,6 +284,7 @@ export function MeetingHeader({
             return;
           }
           setSummary(event.summary);
+          writeSummary(event.summary);
           setGenerating(false);
           generatingRef.current = false;
           setError(null);
@@ -520,7 +535,7 @@ export function MeetingHeader({
               </button>
             )
           ) : null}
-          {transcriptId && !summary ? (
+          {transcriptId ? (
             <>
               <span className="meeting-dot" aria-hidden="true">
                 ·
@@ -534,7 +549,7 @@ export function MeetingHeader({
               >
                 Transcript
               </button>
-              {error && !generating ? (
+              {error && !generating && !summary ? (
                 <>
                   <span className="meeting-dot" aria-hidden="true">
                     ·
@@ -583,7 +598,7 @@ export function MeetingHeader({
                 }}
               >
                 <IconStar />
-                <span>Summary from recording</span>
+                <span>Regenerate</span>
               </button>
             </>
           ) : null}
@@ -626,16 +641,6 @@ export function MeetingHeader({
         ) : null}
       </div>
       {live ? <LiveTranscript segments={segments} live /> : null}
-      {summary && !live ? (
-        <MeetingSummary
-          summary={summary}
-          summaryApi={summaryClient}
-          tasks={tasks}
-          note={note}
-          onOpenNote={onOpenNote}
-          onSummaryChange={setSummary}
-        />
-      ) : null}
     </>
   );
 }

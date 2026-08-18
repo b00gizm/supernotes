@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LlmError } from "../llm/api";
@@ -6,10 +6,7 @@ import { createMemoryMeetingsApi } from "../notes/meetings";
 import { createMemoryNotesApi } from "../notes/memoryApi";
 import { createMemoryRecordingApi } from "../notes/recording";
 import type { Meeting, Note } from "../notes/types";
-import { createMemoryTasksApi } from "../tasks/memoryApi";
-import type { Task } from "../tasks/types";
 import { MeetingHeader } from "./MeetingHeader";
-import { MeetingSummary } from "./MeetingSummary";
 import {
   createMemoryMeetingSummaryApi,
   demoMeetingSummary,
@@ -22,7 +19,7 @@ import {
 const NOTE: Note = {
   id: "m1",
   title: "Pricing sync",
-  body_markdown: "",
+  body_markdown: "Agenda notes",
   note_type: "meeting",
   pinned: false,
   created_at: "2026-08-09T10:00:00.000Z",
@@ -44,20 +41,6 @@ function flushGenerate(): Promise<void> {
   });
 }
 
-function taskSeed(id: string, title: string, due: string | null): Task {
-  return {
-    id,
-    note_id: "m1",
-    title,
-    state: "open",
-    due_date: due,
-    priority: due === "2026-08-10" ? "high" : null,
-    created_at: "2026-08-10T14:00:00.000Z",
-    updated_at: "2026-08-10T14:00:00.000Z",
-    completed_at: null,
-  };
-}
-
 function setupHeader(
   summary = createMemoryMeetingSummaryApi(),
   meeting: Meeting = MEETING,
@@ -70,172 +53,28 @@ function setupHeader(
       api.linkTranscript(noteId, transcriptNoteId);
     },
   });
-  const tasks = createMemoryTasksApi([
-    taskSeed("mem-task-1", "Send updated tier table", "2026-08-10"),
-    taskSeed("mem-task-2", "Legal review of annual terms", "2026-08-14"),
-  ]);
-  return { notes, api, recording, summary, tasks };
+  return { notes, api, recording, summary };
 }
 
-describe("MeetingSummary render (ENG-71 UI)", () => {
-  it("renders the mockup-1h JSON block with TaskRow action items", async () => {
-    const summary = demoMeetingSummary();
-    render(
-      <MeetingSummary
-        summary={summary}
-        today="2026-08-10"
-        note={NOTE}
-        tasks={createMemoryTasksApi([
-          taskSeed("mem-task-1", "Send updated tier table", "2026-08-10"),
-          taskSeed("mem-task-2", "Legal review of annual terms", "2026-08-14"),
-        ])}
-      />,
-    );
-
-    const block = screen.getByLabelText("Meeting summary");
-    expect(block.querySelector(".ProseMirror")).toBeNull();
-    expect(within(block).getByText("Purpose")).toBeInTheDocument();
-    expect(block).toHaveTextContent(/pricing v2 tier structure/);
-    expect(
-      within(block).getByRole("button", { name: "Open Sara Kim" }),
-    ).toHaveTextContent("@Sara Kim");
-    expect(block).toHaveTextContent("(Maybe) Steve");
-    expect(
-      within(block).queryByRole("button", { name: "Open Steve" }),
-    ).toBeNull();
-    expect(block).toHaveTextContent("Free tier stays");
-    expect(block.querySelector(".meeting-summary-time")?.textContent).toBe(
-      "14:02",
-    );
-    expect(block.querySelector(".meeting-summary-code")?.textContent).toBe(
-      "flags.pricingV2",
-    );
-    expect(block.querySelector(".tasks-row")).toBeTruthy();
-    expect(
-      await within(block).findByRole("button", {
-        name: "Send updated tier table",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(block).getAllByRole("button", { name: "Mark task done" }),
-    ).toHaveLength(2);
-    expect(
-      within(block).getAllByRole("button", { name: "Task details" }),
-    ).toHaveLength(2);
-    expect(within(block).getByText("Aug 10")).toBeInTheDocument();
-    expect(within(block).getByText("Aug 14")).toBeInTheDocument();
-    expect(
-      within(block).getByRole("button", { name: "Full transcript" }),
-    ).toBeInTheDocument();
-    expect(block).toHaveTextContent("45 min");
-    expect(block).toHaveTextContent("6,120 words");
-  });
-
-  it("lets participant pills be edited and persisted", async () => {
+describe("MeetingHeader summary → note body (ENG-71)", () => {
+  it("record → stop writes five editable sections into the note", async () => {
     const user = userEvent.setup();
-    const api = createMemoryMeetingSummaryApi();
-    await api.generateSummary("demo-sync");
-    await flushGenerate();
-    const loaded = await api.getSummary("demo-sync");
-    if (!loaded) {
-      throw new Error("expected a summary");
-    }
-    const save = vi.spyOn(api, "saveParticipants");
-    const onSummaryChange = vi.fn();
-
-    render(
-      <MeetingSummary
-        summary={loaded}
-        summaryApi={api}
-        today="2026-08-10"
-        onSummaryChange={onSummaryChange}
-      />,
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Rename participant Steve" }),
-    );
-    const input = screen.getByLabelText("Rename participant Steve");
-    await user.clear(input);
-    await user.type(input, "Steven");
-    await user.keyboard("{Enter}");
-
-    await waitFor(() => {
-      expect(save).toHaveBeenCalledWith("demo-sync", [
-        { name: "Sara Kim", certainty: "certain", note_id: "person-sara" },
-        { name: "Marcus Webb", certainty: "certain", note_id: "person-marcus" },
-        { name: "Steven", certainty: "maybe", note_id: null },
-      ]);
-    });
-    expect(onSummaryChange).toHaveBeenCalled();
-    const saved = await api.getSummary("demo-sync");
-    expect(saved?.participants.at(2)?.name).toBe("Steven");
-    expect(saved?.action_items.map((item) => item.task_id)).toEqual(
-      loaded.action_items.map((item) => item.task_id),
-    );
-  });
-
-  it("opens the people note from a certain pill click", async () => {
-    const user = userEvent.setup();
-    const onOpenNote = vi.fn();
-    render(
-      <MeetingSummary
-        summary={demoMeetingSummary()}
-        today="2026-08-10"
-        onOpenNote={onOpenNote}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Open Sara Kim" }));
-    expect(onOpenNote).toHaveBeenCalledWith("person-sara");
-  });
-
-  it("does not navigate from a maybe or unknown pill click", async () => {
-    const user = userEvent.setup();
-    const onOpenNote = vi.fn();
-    const summary = demoMeetingSummary();
-    summary.participants.push({
-      name: "Alex",
-      certainty: "unknown",
-      note_id: null,
-    });
-    render(
-      <MeetingSummary
-        summary={summary}
-        today="2026-08-10"
-        onOpenNote={onOpenNote}
-      />,
-    );
-
-    await user.click(screen.getByText("(Maybe) Steve"));
-    await user.click(screen.getByText("(Maybe) Alex"));
-    expect(onOpenNote).not.toHaveBeenCalled();
-    expect(
-      screen.queryByRole("button", { name: "Open Steve" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Open Alex" }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-describe("MeetingHeader summary generate (ENG-71 UI)", () => {
-  it("record → stop starts generate without a Generate click", async () => {
-    const user = userEvent.setup();
-    const { api, recording, summary, tasks } = setupHeader(
+    const { api, recording, summary } = setupHeader(
       createMemoryMeetingSummaryApi(),
       { ...MEETING, transcript_note_id: null },
     );
     const generate = vi.spyOn(summary, "generateSummary");
+    const onWriteBody = vi.fn();
 
     render(
       <MeetingHeader
         noteId="m1"
         note={NOTE}
+        body="Agenda notes"
         api={api}
         recording={recording}
         summary={summary}
-        tasks={tasks}
+        onWriteBody={onWriteBody}
       />,
     );
 
@@ -246,14 +85,25 @@ describe("MeetingHeader summary generate (ENG-71 UI)", () => {
     expect(
       screen.queryByRole("button", { name: "Generate summary" }),
     ).not.toBeInTheDocument();
-    expect(await screen.findByLabelText("Meeting summary")).toHaveTextContent(
-      /pricing v2/,
-    );
-    expect(screen.getByText("Summary from recording")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Record" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Meeting summary")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(onWriteBody).toHaveBeenCalled();
+    });
+    const written = onWriteBody.mock.calls.at(-1)?.[0] as string;
+    expect(written).toContain("Agenda notes");
+    expect(written).toContain("## Purpose");
+    expect(written).toContain("## Participants");
+    expect(written).toContain("## Key points");
+    expect(written).toContain("## Outcome / next steps");
+    expect(written).toContain("## Action items");
+    expect(written).toContain("- @Sara Kim");
+    expect(written).toContain("- (Maybe) Steve");
+    expect(written).toMatch(/\[\[task:[^\]]+\]\] Send updated tier table/);
     expect(
-      screen.getByRole("button", { name: "Full transcript" }),
-    ).toBeTruthy();
+      screen.getByRole("button", { name: "Regenerate summary" }),
+    ).toHaveTextContent("Regenerate");
+    expect(screen.getByRole("button", { name: "Record" })).toBeInTheDocument();
   });
 
   it("shows in-progress chrome from summary://progress and stays usable", async () => {
@@ -273,16 +123,18 @@ describe("MeetingHeader summary generate (ENG-71 UI)", () => {
       saveParticipants: () =>
         Promise.reject(new LlmError("invalid", "no summary")),
     };
-    const { api, recording, tasks } = setupHeader(held);
+    const { api, recording } = setupHeader(held);
+    const onWriteBody = vi.fn();
 
     render(
       <MeetingHeader
         noteId="m1"
         note={NOTE}
+        body=""
         api={api}
         recording={recording}
         summary={held}
-        tasks={tasks}
+        onWriteBody={onWriteBody}
       />,
     );
 
@@ -291,7 +143,7 @@ describe("MeetingHeader summary generate (ENG-71 UI)", () => {
 
     expect(await screen.findByText("Summarizing…")).toBeInTheDocument();
     expect(document.querySelector(".meeting-summary-spinner")).toBeTruthy();
-    expect(screen.queryByLabelText("Meeting summary")).not.toBeInTheDocument();
+    expect(onWriteBody).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Record" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Transcript" })).toBeTruthy();
 
@@ -303,39 +155,70 @@ describe("MeetingHeader summary generate (ENG-71 UI)", () => {
         },
       }),
     );
-    expect(await screen.findByLabelText("Meeting summary")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(onWriteBody).toHaveBeenCalled();
+    });
     expect(screen.queryByText("Summarizing…")).not.toBeInTheDocument();
+    expect(onWriteBody.mock.calls.at(-1)?.[0]).toContain("## Purpose");
   });
 
-  it("regenerate replaces the previous summary block", async () => {
+  it("regenerate replaces only the previous summary block", async () => {
     const user = userEvent.setup();
-    const { api, recording, summary, tasks } = setupHeader();
-    render(
+    const { api, recording, summary } = setupHeader();
+    let body = "Agenda notes";
+    const onWriteBody = vi.fn((next: string) => {
+      body = next;
+    });
+
+    const { rerender } = render(
       <MeetingHeader
         noteId="m1"
         note={NOTE}
+        body={body}
         api={api}
         recording={recording}
         summary={summary}
-        tasks={tasks}
+        onWriteBody={onWriteBody}
       />,
     );
 
     await user.click(await screen.findByRole("button", { name: "Record" }));
     await user.click(screen.getByRole("button", { name: "Stop" }));
-    expect(await screen.findByLabelText("Meeting summary")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(onWriteBody).toHaveBeenCalled();
+    });
     const first = await summary.getSummary("m1");
+    rerender(
+      <MeetingHeader
+        noteId="m1"
+        note={NOTE}
+        body={`${body}\n\n## Follow-up\n\nKeep this`}
+        api={api}
+        recording={recording}
+        summary={summary}
+        onWriteBody={onWriteBody}
+      />,
+    );
 
     await user.click(
       screen.getByRole("button", { name: "Regenerate summary" }),
     );
     await flushGenerate();
+    await waitFor(() => {
+      expect(onWriteBody.mock.calls.length).toBeGreaterThan(1);
+    });
     const second = await summary.getSummary("m1");
+    const written = onWriteBody.mock.calls.at(-1)?.[0] as string;
     expect(second?.action_items.map((item) => item.task_id)).not.toEqual(
       first?.action_items.map((item) => item.task_id),
     );
-    expect(screen.getAllByLabelText("Purpose")).toHaveLength(1);
-    expect(screen.getAllByLabelText("Meeting summary")).toHaveLength(1);
+    expect(written).toContain("Agenda notes");
+    expect(written).toContain("## Follow-up");
+    expect(written).toContain("Keep this");
+    expect(written).toContain(
+      `[[task:${second?.action_items[0]?.task_id ?? ""}]]`,
+    );
+    expect(written.match(/## Purpose/g)).toHaveLength(1);
   });
 
   it("keeps the transcript and shows the LLM error when generate fails", async () => {
@@ -346,15 +229,17 @@ describe("MeetingHeader summary generate (ENG-71 UI)", () => {
         message: "Could not reach the LLM server.",
       },
     });
-    const { api, recording, tasks } = setupHeader(summary);
+    const { api, recording } = setupHeader(summary);
+    const onWriteBody = vi.fn();
     render(
       <MeetingHeader
         noteId="m1"
         note={NOTE}
+        body="Agenda notes"
         api={api}
         recording={recording}
         summary={summary}
-        tasks={tasks}
+        onWriteBody={onWriteBody}
       />,
     );
 
@@ -364,7 +249,7 @@ describe("MeetingHeader summary generate (ENG-71 UI)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Could not reach the LLM server.",
     );
-    expect(screen.queryByLabelText("Meeting summary")).not.toBeInTheDocument();
+    expect(onWriteBody).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Transcript" })).toBeTruthy();
     const stopped = await api.getMeeting("m1");
     expect(stopped.transcript_note_id).toBeTruthy();

@@ -388,6 +388,24 @@ export function NoteEditor({
   editorRef.current = editor;
 
   useEffect(() => {
+    if (!editor || editor.isDestroyed) {
+      return;
+    }
+    if (getEditorMarkdown(editor) === markdown) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      if (editor.isDestroyed || getEditorMarkdown(editor) === markdown) {
+        return;
+      }
+      editor.commands.setContent(markdown);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [editor, markdown]);
+
+  useEffect(() => {
     if (!editor || !focusTaskId) {
       return;
     }

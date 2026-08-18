@@ -27,16 +27,6 @@ export function formatMeetingRange(start: string, end: string): string {
   return `${start} – ${end}`;
 }
 
-/** Footer duration: `45 min`. */
-export function formatTranscriptDuration(seconds: number): string {
-  return `${String(Math.max(0, Math.round(seconds / 60)))} min`;
-}
-
-/** Footer words: `6,120 words`. */
-export function formatTranscriptWords(count: number): string {
-  return `${count.toLocaleString("en-US")} words`;
-}
-
 export function formatMeetingMeta(
   meeting_date: string,
   start_time: string,
