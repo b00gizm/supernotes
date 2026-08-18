@@ -162,6 +162,15 @@ pub const MODEL_CATALOG: &[ModelSpec] = &[
     },
 ];
 
+/// `.en` ggml files stay pinned; multilingual models use FullParams auto-detect (`None`).
+fn whisper_language(model_id: &str) -> Option<&'static str> {
+    if model_id.ends_with(".en") {
+        Some("en")
+    } else {
+        None
+    }
+}
+
 pub fn model_spec(id: &str) -> Result<&'static ModelSpec, RecordingIpcError> {
     MODEL_CATALOG
         .iter()
@@ -416,7 +425,8 @@ impl TranscriptionEngine for WhisperEngine {
                 .map_err(|err| EngineError(err.to_string()))?;
             let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
             params.set_n_threads(2);
-            params.set_language(Some("en"));
+            // FullParams defaults to "en"; None is whisper-rs auto-detect.
+            params.set_language(whisper_language(&loaded.model_id));
             params.set_print_special(false);
             params.set_print_progress(false);
             params.set_print_realtime(false);
@@ -467,6 +477,15 @@ mod tests {
         assert_eq!(DEFAULT_MODEL_ID, "tiny");
         assert_eq!(model_spec(DEFAULT_MODEL_ID).unwrap().id, "tiny");
         assert!(model_spec("tiny.en").is_ok());
+    }
+
+    #[test]
+    fn multilingual_models_auto_detect_language() {
+        assert_eq!(whisper_language("tiny"), None);
+        assert_eq!(whisper_language("base"), None);
+        assert_eq!(whisper_language(DEFAULT_MODEL_ID), None);
+        assert_eq!(whisper_language("tiny.en"), Some("en"));
+        assert_eq!(whisper_language("base.en"), Some("en"));
     }
 
     #[test]
