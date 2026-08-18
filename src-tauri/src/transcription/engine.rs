@@ -18,7 +18,7 @@ pub struct TranscriptSegment {
     pub meeting_note_id: String,
     pub start_ms: u64,
     pub end_ms: u64,
-    /// Wall-clock `HH:MM` from the meeting start + `start_ms` (mockup 1g).
+    /// Local `HH:MM` when the utterance was spoken (not scheduled meeting start).
     pub clock: String,
     pub text: String,
 }

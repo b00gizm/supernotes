@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::db::{Db, Meeting, Note, Repository};
+use crate::db::{local_ms_of_day, Db, Meeting, Note, Repository};
 
 use super::engine::{
     model_spec, AudioChunk, ModelProgress, ModelStore, TranscriptSegment, TranscriptionEngine,
@@ -224,6 +224,8 @@ pub struct Recorder {
     permission: Arc<dyn MicPermission>,
     models: ModelStore,
     audio: Arc<dyn AudioCapture>,
+    /// Tests pin local ms-since-midnight; production reads SQLite `localtime`.
+    clock_origin_ms: Option<u64>,
     inner: Mutex<RecorderInner>,
 }
 
@@ -234,7 +236,6 @@ struct RecorderInner {
 
 struct LiveSession {
     meeting_note_id: String,
-    meeting_start: String,
     stop_tx: mpsc::Sender<()>,
     capture: Option<JoinHandle<Result<(), RecordingIpcError>>>,
     chunker: Option<JoinHandle<()>>,
@@ -254,11 +255,17 @@ impl Recorder {
             permission,
             models,
             audio,
+            clock_origin_ms: None,
             inner: Mutex::new(RecorderInner {
                 state: RecordingState::idle(),
                 live: None,
             }),
         }
+    }
+
+    pub fn with_clock_origin_ms(mut self, ms_of_day: u64) -> Self {
+        self.clock_origin_ms = Some(ms_of_day);
+        self
     }
 
     pub fn state(&self) -> RecordingState {
@@ -322,8 +329,7 @@ impl Recorder {
             PermissionStatus::Granted => {}
         }
 
-        let meeting = db
-            .with_conn(|conn| Repository::new(conn).get_meeting(meeting_note_id))
+        db.with_conn(|conn| Repository::new(conn).get_meeting(meeting_note_id))
             .map_err(|err| match err {
                 crate::db::DbError::NotFound => RecordingIpcError::new(
                     "meeting_not_found",
@@ -357,6 +363,12 @@ impl Recorder {
 
         let session_id = Uuid::new_v4().to_string();
         let started_at = iso_now_fallback();
+        let origin_ms = match self.clock_origin_ms {
+            Some(ms) => ms,
+            None => db
+                .with_conn(local_ms_of_day)
+                .map_err(|err| RecordingIpcError::new("invalid", err.to_string()))?,
+        };
 
         let (stop_tx, stop_rx) = mpsc::channel();
         let (frame_tx, frame_rx) = mpsc::sync_channel::<PcmFrame>(FRAME_CHANNEL_CAP);
@@ -380,7 +392,6 @@ impl Recorder {
         let infer_engine = Arc::clone(&self.engine);
         let infer_sink = Arc::clone(&sink);
         let infer_meeting = meeting_note_id.to_string();
-        let infer_start = meeting.start_time.clone();
         let infer = thread::Builder::new()
             .name("sn-infer".into())
             .spawn(move || {
@@ -389,7 +400,7 @@ impl Recorder {
                     infer_engine,
                     infer_sink,
                     infer_meeting,
-                    infer_start,
+                    origin_ms,
                 )
             })
             .map_err(|err| RecordingIpcError::new("engine", err.to_string()))?;
@@ -407,7 +418,6 @@ impl Recorder {
             inner.state = state.clone();
             inner.live = Some(LiveSession {
                 meeting_note_id: meeting_note_id.to_string(),
-                meeting_start: meeting.start_time,
                 stop_tx,
                 capture: Some(capture),
                 chunker: Some(chunker),
@@ -470,7 +480,6 @@ impl Recorder {
             .map_err(|err| RecordingIpcError::new("invalid", err.to_string()))?;
 
         self.finish_idle(sink.as_ref());
-        let _ = live.meeting_start;
         Ok(StopRecordingResult {
             meeting,
             transcript_note,
@@ -511,7 +520,7 @@ fn run_infer(
     engine: Arc<dyn TranscriptionEngine>,
     sink: Arc<dyn EventSink>,
     meeting_note_id: String,
-    meeting_start: String,
+    origin_ms: u64,
 ) -> Vec<TranscriptSegment> {
     let mut collected = Vec::new();
     while let Some(chunk) = mailbox.recv() {
@@ -525,7 +534,7 @@ fn run_infer(
                         meeting_note_id: meeting_note_id.clone(),
                         start_ms,
                         end_ms,
-                        clock: format_clock(&meeting_start, start_ms),
+                        clock: format_clock(origin_ms, start_ms),
                         text: item.text,
                     };
                     sink.emit_segment(&segment);
@@ -540,27 +549,17 @@ fn run_infer(
     collected
 }
 
-pub fn format_clock(start_hhmm: &str, offset_ms: u64) -> String {
-    let Some((hour, minute)) = parse_hhmm(start_hhmm) else {
-        return start_hhmm.to_string();
-    };
-    let total_mins = hour * 60 + minute + (offset_ms / 60_000) as u32;
-    let hour = (total_mins / 60) % 24;
-    let minute = total_mins % 60;
-    format!("{hour:02}:{minute:02}")
+/// Local `HH:MM` for an utterance: recording origin (ms since local midnight) + elapsed.
+/// ponytail: naive add — DST mid-session can be off by 1h; use a TZ-aware instant if that shows up.
+pub fn format_clock(origin_ms_of_day: u64, offset_ms: u64) -> String {
+    let total_mins = origin_ms_of_day.saturating_add(offset_ms) / 60_000;
+    let mins = total_mins % (24 * 60);
+    format!("{:02}:{:02}", mins / 60, mins % 60)
 }
 
-fn parse_hhmm(value: &str) -> Option<(u32, u32)> {
-    let bytes = value.as_bytes();
-    if bytes.len() != 5 || bytes[2] != b':' {
-        return None;
-    }
-    let hour = value[0..2].parse().ok()?;
-    let minute = value[3..5].parse().ok()?;
-    if hour > 23 || minute > 59 {
-        return None;
-    }
-    Some((hour, minute))
+pub fn hhmm_to_ms_of_day(hour: u64, minute: u64) -> u64 {
+    hour.saturating_mul(3_600_000)
+        .saturating_add(minute.saturating_mul(60_000))
 }
 
 pub fn format_transcript(segments: &[TranscriptSegment]) -> String {
@@ -700,9 +699,18 @@ mod tests {
     }
 
     #[test]
-    fn format_clock_adds_offset_and_wraps() {
-        assert_eq!(format_clock("14:00", 125_000), "14:02");
-        assert_eq!(format_clock("23:50", 20 * 60_000), "00:10");
+    fn format_clock_uses_utterance_origin_not_schedule() {
+        let fifteen_fifty_four = hhmm_to_ms_of_day(15, 54);
+        assert_eq!(format_clock(fifteen_fifty_four, 0), "15:54");
+        assert_eq!(format_clock(fifteen_fifty_four, 125_000), "15:56");
+        assert_eq!(
+            format_clock(hhmm_to_ms_of_day(23, 50), 20 * 60_000),
+            "00:10"
+        );
+        assert_ne!(
+            format_clock(fifteen_fifty_four, 0),
+            format_clock(hhmm_to_ms_of_day(16, 0), 0)
+        );
     }
 
     #[test]
@@ -720,7 +728,8 @@ mod tests {
             sr,
             (sr / 50) as usize,
         ));
-        let recorder = test_recorder(engine, audio);
+        // Meeting is 14:00–14:23; Record was hit at 15:54 (early/late vs schedule).
+        let recorder = test_recorder(engine, audio).with_clock_origin_ms(hhmm_to_ms_of_day(15, 54));
         let sink = Arc::new(CollectingSink::default());
         let state = recorder
             .start(&db, sink.clone(), &meeting_id, Some("tiny.en"))
@@ -734,9 +743,15 @@ mod tests {
 
         let stopped = recorder.stop(&db, sink.clone()).unwrap();
         let segs = sink.segments();
-        assert_eq!(segs[0].clock, "14:00");
+        assert_eq!(segs[0].clock, "15:54");
+        assert_ne!(segs[0].clock, "14:00");
         assert_eq!(segs[0].start_ms, 0);
         assert_eq!(segs[0].text, "Let's walk through the enterprise tier.");
+        assert!(
+            stopped.transcript_note.body_markdown.starts_with("15:54  "),
+            "{}",
+            stopped.transcript_note.body_markdown
+        );
         // Later windows may be dropped if the chunker outruns infer (drop-oldest mailbox).
         for pair in segs.windows(2) {
             assert!(pair[1].start_ms >= pair[0].start_ms);

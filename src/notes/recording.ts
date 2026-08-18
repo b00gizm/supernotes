@@ -99,6 +99,10 @@ function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function localHm(date = new Date()): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 const idleState = (): RecordingState => ({
   status: "idle",
   meeting_note_id: null,
@@ -201,7 +205,7 @@ export function createMemoryRecordingApi(
       const meetingNote = listed.find((note) => note.id === meetingNoteId);
       const scripted = options.segmentsFor?.(meetingNoteId) ?? [
         {
-          clock: meeting.start_time,
+          clock: localHm(),
           text: "(audio 0–8s)",
           start_ms: 0,
           end_ms: 8000,
