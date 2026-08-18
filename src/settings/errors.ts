@@ -6,7 +6,7 @@ export function llmErrorCopy(err: unknown): string {
     return "Could not reach the API. Check the base URL and that the server is running.";
   }
   if (code === "invalid_key") {
-    return "The API key was rejected. Check the key and try again.";
+    return message || "The API key was rejected. Check the key and try again.";
   }
   if (code === "rate_limited") {
     return "The API rate limit was hit. Wait a moment and try again.";

@@ -89,7 +89,6 @@ describe("LlmSettings (ENG-70 UI)", () => {
       "unreachable",
       "Could not reach the API. Check the base URL and that the server is running.",
     ],
-    ["invalid_key", "The API key was rejected. Check the key and try again."],
     [
       "rate_limited",
       "The API rate limit was hit. Wait a moment and try again.",
@@ -107,6 +106,44 @@ describe("LlmSettings (ENG-70 UI)", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
     expect(screen.getByRole("alert")).not.toHaveTextContent("engine raw copy");
+  });
+
+  it("shows the backend invalid_key message instead of a generic key rejection", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryLlmApi({
+      fail: {
+        code: "invalid_key",
+        message: "OpenCode: model not found (HTTP 200 body)",
+      },
+    });
+    render(<LlmSettingsScreen api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Test connection" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "OpenCode: model not found (HTTP 200 body)",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent(
+      "The API key was rejected",
+    );
+  });
+
+  it("falls back to the short invalid_key copy when the backend message is empty", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryLlmApi({
+      fail: { code: "invalid_key", message: "" },
+    });
+    render(<LlmSettingsScreen api={api} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Test connection" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The API key was rejected. Check the key and try again.",
+    );
   });
 
   it.each([
