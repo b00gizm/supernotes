@@ -183,7 +183,7 @@ export function createMemoryMeetingSummaryApi(
         ...base,
         action_items: base.action_items.map((item) => {
           taskSeq += 1;
-          return { ...item, task_id: `mem-task-${taskSeq}` };
+          return { ...item, task_id: `mem-task-${String(taskSeq)}` };
         }),
       };
       store.set(meetingNoteId, summary);
