@@ -368,8 +368,38 @@ pub(crate) fn serve_bearer_gate(
 }
 
 #[cfg(test)]
+fn read_http_request(stream: &mut impl std::io::Read) -> String {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 2048];
+    // ponytail: one-shot HTTP/1.1; loop until headers + Content-Length or EOF.
+    for _ in 0..32 {
+        let n = match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        buf.extend_from_slice(&chunk[..n]);
+        let Some(split) = buf.windows(4).position(|w| w == b"\r\n\r\n") else {
+            continue;
+        };
+        let header_end = split + 4;
+        let headers = String::from_utf8_lossy(&buf[..header_end]);
+        let want = headers.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())?
+        });
+        match want {
+            Some(want) if buf.len() >= header_end + want => break,
+            Some(_) => continue,
+            None => break,
+        }
+    }
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+#[cfg(test)]
 pub(crate) fn serve_capture_body(sse_body: &str) -> (String, std::sync::mpsc::Receiver<String>) {
-    use std::io::{Read, Write};
+    use std::io::Write;
     use std::net::TcpListener;
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -378,9 +408,7 @@ pub(crate) fn serve_capture_body(sse_body: &str) -> (String, std::sync::mpsc::Re
     let (body_tx, body_rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut buf = vec![0u8; 8192];
-        let n = stream.read(&mut buf).unwrap_or(0);
-        let req = String::from_utf8_lossy(&buf[..n]);
+        let req = read_http_request(&mut stream);
         let body = req.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
         let _ = body_tx.send(body);
         let response = format!(
