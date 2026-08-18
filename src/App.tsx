@@ -33,6 +33,7 @@ import { DueSection } from "./tasks/DueSection";
 import { TasksView } from "./tasks/TasksView";
 import { tasksApi } from "./tasks/api";
 import type { Task } from "./tasks/types";
+import { LlmSettings } from "./settings/LlmSettings";
 import { IconWaveform } from "./ui/IconWaveform";
 import {
   isSearchKpiMode,
@@ -48,7 +49,8 @@ import "./App.css";
 
 type NavId = "daily" | "notes" | "tasks" | "calendar";
 
-type Surface = { kind: NavId } | { kind: "note"; id: string };
+type Surface =
+  { kind: NavId } | { kind: "note"; id: string } | { kind: "settings" };
 
 type PinMenu = { noteId: string; pinned: boolean; x: number; y: number };
 
@@ -190,6 +192,28 @@ function IconCalendar() {
       />
       <path
         d="M5.25 9h1.1M7.45 9h1.1M9.65 9h1.1M5.25 11.15h1.1M7.45 11.15h1.1"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconSettings() {
+  return (
+    <svg className="search-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle
+        cx="8"
+        cy="8"
+        r="2.1"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+      <path
+        d="M8 1.7v1.4M8 12.9v1.4M1.7 8h1.4M12.9 8h1.4M3.3 3.3l1 1M11.7 11.7l1 1M3.3 12.7l1-1M11.7 4.3l1-1"
+        fill="none"
         stroke="currentColor"
         strokeWidth="1.25"
         strokeLinecap="round"
@@ -842,8 +866,8 @@ function App() {
   const activeNav: NavId | null =
     surface.kind === "note"
       ? "notes"
-      : surface.kind === "daily"
-        ? "daily"
+      : surface.kind === "settings"
+        ? null
         : surface.kind;
 
   const showEditor =
@@ -985,6 +1009,25 @@ function App() {
             <span className="search-hint-label">Search</span>
             <kbd className="search-chip">⌘K</kbd>
           </button>
+          <button
+            type="button"
+            className={
+              surface.kind === "settings"
+                ? "search-hint is-active"
+                : "search-hint"
+            }
+            aria-label="Settings"
+            aria-current={surface.kind === "settings" ? "page" : undefined}
+            title={sidebarCollapsed ? "Settings" : undefined}
+            onClick={() => {
+              setSurface({ kind: "settings" });
+              selectNote(null);
+              setFocusTaskId(null);
+            }}
+          >
+            <IconSettings />
+            <span className="search-hint-label">Settings</span>
+          </button>
         </div>
       </aside>
 
@@ -1109,6 +1152,8 @@ function App() {
             onCreateTask={createTaskFromView}
           />
         ) : null}
+
+        {surface.kind === "settings" ? <LlmSettings /> : null}
 
         {surface.kind === "calendar" ? (
           <CalendarView
