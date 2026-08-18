@@ -10,6 +10,9 @@ use serde_json::json;
 use super::LlmIpcError;
 
 pub const TEST_PROMPT: &str = "Reply with the single word pong.";
+/// Reasoning models (e.g. deepseek-v4-flash) spend a small `max_tokens` on
+/// `reasoning_content` and never emit `content` (`finish_reason: length`).
+pub const TEST_MAX_TOKENS: u32 = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -221,17 +224,11 @@ fn sse_token(line: &str) -> SseLine {
 }
 
 fn sse_delta_text(value: &serde_json::Value) -> Option<String> {
-    let delta = value.pointer("/choices/0/delta")?;
-    for key in ["content", "reasoning_content"] {
-        if let Some(text) = delta
-            .get(key)
-            .and_then(|v| v.as_str())
-            .filter(|text| !text.is_empty())
-        {
-            return Some(text.to_string());
-        }
-    }
-    None
+    let text = value
+        .pointer("/choices/0/delta/content")
+        .and_then(|v| v.as_str())
+        .filter(|text| !text.is_empty())?;
+    Some(text.to_string())
 }
 
 fn map_http_status(code: u16, response: ureq::Response, api_key: Option<&str>) -> LlmIpcError {
@@ -371,6 +368,30 @@ pub(crate) fn serve_bearer_gate(
 }
 
 #[cfg(test)]
+pub(crate) fn serve_capture_body(sse_body: &str) -> (String, std::sync::mpsc::Receiver<String>) {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let sse_body = sse_body.to_string();
+    let (body_tx, body_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = vec![0u8; 8192];
+        let n = stream.read(&mut buf).unwrap_or(0);
+        let req = String::from_utf8_lossy(&buf[..n]);
+        let body = req.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+        let _ = body_tx.send(body);
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{sse_body}"
+        );
+        let _ = stream.write_all(response.as_bytes());
+    });
+    (format!("http://{addr}/v1"), body_rx)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
@@ -421,23 +442,26 @@ data: {\"choices\":[{\"delta\":{\"content\":\"nope\"}}]}\n";
     }
 
     #[test]
-    fn consume_sse_emits_reasoning_content_when_content_is_empty() {
+    fn consume_sse_ignores_reasoning_only_deltas() {
         let body = "\
-data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"Hel\"}}]}\n\
-data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"lo\"}}]}\n\
+data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"We need to reply with single word \\\"\"}}]}\n\
+data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"pong\"}}]}\n\
 data: [DONE]\n";
         let mut seen = Vec::new();
         consume_sse(body.as_bytes(), &mut |token| seen.push(token.to_string())).unwrap();
-        assert_eq!(seen, ["Hel", "lo"]);
+        assert!(seen.is_empty());
     }
 
     #[test]
-    fn consume_sse_prefers_content_over_reasoning_content() {
-        let body =
-            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\",\"reasoning_content\":\"think\"}}]}\n";
+    fn consume_sse_emits_content_only_when_both_fields_present() {
+        let body = "\
+data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"think\"}}]}\n\
+data: {\"choices\":[{\"delta\":{\"content\":\"p\",\"reasoning_content\":\"more think\"}}]}\n\
+data: {\"choices\":[{\"delta\":{\"content\":\"ong\"}}]}\n\
+data: [DONE]\n";
         let mut seen = Vec::new();
         consume_sse(body.as_bytes(), &mut |token| seen.push(token.to_string())).unwrap();
-        assert_eq!(seen, ["hi"]);
+        assert_eq!(seen, ["p", "ong"]);
     }
 
     #[test]
@@ -516,7 +540,7 @@ data: [DONE]\n";
     }
 
     #[test]
-    fn openai_client_emits_reasoning_content_before_stream_ends() {
+    fn openai_client_emits_content_incrementally_after_reasoning() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let (started_tx, started_rx) = mpsc::channel::<()>();
@@ -530,14 +554,15 @@ HTTP/1.1 200 OK\r\n\
 Content-Type: text/event-stream\r\n\
 Connection: close\r\n\
 \r\n\
-data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"Hel\"}}]}\n\n";
+data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"We need to reply\"}}]}\n\n\
+data: {\"choices\":[{\"delta\":{\"content\":\"p\"}}]}\n\n";
             stream.write_all(head.as_bytes()).unwrap();
             stream.flush().unwrap();
             let _ = started_tx.send(());
             let _ = resume_rx.recv_timeout(Duration::from_secs(2));
             stream
                 .write_all(
-                    b"data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"lo\"}}]}\n\ndata: [DONE]\n\n",
+                    b"data: {\"choices\":[{\"delta\":{\"content\":\"ong\"}}]}\n\ndata: [DONE]\n\n",
                 )
                 .unwrap();
         });
@@ -554,10 +579,13 @@ data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"Hel\"}}
 
         started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
         let first = token_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-        assert_eq!(first, "Hel");
+        assert_eq!(first, "p");
         resume_tx.send(()).unwrap();
         handle.join().unwrap().unwrap();
-        assert_eq!(token_rx.recv_timeout(Duration::from_secs(2)).unwrap(), "lo");
+        assert_eq!(
+            token_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+            "ong"
+        );
     }
 
     #[test]

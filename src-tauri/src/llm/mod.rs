@@ -17,7 +17,8 @@ use uuid::Uuid;
 use crate::db::Db;
 
 pub use client::{
-    ChatMessage, ChatRequest, FakeClient, LlmClient, OpenAiCompatibleClient, TEST_PROMPT,
+    ChatMessage, ChatRequest, FakeClient, LlmClient, OpenAiCompatibleClient, TEST_MAX_TOKENS,
+    TEST_PROMPT,
 };
 pub use secrets::{KeyringSecretStore, MemorySecretStore, SecretStore};
 
@@ -265,7 +266,7 @@ impl Llm {
                 role: "user".into(),
                 content: TEST_PROMPT.into(),
             }],
-            Some(8),
+            Some(TEST_MAX_TOKENS),
             sink,
         )
     }
@@ -468,6 +469,39 @@ mod tests {
         assert_eq!(result.text, "pong");
         assert_eq!(result.engine_id, "fake");
         assert!(!result.stream_id.is_empty());
+    }
+
+    #[test]
+    fn test_connection_requests_content_budget_not_eight() {
+        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"reasoning_content\":\"We need to reply\"}}]}\n\n\
+             data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n\
+             data: [DONE]\n\n";
+        let (url, body_rx) = client::serve_capture_body(sse);
+        let db = Db::open_in_memory().unwrap();
+        let llm = Llm::new(
+            Arc::new(OpenAiCompatibleClient::with_timeout(
+                std::time::Duration::from_secs(2),
+            )),
+            Arc::new(MemorySecretStore::default()),
+        );
+        llm.save_settings(
+            &db,
+            &SaveLlmSettingsInput {
+                base_url: url,
+                model: "gpt-4o-mini".into(),
+            },
+        )
+        .unwrap();
+        let sink = CollectingSink::default();
+        let result = llm.test_connection(&db, &sink).unwrap();
+        let body = body_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(json["max_tokens"], TEST_MAX_TOKENS);
+        assert_ne!(json["max_tokens"], 8);
+        assert_eq!(sink.tokens(), ["pong"]);
+        assert_eq!(result.text, "pong");
     }
 
     #[test]
