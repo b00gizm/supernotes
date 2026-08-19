@@ -197,17 +197,28 @@ describe("App shell", () => {
     summaryApiRef.current = createMemoryMeetingSummaryApi();
   });
 
+  async function expandRecent(user: ReturnType<typeof userEvent.setup>) {
+    const toggle = screen.getByRole("button", { name: /^Recent$/i });
+    if (toggle.getAttribute("aria-expanded") !== "true") {
+      await user.click(toggle);
+    }
+  }
+
   it("opens today's daily note by default with shell chrome", async () => {
     render(<App />);
 
     expect(
       await screen.findByRole("button", { name: "Daily Note" }),
     ).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Daily Note" })).toHaveClass(
+      "is-active",
+    );
+    expect(screen.getByRole("search")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
     expect(screen.getByText("⌘K")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Recent/i })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /^Recent$/i })).toHaveAttribute(
       "aria-expanded",
-      "true",
+      "false",
     );
 
     const title = formatDailyDisplayTitle();
@@ -225,6 +236,10 @@ describe("App shell", () => {
     expect(
       within(sidebar).queryByRole("region", { name: "Pinned" }),
     ).not.toBeInTheDocument();
+    expect(within(sidebar).getByText("Supernotes")).toHaveClass(
+      "sidebar-wordmark",
+      "pane-title",
+    );
   });
 
   it("opens Settings from the sidebar footer", async () => {
@@ -245,10 +260,16 @@ describe("App shell", () => {
     expect(
       screen.getByRole("button", { name: "Test connection" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    const settings = screen.getByRole("button", { name: "Settings" });
+    expect(settings).toHaveAttribute("aria-current", "page");
+    expect(settings).toHaveClass("sidebar-settings", "is-active");
+    expect(settings.closest(".sidebar-footer")).not.toBeNull();
+    expect(
+      settings.closest(".sidebar-footer")?.querySelector(".sidebar-search"),
+    ).toBeNull();
+    expect(settings.querySelector("svg")).toBeTruthy();
+    // Previous glyph was a sun (radial ticks); footer must read as a cog.
+    expect(settings.innerHTML).not.toContain("M8 1.7v1.4");
   });
 
   it("opens Tasks overview grouped by overdue / day / unscheduled", async () => {
@@ -531,6 +552,7 @@ describe("App shell", () => {
       within(sidebar).queryByRole("region", { name: "Pinned" }),
     ).not.toBeInTheDocument();
 
+    await expandRecent(user);
     await user.click(
       within(sidebar).getByRole("button", { name: "Interview — Priya Sharma" }),
     );
@@ -571,6 +593,7 @@ describe("App shell", () => {
       screen.queryByRole("button", { name: "Back to Notes" }),
     ).not.toBeInTheDocument();
 
+    await expandRecent(user);
     await user.click(screen.getByRole("button", { name: "Pricing sync" }));
     const crumb = await screen.findByRole("button", { name: "Back to Notes" });
     expect(screen.getByLabelText("Meeting details")).toBeInTheDocument();
@@ -610,6 +633,7 @@ describe("App shell", () => {
     recordingApiRef.current = bindRecordingApi();
 
     render(<App />);
+    await expandRecent(user);
     await user.click(
       await screen.findByRole("button", { name: "Pricing sync" }),
     );
@@ -646,6 +670,7 @@ describe("App shell", () => {
     };
 
     render(<App />);
+    await expandRecent(user);
     await user.click(
       await screen.findByRole("button", { name: "Pricing sync" }),
     );
@@ -774,6 +799,7 @@ describe("App shell", () => {
     render(<App />);
     await screen.findByLabelText("Note title");
 
+    await expandRecent(user);
     const recent = screen.getByRole("button", { name: "Pricing sync" });
     expect(within(recent).getByText(/Decided to keep/)).toBeInTheDocument();
     expect(recent.querySelector(".waveform-icon")).toBeTruthy();
@@ -795,30 +821,232 @@ describe("App shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("collapses the Recent section and the whole sidebar", async () => {
+  it("keeps Recent collapsed on launch and expands to show rows (ENG-156)", async () => {
+    const user = userEvent.setup();
+    const threeMinAgo = new Date(Date.now() - 3 * 60_000).toISOString();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "p1",
+        title: "Canada 2026 🇨🇦",
+        body_markdown: "Offene Todos",
+        note_type: "regular",
+        pinned: true,
+        created_at: threeMinAgo,
+        updated_at: threeMinAgo,
+      },
+      {
+        id: "r1",
+        title: "Supernotes improvements",
+        body_markdown: "",
+        note_type: "regular",
+        pinned: false,
+        created_at: threeMinAgo,
+        updated_at: threeMinAgo,
+      },
+    ]);
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    const recentSection = within(sidebar).getByRole("region", {
+      name: "Recent",
+    });
+    const recentToggle = within(recentSection).getByRole("button", {
+      name: /^Recent$/i,
+    });
+    expect(recentToggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      within(recentSection).queryByRole("button", {
+        name: "Supernotes improvements",
+      }),
+    ).not.toBeInTheDocument();
+
+    const pinned = within(sidebar).getByRole("region", { name: "Pinned" });
+    const pinnedRow = within(pinned).getByRole("button", {
+      name: "Canada 2026 🇨🇦",
+    });
+    expect(pinnedRow).toHaveTextContent("3m · Offene Todos");
+    expect(pinnedRow.querySelector(".recent-title")).toHaveTextContent(
+      "Canada 2026 🇨🇦",
+    );
+
+    await user.click(recentToggle);
+    expect(recentToggle).toHaveAttribute("aria-expanded", "true");
+    const recentRow = within(recentSection).getByRole("button", {
+      name: "Supernotes improvements",
+    });
+    expect(recentRow).toHaveTextContent("3m · Empty note");
+
+    await user.click(recentToggle);
+    expect(recentToggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      within(recentSection).queryByRole("button", {
+        name: "Supernotes improvements",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole("button", { name: "Canada 2026 🇨🇦" }),
+    ).toBeInTheDocument();
+  });
+
+  it("strips task tokens from sidebar row snippets (ENG-138)", async () => {
+    const user = userEvent.setup();
+    const threeMinAgo = new Date(Date.now() - 3 * 60_000).toISOString();
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "n1",
+        title: "Sprint plan",
+        body_markdown: "[[task:abc]] Buy milk",
+        note_type: "regular",
+        pinned: false,
+        created_at: threeMinAgo,
+        updated_at: threeMinAgo,
+      },
+    ]);
+
+    render(<App />);
+    await screen.findByLabelText("Note title");
+    await expandRecent(user);
+    const row = screen.getByRole("button", { name: "Sprint plan" });
+    expect(row).toHaveTextContent("3m · Buy milk");
+    expect(row.textContent).not.toMatch(/\[\[task:/);
+  });
+
+  it("lays out search, selected nav, and Settings footer (ENG-156)", async () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByLabelText("Note title");
 
-    await user.click(screen.getByRole("button", { name: /Recent/i }));
-    expect(screen.getByRole("button", { name: /Recent/i })).toHaveAttribute(
-      "aria-expanded",
-      "false",
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    const search = within(sidebar).getByRole("search");
+    expect(within(search).getByRole("button", { name: "Search" })).toHaveClass(
+      "sidebar-search",
+    );
+    expect(within(search).getByText("Search")).toBeInTheDocument();
+    expect(within(search).getByText("⌘K")).toBeInTheDocument();
+
+    const nav = within(sidebar).getByRole("navigation", { name: "Primary" });
+    const daily = within(nav).getByRole("button", { name: "Daily Note" });
+    expect(daily).toHaveClass("is-active");
+    expect(daily).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("button", { name: "Notes" })).not.toHaveClass(
+      "is-active",
     );
 
-    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    await user.click(within(search).getByRole("button", { name: "Search" }));
+    expect(
+      await screen.findByLabelText("Search notes and tasks"),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    const settings = within(sidebar).getByRole("button", { name: "Settings" });
+    expect(settings.closest(".sidebar-footer")).not.toBeNull();
+    expect(
+      within(sidebar).getByRole("button", { name: "New note" }),
+    ).toHaveClass("sidebar-new");
+    expect(
+      within(sidebar).getByRole("button", { name: "Collapse sidebar" }),
+    ).toHaveClass("sidebar-collapse");
+  });
+
+  it("keeps New note and collapse on the expanded titlebar (ENG-156)", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(within(sidebar).getByText("Supernotes")).toHaveClass(
+      "sidebar-wordmark",
+      "pane-title",
+    );
+    expect(
+      within(sidebar).getByRole("button", { name: "New note" }),
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole("button", { name: "Collapse sidebar" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(sidebar).getByRole("button", { name: "Collapse sidebar" }),
+    );
     expect(screen.getByLabelText("Supernotes")).toHaveClass(
       "is-sidebar-collapsed",
     );
+    expect(within(sidebar).queryByText("Supernotes")).not.toBeInTheDocument();
+    expect(
+      within(sidebar).queryByRole("button", { name: "New note" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(sidebar).getByRole("button", { name: "Expand sidebar" }),
+    );
+    expect(screen.getByLabelText("Supernotes")).not.toHaveClass(
+      "is-sidebar-collapsed",
+    );
+    expect(within(sidebar).getByText("Supernotes")).toHaveClass(
+      "sidebar-wordmark",
+      "pane-title",
+    );
+    expect(
+      within(sidebar).getByRole("button", { name: "New note" }),
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole("button", { name: "Collapse sidebar" }),
+    ).toBeInTheDocument();
+  });
 
-    const nav = screen.getByRole("navigation", { name: "Primary" });
-    for (const label of ["Daily Note", "Notes", "Tasks", "Calendar"] as const) {
-      const item = within(nav).getByRole("button", { name: label });
-      expect(item).toHaveAttribute("aria-label", label);
-      expect(item).toHaveAttribute("title", label);
+  it("uses an icon rail with accessible names when collapsed", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: (query: string) =>
+        ({
+          matches: query === "(max-width: 720px)",
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+          onchange: null,
+        }) as MediaQueryList,
+    });
+
+    try {
+      render(<App />);
+      await screen.findByLabelText("Note title");
+
+      expect(screen.getByLabelText("Supernotes")).toHaveClass(
+        "is-sidebar-collapsed",
+      );
+
+      const nav = screen.getByRole("navigation", { name: "Primary" });
+      for (const label of [
+        "Daily Note",
+        "Notes",
+        "Tasks",
+        "Calendar",
+      ] as const) {
+        const item = within(nav).getByRole("button", { name: label });
+        expect(item).toHaveAttribute("aria-label", label);
+        expect(item).toHaveAttribute("title", label);
+      }
+      const search = screen.getByRole("button", { name: "Search" });
+      expect(search).toHaveAttribute("title", "Search");
+      expect(
+        screen.getByRole("button", { name: "Expand sidebar" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "New note" }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(
+          screen.getByRole("complementary", { name: "Sidebar" }),
+        ).queryByText("Supernotes"),
+      ).not.toBeInTheDocument();
+    } finally {
+      Reflect.deleteProperty(window, "matchMedia");
     }
-    const search = screen.getByRole("button", { name: "Search" });
-    expect(search).toHaveAttribute("title", "Search");
   });
 
   it("reserves mac overlay titlebar drag regions under traffic lights (ENG-115)", async () => {
@@ -838,13 +1066,21 @@ describe("App shell", () => {
 
       const shell = screen.getByLabelText("Supernotes");
       expect(shell).toHaveClass("has-mac-overlay-chrome");
+      expect(
+        within(
+          screen.getByRole("complementary", { name: "Sidebar" }),
+        ).queryByText("Supernotes"),
+      ).not.toBeInTheDocument();
 
       const dragRegions = shell.querySelectorAll("[data-tauri-drag-region]");
       expect(dragRegions.length).toBe(2);
       expect(shell.querySelector(".titlebar-drag-sidebar")).toBeInTheDocument();
       expect(shell.querySelector(".titlebar-drag-main")).toBeInTheDocument();
 
-      // Collapse control stays below the reserved chrome strip.
+      // + and collapse stay below the reserved chrome strip.
+      const newNote = screen.getByRole("button", {
+        name: "New note",
+      });
       const collapse = screen.getByRole("button", {
         name: "Collapse sidebar",
       });
@@ -853,6 +1089,10 @@ describe("App shell", () => {
       if (!(sidebarDrag instanceof HTMLElement)) {
         return;
       }
+      expect(
+        sidebarDrag.compareDocumentPosition(newNote) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
       expect(
         sidebarDrag.compareDocumentPosition(collapse) &
           Node.DOCUMENT_POSITION_FOLLOWING,
@@ -949,6 +1189,7 @@ describe("App shell", () => {
 
     render(<App />);
     await screen.findByLabelText("Note title");
+    await expandRecent(user);
     await user.click(screen.getByRole("button", { name: "Hello world" }));
     const body = await screen.findByLabelText("Note body");
     expect(body).toHaveTextContent("Known unique sentence");
@@ -1005,6 +1246,7 @@ describe("App shell", () => {
     render(<App />);
     await screen.findByLabelText("Note title");
 
+    await expandRecent(user);
     await user.click(screen.getByRole("button", { name: "Foo" }));
     const backlinks = await screen.findByRole("region", { name: "Backlinks" });
     expect(
@@ -1170,6 +1412,7 @@ describe("App shell", () => {
       formatDailyDisplayTitle(),
     );
 
+    await expandRecent(user);
     await user.click(screen.getByRole("button", { name: "Other note" }));
     expect(await screen.findByLabelText("Note title")).toHaveValue(
       "Other note",

@@ -202,20 +202,34 @@ function IconCalendar() {
 
 function IconSettings() {
   return (
-    <svg className="search-icon" viewBox="0 0 16 16" aria-hidden="true">
+    <svg className="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M6.35 1.7h3.3l.28 1.42c.48.14.93.38 1.32.68l1.38-.46 1.65 2.85-1.1.95c.08.34.12.7.12 1.06s-.04.72-.12 1.06l1.1.95-1.65 2.85-1.38-.46a4.2 4.2 0 0 1-1.32.68l-.28 1.42h-3.3l-.28-1.42a4.2 4.2 0 0 1-1.32-.68l-1.38.46-1.65-2.85 1.1-.95A3.9 3.9 0 0 1 2.6 8c0-.36.04-.72.12-1.06l-1.1-.95 1.65-2.85 1.38.46c.39-.3.84-.54 1.32-.68z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
       <circle
         cx="8"
         cy="8"
-        r="2.1"
+        r="2.05"
         fill="none"
         stroke="currentColor"
         strokeWidth="1.25"
       />
+    </svg>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg className="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
       <path
-        d="M8 1.7v1.4M8 12.9v1.4M1.7 8h1.4M12.9 8h1.4M3.3 3.3l1 1M11.7 11.7l1 1M3.3 12.7l1-1M11.7 4.3l1-1"
+        d="M8 3.25v9.5M3.25 8h9.5"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.25"
+        strokeWidth="1.5"
         strokeLinecap="round"
       />
     </svg>
@@ -311,14 +325,17 @@ function SidebarNoteRow({
           <span className="recent-title">{label}</span>
         </span>
         <span className="recent-meta">
-          <span className="recent-when">
-            {formatRelativeUpdated(note.updated_at)}
-          </span>
-          <span className="recent-snippet">{noteSnippet(body)}</span>
+          {formatSidebarMeta(note.updated_at, body)}
         </span>
       </button>
     </li>
   );
+}
+
+function formatSidebarMeta(updatedAt: string, body: string): string {
+  const when = formatRelativeUpdated(updatedAt);
+  const snippet = noteSnippet(body);
+  return when ? `${when} · ${snippet}` : snippet;
 }
 
 function SnippetWithChips({ body }: { body: string }) {
@@ -385,7 +402,7 @@ function App() {
   const [isNarrow, setIsNarrow] = useState(prefersNarrow);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(prefersNarrow);
   const macOverlayChrome = prefersMacOverlayChrome();
-  const [recentOpen, setRecentOpen] = useState(true);
+  const [recentOpen, setRecentOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
@@ -399,6 +416,7 @@ function App() {
   const dailyOpening = useRef(false);
   const creatingTaskRef = useRef(false);
   const creatingMeetingRef = useRef(false);
+  const creatingNoteRef = useRef(false);
   const notesRef = useRef(notes);
   const selectedIdRef = useRef(selectedId);
   /** Case-insensitive titles with an in-flight createNote (ENG-97). */
@@ -775,6 +793,25 @@ function App() {
     })();
   };
 
+  const createFromSidebar = () => {
+    if (creatingNoteRef.current) {
+      return;
+    }
+    creatingNoteRef.current = true;
+    setFocusTaskId(null);
+    // Leave daily first so ensureDaily cannot steal selection (ENG-97).
+    setSurface({ kind: "note", id: "" });
+    void createNote()
+      .then((created) => {
+        if (created) {
+          setSurface({ kind: "note", id: created.id });
+        }
+      })
+      .finally(() => {
+        creatingNoteRef.current = false;
+      });
+  };
+
   const createFromSearch = (title: string) => {
     // Leave daily before notes.length bumps so ensureDaily can't steal selection.
     setSurface({ kind: "note", id: "" });
@@ -903,6 +940,19 @@ function App() {
               aria-hidden="true"
             />
           ) : null}
+          {!macOverlayChrome && !sidebarCollapsed ? (
+            <span className="sidebar-wordmark pane-title">Supernotes</span>
+          ) : null}
+          <button
+            type="button"
+            className="sidebar-new"
+            aria-label="New note"
+            onClick={() => {
+              createFromSidebar();
+            }}
+          >
+            <IconPlus />
+          </button>
           <button
             type="button"
             className="sidebar-collapse"
@@ -915,6 +965,22 @@ function App() {
             }}
           >
             <span className="sidebar-collapse-bars" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div role="search" className="sidebar-search-slot">
+          <button
+            type="button"
+            className="sidebar-search"
+            aria-label="Search"
+            title={sidebarCollapsed ? "Search" : undefined}
+            onClick={() => {
+              setSearchOpen(true);
+            }}
+          >
+            <IconSearch />
+            <span className="sidebar-search-label">Search</span>
+            <kbd className="search-chip">⌘K</kbd>
           </button>
         </div>
 
@@ -958,7 +1024,7 @@ function App() {
           </div>
         ) : null}
 
-        <div className="sidebar-recent">
+        <div className="sidebar-recent" role="region" aria-label="Recent">
           <button
             type="button"
             className="recent-toggle"
@@ -998,23 +1064,10 @@ function App() {
         <div className="sidebar-footer">
           <button
             type="button"
-            className="search-hint"
-            aria-label="Search"
-            title={sidebarCollapsed ? "Search" : undefined}
-            onClick={() => {
-              setSearchOpen(true);
-            }}
-          >
-            <IconSearch />
-            <span className="search-hint-label">Search</span>
-            <kbd className="search-chip">⌘K</kbd>
-          </button>
-          <button
-            type="button"
             className={
               surface.kind === "settings"
-                ? "search-hint is-active"
-                : "search-hint"
+                ? "sidebar-settings is-active"
+                : "sidebar-settings"
             }
             aria-label="Settings"
             aria-current={surface.kind === "settings" ? "page" : undefined}
@@ -1026,7 +1079,7 @@ function App() {
             }}
           >
             <IconSettings />
-            <span className="search-hint-label">Settings</span>
+            <span className="sidebar-settings-label">Settings</span>
           </button>
         </div>
       </aside>
