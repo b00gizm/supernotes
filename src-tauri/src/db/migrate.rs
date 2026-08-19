@@ -41,6 +41,12 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/005_llm_settings.sql"),
         after: None,
     },
+    Migration {
+        version: 6,
+        name: "006_meeting_summary",
+        sql: include_str!("../../migrations/006_meeting_summary.sql"),
+        after: None,
+    },
 ];
 
 pub fn migrate(conn: &Connection) -> DbResult<i64> {
@@ -289,8 +295,8 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), 0);
 
         let version = migrate(&conn).unwrap();
-        assert_eq!(version, 5);
-        assert_eq!(current_version(&conn).unwrap(), 5);
+        assert_eq!(version, 6);
+        assert_eq!(current_version(&conn).unwrap(), 6);
 
         for table in [
             "notes",
@@ -317,15 +323,15 @@ mod tests {
     #[test]
     fn migrate_is_idempotent() {
         let conn = Connection::open_in_memory().unwrap();
-        assert_eq!(migrate(&conn).unwrap(), 5);
-        assert_eq!(migrate(&conn).unwrap(), 5);
+        assert_eq!(migrate(&conn).unwrap(), 6);
+        assert_eq!(migrate(&conn).unwrap(), 6);
 
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(count, 5);
+        assert_eq!(count, 6);
     }
 
     #[test]
@@ -340,7 +346,7 @@ mod tests {
                 "2026-08-10T12:00:00.000Z",
             );
 
-            assert_eq!(migrate(&conn).unwrap(), 5);
+            assert_eq!(migrate(&conn).unwrap(), 6);
 
             let title: String = conn
                 .query_row("SELECT title FROM notes WHERE id = 'd1'", [], |row| {
@@ -382,7 +388,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(migrate(&conn).unwrap(), 5);
+        assert_eq!(migrate(&conn).unwrap(), 6);
 
         let count: i64 = conn
             .query_row(
@@ -431,7 +437,7 @@ mod tests {
                 "2026-08-08T22:30:00.000Z",
             );
 
-            assert_eq!(migrate(&conn).unwrap(), 5);
+            assert_eq!(migrate(&conn).unwrap(), 6);
 
             let mut titles: Vec<(String, String)> = conn
                 .prepare("SELECT id, title FROM notes ORDER BY id")
@@ -486,7 +492,7 @@ mod tests {
                 .unwrap();
             assert_eq!(utc_title, "2026-08-08");
 
-            assert_eq!(migrate(&conn).unwrap(), 5);
+            assert_eq!(migrate(&conn).unwrap(), 6);
 
             let local_title: String = conn
                 .query_row("SELECT title FROM notes WHERE id = 'd1'", [], |row| {
@@ -513,7 +519,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(migrate(&conn).unwrap(), 5);
+        assert_eq!(migrate(&conn).unwrap(), 6);
 
         let event_id: Option<String> = conn
             .query_row(
@@ -535,5 +541,52 @@ mod tests {
             )
             .unwrap();
         assert!(index_exists);
+    }
+
+    #[test]
+    fn migrate_006_adds_summary_json_without_rewriting_transcript() {
+        let conn = conn_at_v1();
+        conn.execute(
+            "INSERT INTO notes (id, title, body_markdown, note_type, pinned, created_at, updated_at)
+             VALUES
+               ('n1', 'Pricing sync', 'keep this meeting body', 'meeting', 0, '2026-08-10T12:00:00.000Z', '2026-08-10T12:00:00.000Z'),
+               ('t1', 'Transcript', '14:02  keep this transcript', 'regular', 0, '2026-08-10T12:00:00.000Z', '2026-08-10T12:00:00.000Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO meetings (note_id, meeting_date, start_time, end_time, transcript_note_id)
+             VALUES ('n1', '2026-08-10', '14:00', '14:45', 't1')",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(migrate(&conn).unwrap(), 6);
+
+        let summary: Option<String> = conn
+            .query_row(
+                "SELECT summary_json FROM meetings WHERE note_id = 'n1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(summary.is_none());
+
+        let meeting_body: String = conn
+            .query_row(
+                "SELECT body_markdown FROM notes WHERE id = 'n1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let transcript_body: String = conn
+            .query_row(
+                "SELECT body_markdown FROM notes WHERE id = 't1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(meeting_body, "keep this meeting body");
+        assert_eq!(transcript_body, "14:02  keep this transcript");
     }
 }

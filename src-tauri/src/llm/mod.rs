@@ -763,7 +763,7 @@ mod tests {
     #[test]
     fn migration_creates_settings_table_without_key_column() {
         let db = Db::open_in_memory().unwrap();
-        assert_eq!(db.with_conn(current_version).unwrap(), 5);
+        assert_eq!(db.with_conn(current_version).unwrap(), 6);
         db.with_conn(|conn| {
             let cols: Vec<String> = conn
                 .prepare("PRAGMA table_info(llm_settings)")
