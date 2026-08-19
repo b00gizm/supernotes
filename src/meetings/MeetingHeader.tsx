@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { LlmError } from "../llm/api";
 import { meetingsApi, type MeetingsApi } from "../notes/meetings";
 import {
   recordingApi as defaultRecordingApi,
@@ -10,7 +11,7 @@ import {
   type RecordingState,
   type TranscriptSegment,
 } from "../notes/recording";
-import type { Meeting } from "../notes/types";
+import type { Meeting, Note } from "../notes/types";
 import { IconWaveform } from "../ui/IconWaveform";
 import {
   formatMeetingDate,
@@ -20,14 +21,54 @@ import {
 } from "./format";
 import { LiveTranscript } from "./LiveTranscript";
 import { deniedMicMessage } from "./recording";
+import {
+  subscribeSummaryDone,
+  subscribeSummaryErrors,
+  subscribeSummaryProgress,
+  summaryApi as defaultSummaryApi,
+  type MeetingSummary as MeetingSummaryData,
+  type MeetingSummaryApi,
+} from "./summaryApi";
+import {
+  renderSummaryMarkdown,
+  upsertSummaryMarkdown,
+} from "./summaryMarkdown";
 
 export type MeetingHeaderProps = {
   noteId: string;
+  note?: Note | undefined;
+  body?: string | undefined;
   api?: MeetingsApi;
   recording?: RecordingApi;
+  summary?: MeetingSummaryApi;
   onOpenNote?: (noteId: string) => void;
   onStopped?: () => void;
+  onWriteBody?: ((body: string) => void) | undefined;
 };
+
+function IconStar() {
+  return (
+    <svg className="summary-star-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M8 2.35l1.55 3.35 3.7.5-2.7 2.55.7 3.6L8 10.7l-3.25 1.65.7-3.6-2.7-2.55 3.7-.5z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.15"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function summaryErrorMessage(err: unknown): string {
+  if (err instanceof LlmError) {
+    const prefix = `${err.code}: `;
+    return err.message.startsWith(prefix)
+      ? err.message.slice(prefix.length)
+      : err.message;
+  }
+  return err instanceof Error ? err.message : "Could not generate summary";
+}
 
 type Draft = {
   meeting_date: string;
@@ -64,10 +105,14 @@ function errorMessage(err: unknown): string {
 
 export function MeetingHeader({
   noteId,
+  note,
+  body,
   api = meetingsApi,
   recording = defaultRecordingApi,
+  summary: summaryClient = defaultSummaryApi,
   onOpenNote,
   onStopped,
+  onWriteBody,
 }: MeetingHeaderProps) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -77,10 +122,23 @@ export function MeetingHeader({
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [summary, setSummary] = useState<MeetingSummaryData | null>(null);
+  const [generating, setGenerating] = useState(false);
   const noteIdRef = useRef(noteId);
   const startingRef = useRef(false);
   const stoppingRef = useRef(false);
+  const generatingRef = useRef(false);
+  const bodyRef = useRef(body ?? note?.body_markdown ?? "");
+  const onWriteBodyRef = useRef(onWriteBody);
   noteIdRef.current = noteId;
+  bodyRef.current = body ?? note?.body_markdown ?? "";
+  onWriteBodyRef.current = onWriteBody;
+
+  const writeSummary = (next: MeetingSummaryData) => {
+    onWriteBodyRef.current?.(
+      upsertSummaryMarkdown(bodyRef.current, renderSummaryMarkdown(next)),
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +152,8 @@ export function MeetingHeader({
     setStopping(false);
     stoppingRef.current = false;
     setSegments([]);
+    setGenerating(false);
+    generatingRef.current = false;
 
     const load = async () => {
       try {
@@ -117,6 +177,31 @@ export function MeetingHeader({
       cancelled = true;
     };
   }, [api, noteId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSummary(null);
+
+    const load = async () => {
+      try {
+        const loaded = await summaryClient.getSummary(noteId);
+        if (cancelled || noteIdRef.current !== noteId) {
+          return;
+        }
+        setSummary(loaded);
+      } catch (err) {
+        if (cancelled || noteIdRef.current !== noteId) {
+          return;
+        }
+        setError(summaryErrorMessage(err));
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [summaryClient, noteId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,6 +263,53 @@ export function MeetingHeader({
       }
     };
   }, [recording, noteId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+
+    const attach = async () => {
+      unsubs.push(
+        await subscribeSummaryProgress((event) => {
+          if (cancelled || event.meeting_note_id !== noteIdRef.current) {
+            return;
+          }
+          setGenerating(true);
+          generatingRef.current = true;
+        }),
+      );
+      unsubs.push(
+        await subscribeSummaryDone((event) => {
+          if (cancelled || event.meeting_note_id !== noteIdRef.current) {
+            return;
+          }
+          setSummary(event.summary);
+          writeSummary(event.summary);
+          setGenerating(false);
+          generatingRef.current = false;
+          setError(null);
+        }),
+      );
+      unsubs.push(
+        await subscribeSummaryErrors((event) => {
+          if (cancelled || event.meeting_note_id !== noteIdRef.current) {
+            return;
+          }
+          setGenerating(false);
+          generatingRef.current = false;
+          setError(event.message);
+        }),
+      );
+    };
+
+    void attach();
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) {
+        unsub();
+      }
+    };
+  }, [noteId]);
 
   const persist = async (next: Draft) => {
     if (
@@ -275,6 +407,7 @@ export function MeetingHeader({
       setLive(false);
       setSegments([]);
       onStopped?.();
+      void startGenerate();
     } catch (err) {
       if (noteIdRef.current !== noteId) {
         return;
@@ -285,6 +418,25 @@ export function MeetingHeader({
       if (noteIdRef.current === noteId) {
         setStopping(false);
       }
+    }
+  };
+
+  const startGenerate = async () => {
+    if (generatingRef.current) {
+      return;
+    }
+    generatingRef.current = true;
+    setGenerating(true);
+    setError(null);
+    try {
+      await summaryClient.generateSummary(noteId);
+    } catch (err) {
+      if (noteIdRef.current !== noteId) {
+        return;
+      }
+      generatingRef.current = false;
+      setGenerating(false);
+      setError(summaryErrorMessage(err));
     }
   };
 
@@ -396,6 +548,57 @@ export function MeetingHeader({
                 }}
               >
                 Transcript
+              </button>
+              {error && !generating && !summary ? (
+                <>
+                  <span className="meeting-dot" aria-hidden="true">
+                    ·
+                  </span>
+                  <button
+                    type="button"
+                    className="meeting-transcript-link"
+                    onClick={() => {
+                      void startGenerate();
+                    }}
+                  >
+                    Retry summary
+                  </button>
+                </>
+              ) : null}
+            </>
+          ) : null}
+          {generating ? (
+            <>
+              <span className="meeting-dot" aria-hidden="true">
+                ·
+              </span>
+              <span
+                className="meeting-summary-progress"
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <IconStar />
+                <span>Summarizing…</span>
+                <span className="meeting-summary-spinner" aria-hidden="true" />
+              </span>
+            </>
+          ) : null}
+          {summary && !generating ? (
+            <>
+              <span className="meeting-dot" aria-hidden="true">
+                ·
+              </span>
+              <button
+                type="button"
+                className="meeting-summary-mark"
+                aria-label="Regenerate summary"
+                disabled={live}
+                onClick={() => {
+                  void startGenerate();
+                }}
+              >
+                <IconStar />
+                <span>Regenerate</span>
               </button>
             </>
           ) : null}

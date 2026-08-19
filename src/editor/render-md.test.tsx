@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { NoteEditor } from "./NoteEditor";
+import { demoMeetingSummary } from "../meetings/summaryApi";
+import { renderSummaryMarkdown } from "../meetings/summaryMarkdown";
 
 describe("NoteEditor markdown render", () => {
   it("renders links and images from initial markdown", async () => {
@@ -36,5 +38,33 @@ describe("NoteEditor markdown render", () => {
     // Must not leave raw markdown visible
     expect(root.textContent).not.toContain("[Example](https://example.com)");
     expect(root.textContent).not.toContain("![chart]()");
+  });
+
+  it("applies an external markdown write while the editor is open", async () => {
+    const { rerender } = render(
+      <NoteEditor markdown="Agenda notes" onChange={() => {}} />,
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole("textbox", { name: "Note body" }),
+      ).toHaveTextContent("Agenda notes");
+    });
+
+    rerender(
+      <NoteEditor
+        markdown={renderSummaryMarkdown(demoMeetingSummary("m1"))}
+        onChange={() => {}}
+      />,
+    );
+    const root = screen.getByRole("textbox", { name: "Note body" });
+    await waitFor(() => {
+      expect(root).toHaveTextContent("Purpose");
+      expect(root).toHaveTextContent("@Sara Kim");
+      expect(root).toHaveTextContent("(Maybe) Steve");
+      expect(root.querySelector("[data-task-id='mem-task-1']")).toBeTruthy();
+    });
+    expect(
+      screen.getByDisplayValue("Send updated tier table"),
+    ).toBeInTheDocument();
   });
 });

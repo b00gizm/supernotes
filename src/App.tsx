@@ -1280,7 +1280,12 @@ function App() {
             {selectedId && selectedNote?.note_type === "meeting" ? (
               <MeetingHeader
                 noteId={selectedId}
+                note={selectedNote}
+                body={bodyDraft}
                 recording={recordingApi}
+                onWriteBody={(next) => {
+                  setBodyDraft(next, selectedId);
+                }}
                 onOpenNote={(id) => {
                   const existing = notes.find((note) => note.id === id);
                   if (existing) {

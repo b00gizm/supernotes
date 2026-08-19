@@ -6,6 +6,16 @@ import { createMemoryNotesApi } from "../notes/memoryApi";
 import { createMemoryRecordingApi } from "../notes/recording";
 import type { Meeting, Note } from "../notes/types";
 import { MeetingHeader } from "./MeetingHeader";
+import type { MeetingSummaryApi } from "./summaryApi";
+
+function quietSummary(): MeetingSummaryApi {
+  return {
+    getSummary: () => Promise.resolve(null),
+    generateSummary: (id) =>
+      Promise.resolve({ stream_id: "quiet", meeting_note_id: id }),
+    saveParticipants: () => Promise.reject(new Error("unused")),
+  };
+}
 
 const NOTE: Note = {
   id: "m1",
@@ -62,7 +72,14 @@ describe("MeetingHeader (ENG-68)", () => {
     const user = userEvent.setup();
     const { api, recording } = setup();
 
-    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
+    render(
+      <MeetingHeader
+        noteId="m1"
+        api={api}
+        recording={recording}
+        summary={quietSummary()}
+      />,
+    );
 
     expect(await screen.findByText("Mon, Aug 10")).toBeInTheDocument();
     expect(screen.getByText("Meeting")).toBeInTheDocument();
@@ -90,7 +107,14 @@ describe("MeetingHeader (ENG-68)", () => {
 
   it("surfaces a missing meeting instead of creating one", async () => {
     const { api, recording } = setup([]);
-    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
+    render(
+      <MeetingHeader
+        noteId="m1"
+        api={api}
+        recording={recording}
+        summary={quietSummary()}
+      />,
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent("not found");
     await expect(api.getMeeting("m1")).rejects.toThrow(/not found/i);
   });
@@ -98,7 +122,14 @@ describe("MeetingHeader (ENG-68)", () => {
   it("lets Escape cancel an edit without writing", async () => {
     const user = userEvent.setup();
     const { api, recording } = setup();
-    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
+    render(
+      <MeetingHeader
+        noteId="m1"
+        api={api}
+        recording={recording}
+        summary={quietSummary()}
+      />,
+    );
 
     expect(
       await screen.findByLabelText("Edit meeting time"),
@@ -119,7 +150,14 @@ describe("MeetingHeader (ENG-68)", () => {
     const { api, recording } = setup();
     api.updateMeeting = () => Promise.reject(new Error("disk full"));
 
-    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
+    render(
+      <MeetingHeader
+        noteId="m1"
+        api={api}
+        recording={recording}
+        summary={quietSummary()}
+      />,
+    );
     await user.click(
       await screen.findByRole("button", { name: "Edit meeting time" }),
     );
@@ -134,7 +172,14 @@ describe("MeetingHeader (ENG-68)", () => {
   it("starts recording chrome from Woz segments without speaker names", async () => {
     const user = userEvent.setup();
     const { api, recording } = setup();
-    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
+    render(
+      <MeetingHeader
+        noteId="m1"
+        api={api}
+        recording={recording}
+        summary={quietSummary()}
+      />,
+    );
 
     await user.click(await screen.findByRole("button", { name: "Record" }));
 
@@ -155,7 +200,14 @@ describe("MeetingHeader (ENG-68)", () => {
   it("stops recording, hides the live transcript, and links the note", async () => {
     const user = userEvent.setup();
     const { api, recording } = setup();
-    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
+    render(
+      <MeetingHeader
+        noteId="m1"
+        api={api}
+        recording={recording}
+        summary={quietSummary()}
+      />,
+    );
 
     await user.click(await screen.findByRole("button", { name: "Record" }));
     expect(await screen.findByLabelText("Live transcript")).toBeInTheDocument();
@@ -174,7 +226,14 @@ describe("MeetingHeader (ENG-68)", () => {
   it("surfaces permission_denied instead of starting", async () => {
     const user = userEvent.setup();
     const { api, recording } = setup([MEETING], { permission: "denied" });
-    render(<MeetingHeader noteId="m1" api={api} recording={recording} />);
+    render(
+      <MeetingHeader
+        noteId="m1"
+        api={api}
+        recording={recording}
+        summary={quietSummary()}
+      />,
+    );
 
     await user.click(await screen.findByRole("button", { name: "Record" }));
 
@@ -197,6 +256,7 @@ describe("MeetingHeader (ENG-68)", () => {
         noteId="m1"
         api={api}
         recording={recording}
+        summary={quietSummary()}
         onOpenNote={(id) => {
           opened.push(id);
         }}
