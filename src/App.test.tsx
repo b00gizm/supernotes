@@ -263,6 +263,9 @@ describe("App shell", () => {
     expect(
       settings.closest(".sidebar-footer")?.querySelector(".sidebar-search"),
     ).toBeNull();
+    expect(settings.querySelector("svg")).toBeTruthy();
+    // Previous glyph was a sun (radial ticks); footer must read as a cog.
+    expect(settings.innerHTML).not.toContain("M8 1.7v1.4");
   });
 
   it("opens Tasks overview grouped by overdue / day / unscheduled", async () => {

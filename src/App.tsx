@@ -202,21 +202,21 @@ function IconCalendar() {
 
 function IconSettings() {
   return (
-    <svg className="search-icon" viewBox="0 0 16 16" aria-hidden="true">
+    <svg className="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M6.35 1.7h3.3l.28 1.42c.48.14.93.38 1.32.68l1.38-.46 1.65 2.85-1.1.95c.08.34.12.7.12 1.06s-.04.72-.12 1.06l1.1.95-1.65 2.85-1.38-.46a4.2 4.2 0 0 1-1.32.68l-.28 1.42h-3.3l-.28-1.42a4.2 4.2 0 0 1-1.32-.68l-1.38.46-1.65-2.85 1.1-.95A3.9 3.9 0 0 1 2.6 8c0-.36.04-.72.12-1.06l-1.1-.95 1.65-2.85 1.38.46c.39-.3.84-.54 1.32-.68z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
       <circle
         cx="8"
         cy="8"
-        r="2.1"
+        r="2.05"
         fill="none"
         stroke="currentColor"
         strokeWidth="1.25"
-      />
-      <path
-        d="M8 1.7v1.4M8 12.9v1.4M1.7 8h1.4M12.9 8h1.4M3.3 3.3l1 1M11.7 11.7l1 1M3.3 12.7l1-1M11.7 4.3l1-1"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
       />
     </svg>
   );
