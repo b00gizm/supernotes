@@ -236,6 +236,9 @@ describe("App shell", () => {
     expect(
       within(sidebar).queryByRole("region", { name: "Pinned" }),
     ).not.toBeInTheDocument();
+    expect(within(sidebar).getByText("Supernotes")).toHaveClass(
+      "sidebar-wordmark",
+    );
   });
 
   it("opens Settings from the sidebar footer", async () => {
@@ -952,6 +955,9 @@ describe("App shell", () => {
     await screen.findByLabelText("Note title");
 
     const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(within(sidebar).getByText("Supernotes")).toHaveClass(
+      "sidebar-wordmark",
+    );
     expect(
       within(sidebar).getByRole("button", { name: "New note" }),
     ).toBeInTheDocument();
@@ -965,6 +971,7 @@ describe("App shell", () => {
     expect(screen.getByLabelText("Supernotes")).toHaveClass(
       "is-sidebar-collapsed",
     );
+    expect(within(sidebar).queryByText("Supernotes")).not.toBeInTheDocument();
     expect(
       within(sidebar).queryByRole("button", { name: "New note" }),
     ).not.toBeInTheDocument();
@@ -973,6 +980,9 @@ describe("App shell", () => {
     );
     expect(screen.getByLabelText("Supernotes")).not.toHaveClass(
       "is-sidebar-collapsed",
+    );
+    expect(within(sidebar).getByText("Supernotes")).toHaveClass(
+      "sidebar-wordmark",
     );
     expect(
       within(sidebar).getByRole("button", { name: "New note" }),
@@ -1026,6 +1036,11 @@ describe("App shell", () => {
       expect(
         screen.queryByRole("button", { name: "New note" }),
       ).not.toBeInTheDocument();
+      expect(
+        within(
+          screen.getByRole("complementary", { name: "Sidebar" }),
+        ).queryByText("Supernotes"),
+      ).not.toBeInTheDocument();
     } finally {
       Reflect.deleteProperty(window, "matchMedia");
     }
@@ -1048,6 +1063,11 @@ describe("App shell", () => {
 
       const shell = screen.getByLabelText("Supernotes");
       expect(shell).toHaveClass("has-mac-overlay-chrome");
+      expect(
+        within(
+          screen.getByRole("complementary", { name: "Sidebar" }),
+        ).queryByText("Supernotes"),
+      ).not.toBeInTheDocument();
 
       const dragRegions = shell.querySelectorAll("[data-tauri-drag-region]");
       expect(dragRegions.length).toBe(2);

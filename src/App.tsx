@@ -940,6 +940,9 @@ function App() {
               aria-hidden="true"
             />
           ) : null}
+          {!macOverlayChrome && !sidebarCollapsed ? (
+            <span className="sidebar-wordmark">Supernotes</span>
+          ) : null}
           <button
             type="button"
             className="sidebar-new"
