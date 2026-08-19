@@ -222,6 +222,20 @@ function IconSettings() {
   );
 }
 
+function IconPlus() {
+  return (
+    <svg className="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M8 3.25v9.5M3.25 8h9.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function IconSearch() {
   return (
     <svg className="search-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -311,14 +325,17 @@ function SidebarNoteRow({
           <span className="recent-title">{label}</span>
         </span>
         <span className="recent-meta">
-          <span className="recent-when">
-            {formatRelativeUpdated(note.updated_at)}
-          </span>
-          <span className="recent-snippet">{noteSnippet(body)}</span>
+          {formatSidebarMeta(note.updated_at, body)}
         </span>
       </button>
     </li>
   );
+}
+
+function formatSidebarMeta(updatedAt: string, body: string): string {
+  const when = formatRelativeUpdated(updatedAt);
+  const snippet = noteSnippet(body);
+  return when ? `${when} · ${snippet}` : snippet;
 }
 
 function SnippetWithChips({ body }: { body: string }) {
@@ -385,7 +402,7 @@ function App() {
   const [isNarrow, setIsNarrow] = useState(prefersNarrow);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(prefersNarrow);
   const macOverlayChrome = prefersMacOverlayChrome();
-  const [recentOpen, setRecentOpen] = useState(true);
+  const [recentOpen, setRecentOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
@@ -399,6 +416,7 @@ function App() {
   const dailyOpening = useRef(false);
   const creatingTaskRef = useRef(false);
   const creatingMeetingRef = useRef(false);
+  const creatingNoteRef = useRef(false);
   const notesRef = useRef(notes);
   const selectedIdRef = useRef(selectedId);
   /** Case-insensitive titles with an in-flight createNote (ENG-97). */
@@ -775,6 +793,25 @@ function App() {
     })();
   };
 
+  const createFromSidebar = () => {
+    if (creatingNoteRef.current) {
+      return;
+    }
+    creatingNoteRef.current = true;
+    setFocusTaskId(null);
+    // Leave daily first so ensureDaily cannot steal selection (ENG-97).
+    setSurface({ kind: "note", id: "" });
+    void createNote()
+      .then((created) => {
+        if (created) {
+          setSurface({ kind: "note", id: created.id });
+        }
+      })
+      .finally(() => {
+        creatingNoteRef.current = false;
+      });
+  };
+
   const createFromSearch = (title: string) => {
     // Leave daily before notes.length bumps so ensureDaily can't steal selection.
     setSurface({ kind: "note", id: "" });
@@ -903,18 +940,45 @@ function App() {
               aria-hidden="true"
             />
           ) : null}
+          {sidebarCollapsed ? (
+            <button
+              type="button"
+              className="sidebar-collapse"
+              aria-expanded={false}
+              aria-label="Expand sidebar"
+              onClick={() => {
+                setSidebarCollapsed(false);
+              }}
+            >
+              <span className="sidebar-collapse-bars" aria-hidden="true" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="sidebar-new"
+              aria-label="New note"
+              onClick={() => {
+                createFromSidebar();
+              }}
+            >
+              <IconPlus />
+            </button>
+          )}
+        </div>
+
+        <div role="search" className="sidebar-search-slot">
           <button
             type="button"
-            className="sidebar-collapse"
-            aria-expanded={!sidebarCollapsed}
-            aria-label={
-              sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
-            }
+            className="sidebar-search"
+            aria-label="Search"
+            title={sidebarCollapsed ? "Search" : undefined}
             onClick={() => {
-              setSidebarCollapsed((value) => !value);
+              setSearchOpen(true);
             }}
           >
-            <span className="sidebar-collapse-bars" aria-hidden="true" />
+            <IconSearch />
+            <span className="sidebar-search-label">Search</span>
+            <kbd className="search-chip">⌘K</kbd>
           </button>
         </div>
 
@@ -958,7 +1022,7 @@ function App() {
           </div>
         ) : null}
 
-        <div className="sidebar-recent">
+        <div className="sidebar-recent" role="region" aria-label="Recent">
           <button
             type="button"
             className="recent-toggle"
@@ -998,23 +1062,10 @@ function App() {
         <div className="sidebar-footer">
           <button
             type="button"
-            className="search-hint"
-            aria-label="Search"
-            title={sidebarCollapsed ? "Search" : undefined}
-            onClick={() => {
-              setSearchOpen(true);
-            }}
-          >
-            <IconSearch />
-            <span className="search-hint-label">Search</span>
-            <kbd className="search-chip">⌘K</kbd>
-          </button>
-          <button
-            type="button"
             className={
               surface.kind === "settings"
-                ? "search-hint is-active"
-                : "search-hint"
+                ? "sidebar-settings is-active"
+                : "sidebar-settings"
             }
             aria-label="Settings"
             aria-current={surface.kind === "settings" ? "page" : undefined}
@@ -1026,7 +1077,7 @@ function App() {
             }}
           >
             <IconSettings />
-            <span className="search-hint-label">Settings</span>
+            <span className="sidebar-settings-label">Settings</span>
           </button>
         </div>
       </aside>
