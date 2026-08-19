@@ -941,7 +941,7 @@ function App() {
             />
           ) : null}
           {!macOverlayChrome && !sidebarCollapsed ? (
-            <span className="sidebar-wordmark">Supernotes</span>
+            <span className="sidebar-wordmark pane-title">Supernotes</span>
           ) : null}
           <button
             type="button"

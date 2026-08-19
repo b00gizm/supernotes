@@ -238,6 +238,7 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
     expect(within(sidebar).getByText("Supernotes")).toHaveClass(
       "sidebar-wordmark",
+      "pane-title",
     );
   });
 
@@ -957,6 +958,7 @@ describe("App shell", () => {
     const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
     expect(within(sidebar).getByText("Supernotes")).toHaveClass(
       "sidebar-wordmark",
+      "pane-title",
     );
     expect(
       within(sidebar).getByRole("button", { name: "New note" }),
@@ -983,6 +985,7 @@ describe("App shell", () => {
     );
     expect(within(sidebar).getByText("Supernotes")).toHaveClass(
       "sidebar-wordmark",
+      "pane-title",
     );
     expect(
       within(sidebar).getByRole("button", { name: "New note" }),

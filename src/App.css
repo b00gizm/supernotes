@@ -186,10 +186,6 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-inline: 0.6rem;
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  letter-spacing: -0.02em;
   pointer-events: none;
 }
 
