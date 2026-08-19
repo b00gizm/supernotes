@@ -940,30 +940,29 @@ function App() {
               aria-hidden="true"
             />
           ) : null}
-          {sidebarCollapsed ? (
-            <button
-              type="button"
-              className="sidebar-collapse"
-              aria-expanded={false}
-              aria-label="Expand sidebar"
-              onClick={() => {
-                setSidebarCollapsed(false);
-              }}
-            >
-              <span className="sidebar-collapse-bars" aria-hidden="true" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="sidebar-new"
-              aria-label="New note"
-              onClick={() => {
-                createFromSidebar();
-              }}
-            >
-              <IconPlus />
-            </button>
-          )}
+          <button
+            type="button"
+            className="sidebar-new"
+            aria-label="New note"
+            onClick={() => {
+              createFromSidebar();
+            }}
+          >
+            <IconPlus />
+          </button>
+          <button
+            type="button"
+            className="sidebar-collapse"
+            aria-expanded={!sidebarCollapsed}
+            aria-label={
+              sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
+            onClick={() => {
+              setSidebarCollapsed((value) => !value);
+            }}
+          >
+            <span className="sidebar-collapse-bars" aria-hidden="true" />
+          </button>
         </div>
 
         <div role="search" className="sidebar-search-slot">

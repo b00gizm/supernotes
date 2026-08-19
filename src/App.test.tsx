@@ -938,6 +938,45 @@ describe("App shell", () => {
     expect(
       within(sidebar).getByRole("button", { name: "New note" }),
     ).toHaveClass("sidebar-new");
+    expect(
+      within(sidebar).getByRole("button", { name: "Collapse sidebar" }),
+    ).toHaveClass("sidebar-collapse");
+  });
+
+  it("keeps New note and collapse on the expanded titlebar (ENG-156)", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
+    expect(
+      within(sidebar).getByRole("button", { name: "New note" }),
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole("button", { name: "Collapse sidebar" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(sidebar).getByRole("button", { name: "Collapse sidebar" }),
+    );
+    expect(screen.getByLabelText("Supernotes")).toHaveClass(
+      "is-sidebar-collapsed",
+    );
+    expect(
+      within(sidebar).queryByRole("button", { name: "New note" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(sidebar).getByRole("button", { name: "Expand sidebar" }),
+    );
+    expect(screen.getByLabelText("Supernotes")).not.toHaveClass(
+      "is-sidebar-collapsed",
+    );
+    expect(
+      within(sidebar).getByRole("button", { name: "New note" }),
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole("button", { name: "Collapse sidebar" }),
+    ).toBeInTheDocument();
   });
 
   it("uses an icon rail with accessible names when collapsed", async () => {
@@ -981,6 +1020,9 @@ describe("App shell", () => {
       expect(
         screen.getByRole("button", { name: "Expand sidebar" }),
       ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "New note" }),
+      ).not.toBeInTheDocument();
     } finally {
       Reflect.deleteProperty(window, "matchMedia");
     }
@@ -1009,9 +1051,12 @@ describe("App shell", () => {
       expect(shell.querySelector(".titlebar-drag-sidebar")).toBeInTheDocument();
       expect(shell.querySelector(".titlebar-drag-main")).toBeInTheDocument();
 
-      // New-note control stays below the reserved chrome strip.
+      // + and collapse stay below the reserved chrome strip.
       const newNote = screen.getByRole("button", {
         name: "New note",
+      });
+      const collapse = screen.getByRole("button", {
+        name: "Collapse sidebar",
       });
       const sidebarDrag = shell.querySelector(".titlebar-drag-sidebar");
       expect(sidebarDrag).toBeInstanceOf(HTMLElement);
@@ -1020,6 +1065,10 @@ describe("App shell", () => {
       }
       expect(
         sidebarDrag.compareDocumentPosition(newNote) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        sidebarDrag.compareDocumentPosition(collapse) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     } finally {

@@ -174,10 +174,12 @@ button {
 .sidebar-top {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-1);
   padding: 0 var(--space-2) var(--space-2);
 }
 
-/* Expanded: one titlebar row — [traffic lights] …drag… [≡] */
+/* Expanded: one titlebar row — [traffic lights] …drag… [+] [≡] */
 .has-mac-overlay-chrome:not(.is-sidebar-collapsed) .sidebar-top {
   position: relative;
   align-items: flex-start;
@@ -523,6 +525,7 @@ button {
 .app-shell.is-sidebar-collapsed .sidebar-recent,
 .app-shell.is-sidebar-collapsed .sidebar-search-label,
 .app-shell.is-sidebar-collapsed .sidebar-settings-label,
+.app-shell.is-sidebar-collapsed .sidebar-new,
 .app-shell.is-sidebar-collapsed .search-chip {
   display: none;
 }
