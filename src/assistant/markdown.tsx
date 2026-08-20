@@ -35,6 +35,17 @@ function renderBlocks(text: string): ReactNode[] {
         </ul>
       );
     }
+    if (lines.every((line) => /^\d+\. /.test(line))) {
+      return (
+        <ol key={key} className="assistant-md-list">
+          {lines.map((line, lineIndex) => (
+            <li key={`${key}-${String(lineIndex)}`}>
+              {renderInline(line.replace(/^\d+\. /, ""))}
+            </li>
+          ))}
+        </ol>
+      );
+    }
     return (
       <p key={key} className="assistant-md-p">
         {renderInline(trimmed)}

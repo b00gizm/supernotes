@@ -13,6 +13,7 @@ import {
   ASSISTANT_PLACEHOLDER,
   AssistantSidebar,
 } from "./AssistantSidebar";
+import { AssistantMarkdown } from "./markdown";
 
 describe("AssistantSidebar (ENG-72)", () => {
   it("matches mockup 1i chrome", () => {
@@ -36,13 +37,40 @@ describe("AssistantSidebar (ENG-72)", () => {
         name: `Close ${ASSISTANT_PANEL_TITLE}`,
       }),
     ).toBeInTheDocument();
+    const actions = pane.querySelector(".assistant-header-actions");
+    expect(actions).toBeTruthy();
     expect(
-      within(pane).getByRole("button", { name: "Clear" }),
-    ).toBeInTheDocument();
+      [...(actions?.children ?? [])].map((node) => {
+        if (node.classList.contains("assistant-clear")) {
+          return "Clear";
+        }
+        if (node.classList.contains("search-chip")) {
+          return node.textContent;
+        }
+        if (node.classList.contains("assistant-close")) {
+          return "X";
+        }
+        return node.textContent;
+      }),
+    ).toEqual(["Clear", ASSISTANT_SHORTCUT_LABEL, "X"]);
     expect(within(pane).getByLabelText("Ask the Assistant")).toHaveAttribute(
       "placeholder",
       ASSISTANT_PLACEHOLDER,
     );
+  });
+
+  it("renders numbered lists in the same markdown subset", () => {
+    const { container } = render(
+      <AssistantMarkdown text={"1. first\n2. **second**\n3. third"} />,
+    );
+    const items = container.querySelectorAll("ol.assistant-md-list li");
+    expect([...items].map((item) => item.textContent)).toEqual([
+      "first",
+      "second",
+      "third",
+    ]);
+    expect(items[1]?.querySelector("strong")?.textContent).toBe("second");
+    expect(container.innerHTML).not.toMatch(/<script/i);
   });
 
   it("proof-reads against the open note and streams markdown", async () => {

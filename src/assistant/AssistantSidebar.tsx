@@ -348,6 +348,7 @@ export function AssistantSidebar({
           >
             Clear
           </button>
+          <kbd className="search-chip">{ASSISTANT_SHORTCUT_LABEL}</kbd>
           <button
             type="button"
             className="assistant-close"
@@ -356,7 +357,6 @@ export function AssistantSidebar({
           >
             <IconClose />
           </button>
-          <kbd className="search-chip">{ASSISTANT_SHORTCUT_LABEL}</kbd>
         </div>
       </header>
 
