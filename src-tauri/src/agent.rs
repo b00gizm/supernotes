@@ -17,8 +17,15 @@ pub const TOGGLE_EVENT: &str = "agent://toggle";
 pub const TOGGLE_ACCELERATOR: &str = "Alt+CmdOrCtrl+A";
 
 #[derive(Debug, Default)]
+struct SessionInner {
+    turns: Vec<ChatMessage>,
+    /// Bumped on clear so an in-flight send does not append after a wipe.
+    generation: u64,
+}
+
+#[derive(Debug, Default)]
 pub struct AgentSession {
-    history: Mutex<Vec<ChatMessage>>,
+    inner: Mutex<SessionInner>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -30,7 +37,9 @@ pub struct SendAgentChatInput {
 
 impl AgentSession {
     pub fn clear(&self) {
-        self.history.lock().expect("agent session poisoned").clear();
+        let mut inner = self.inner.lock().expect("agent session poisoned");
+        inner.turns.clear();
+        inner.generation = inner.generation.wrapping_add(1);
     }
 
     pub fn send(
@@ -47,24 +56,30 @@ impl AgentSession {
         }
 
         let context = note_context_message(db, note_id);
-        let mut history = self.history.lock().expect("agent session poisoned");
-        history.push(ChatMessage {
-            role: "user".into(),
-            content: message.to_string(),
-        });
-
-        let mut outgoing = Vec::with_capacity(history.len() + usize::from(context.is_some()));
-        if let Some(context) = context {
-            outgoing.push(context);
-        }
-        outgoing.extend(history.iter().cloned());
+        let (outgoing, generation) = {
+            let mut inner = self.inner.lock().expect("agent session poisoned");
+            inner.turns.push(ChatMessage {
+                role: "user".into(),
+                content: message.to_string(),
+            });
+            let mut outgoing =
+                Vec::with_capacity(inner.turns.len() + usize::from(context.is_some()));
+            if let Some(context) = context {
+                outgoing.push(context);
+            }
+            outgoing.extend(inner.turns.iter().cloned());
+            (outgoing, inner.generation)
+        };
 
         match llm.stream_chat(db, &outgoing, sink) {
             Ok(result) => {
-                history.push(ChatMessage {
-                    role: "assistant".into(),
-                    content: result.text.clone(),
-                });
+                let mut inner = self.inner.lock().expect("agent session poisoned");
+                if inner.generation == generation {
+                    inner.turns.push(ChatMessage {
+                        role: "assistant".into(),
+                        content: result.text.clone(),
+                    });
+                }
                 Ok(result)
             }
             Err(error) => Err(error),
@@ -73,7 +88,11 @@ impl AgentSession {
 
     #[cfg(test)]
     fn turns(&self) -> Vec<ChatMessage> {
-        self.history.lock().expect("agent session poisoned").clone()
+        self.inner
+            .lock()
+            .expect("agent session poisoned")
+            .turns
+            .clone()
     }
 }
 
@@ -120,7 +139,7 @@ pub fn send_agent_chat(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn clear_agent_conversation(session: State<'_, AgentSession>) {
     session.clear();
 }
@@ -132,7 +151,9 @@ mod tests {
     use crate::llm::{
         ChatRequest, CollectingSink, FakeClient, LlmClient, LlmIpcError, MemorySecretStore,
     };
+    use std::sync::mpsc;
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     struct RecordingClient {
         inner: FakeClient,
@@ -168,6 +189,30 @@ mod tests {
         ) -> Result<(), LlmIpcError> {
             *self.last.lock().expect("recording client poisoned") = Some(request.messages.clone());
             self.inner.stream_chat(request, on_token)
+        }
+    }
+
+    struct SlowClient {
+        started: Mutex<Option<mpsc::Sender<()>>>,
+        delay: Duration,
+    }
+
+    impl LlmClient for SlowClient {
+        fn id(&self) -> &'static str {
+            "fake"
+        }
+
+        fn stream_chat(
+            &self,
+            _request: &ChatRequest,
+            on_token: &mut dyn FnMut(&str),
+        ) -> Result<(), LlmIpcError> {
+            if let Some(tx) = self.started.lock().expect("slow client poisoned").take() {
+                let _ = tx.send(());
+            }
+            std::thread::sleep(self.delay);
+            on_token("ok");
+            Ok(())
         }
     }
 
@@ -328,5 +373,40 @@ mod tests {
         let text = format_note_context("Daily", "proof me");
         assert!(text.contains("# Daily"));
         assert!(text.contains("proof me"));
+    }
+
+    #[test]
+    fn clear_during_slow_stream_does_not_stall_or_poison() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let llm = Llm::new(
+            Arc::new(SlowClient {
+                started: Mutex::new(Some(started_tx)),
+                delay: Duration::from_millis(250),
+            }),
+            Arc::new(MemorySecretStore::default()),
+        );
+        let db = Db::open_in_memory().unwrap();
+        let session = AgentSession::default();
+        let sink = CollectingSink::default();
+
+        std::thread::scope(|scope| {
+            let send = scope.spawn(|| session.send(&db, &llm, &sink, "hello", None));
+            started_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("slow stream started");
+            let started = Instant::now();
+            session.clear();
+            assert!(
+                started.elapsed() < Duration::from_millis(80),
+                "clear stalled behind stream: {:?}",
+                started.elapsed()
+            );
+            assert!(session.turns().is_empty());
+            send.join().unwrap().unwrap();
+        });
+
+        assert!(session.turns().is_empty());
+        session.clear();
+        assert!(session.turns().is_empty());
     }
 }
