@@ -1,0 +1,373 @@
+import { useEffect, useId, useRef, useState } from "react";
+import {
+  llmApi as defaultLlmApi,
+  subscribeLlmDone,
+  subscribeLlmErrors,
+  subscribeLlmTokens,
+  type LlmApi,
+  type LlmChatMessage,
+} from "../llm/api";
+import { llmErrorCopy } from "../settings/errors";
+import { AssistantMarkdown } from "./markdown";
+import {
+  ACT_ON_NOTE_PROMPT,
+  buildChatMessages,
+  type OpenNoteContext,
+} from "./noteContext";
+
+export const ASSISTANT_PLACEHOLDER = "Ask, or ⌘↵ to act on this note";
+export const ASSISTANT_SHORTCUT_CHIP = "⌥⌘A";
+
+export type AssistantSidebarProps = {
+  open: boolean;
+  onClose: () => void;
+  note: OpenNoteContext | null;
+  api?: LlmApi;
+};
+
+type ChatTurn = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
+function IconAssistantStar() {
+  return (
+    <svg className="assistant-star" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M8 2.15 9.65 6.05h4.15l-3.35 2.5 1.3 4.1L8 10.3l-3.75 2.35 1.3-4.1-3.35-2.5h4.15z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconClose() {
+  return (
+    <svg
+      className="assistant-close-icon"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
+      <path
+        d="M4.4 4.4 11.6 11.6M11.6 4.4 4.4 11.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function AssistantSidebar({
+  open,
+  onClose,
+  note,
+  api = defaultLlmApi,
+}: AssistantSidebarProps) {
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  const sendingRef = useRef(false);
+  const acceptingRef = useRef(false);
+  const streamIdRef = useRef<string | null>(null);
+  const idRef = useRef(0);
+  const [draft, setDraft] = useState("");
+  const [messages, setMessages] = useState<ChatTurn[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const nextId = () => {
+    idRef.current += 1;
+    return `m${String(idRef.current)}`;
+  };
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    inputRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+    void (async () => {
+      unsubs.push(
+        await subscribeLlmTokens((event) => {
+          if (cancelled || !acceptingRef.current) {
+            return;
+          }
+          if (streamIdRef.current && event.stream_id !== streamIdRef.current) {
+            return;
+          }
+          streamIdRef.current = event.stream_id;
+          setMessages((current) => {
+            const last = current[current.length - 1];
+            if (last?.role !== "assistant") {
+              return current;
+            }
+            return [
+              ...current.slice(0, -1),
+              { ...last, content: last.content + event.text },
+            ];
+          });
+        }),
+      );
+      unsubs.push(
+        await subscribeLlmDone((event) => {
+          if (cancelled || !acceptingRef.current) {
+            return;
+          }
+          if (streamIdRef.current && event.stream_id !== streamIdRef.current) {
+            return;
+          }
+          streamIdRef.current = event.stream_id;
+          setMessages((current) => {
+            const last = current[current.length - 1];
+            if (last?.role !== "assistant") {
+              return current;
+            }
+            return [...current.slice(0, -1), { ...last, content: event.text }];
+          });
+        }),
+      );
+      unsubs.push(
+        await subscribeLlmErrors((event) => {
+          if (cancelled) {
+            return;
+          }
+          if (
+            event.stream_id &&
+            streamIdRef.current &&
+            event.stream_id !== streamIdRef.current
+          ) {
+            return;
+          }
+          setError(llmErrorCopy(event));
+          setStreaming(false);
+          acceptingRef.current = false;
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) {
+        unsub();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const thread = threadRef.current;
+    if (!thread) {
+      return;
+    }
+    thread.scrollTop = thread.scrollHeight;
+  }, [messages, streaming]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector(".search-overlay")) {
+        return;
+      }
+      const target = event.target;
+      const inPanel =
+        target instanceof Element && target.closest(".assistant-sidebar");
+      if (event.key === "Escape" && inPanel) {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      // First keystrokes after ⌥⌘A must not land in the editor (ENG-130).
+      const printable =
+        event.key.length === 1 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey;
+      if (!printable || inPanel) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      inputRef.current?.focus();
+      setDraft((current) => current + event.key);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [open, onClose]);
+
+  const clearConversation = () => {
+    acceptingRef.current = false;
+    streamIdRef.current = null;
+    sendingRef.current = false;
+    setMessages([]);
+    setError(null);
+    setStreaming(false);
+    inputRef.current?.focus();
+  };
+
+  const send = async (text: string) => {
+    if (sendingRef.current) {
+      return;
+    }
+    const userText = text.trim();
+    if (!userText) {
+      return;
+    }
+    sendingRef.current = true;
+    const history: LlmChatMessage[] = messages.map((turn) => ({
+      role: turn.role,
+      content: turn.content,
+    }));
+    setDraft("");
+    setError(null);
+    setStreaming(true);
+    setMessages((current) => [
+      ...current,
+      { id: nextId(), role: "user", content: userText },
+      { id: nextId(), role: "assistant", content: "" },
+    ]);
+    acceptingRef.current = true;
+    streamIdRef.current = null;
+    try {
+      const result = await api.streamChat({
+        messages: buildChatMessages({
+          note,
+          history,
+          user: userText,
+        }),
+      });
+      streamIdRef.current = result.stream_id;
+      setMessages((current) => {
+        const last = current[current.length - 1];
+        if (last?.role !== "assistant" || last.content) {
+          return current;
+        }
+        return [...current.slice(0, -1), { ...last, content: result.text }];
+      });
+    } catch (err) {
+      setError(llmErrorCopy(err));
+      setMessages((current) => {
+        const last = current[current.length - 1];
+        if (last?.role === "assistant" && last.content === "") {
+          return current.slice(0, -1);
+        }
+        return current;
+      });
+    } finally {
+      sendingRef.current = false;
+      acceptingRef.current = false;
+      setStreaming(false);
+    }
+  };
+
+  const submit = (actOnNote: boolean) => {
+    const text = draft.trim();
+    if (text) {
+      void send(text).catch((err: unknown) => {
+        setError(llmErrorCopy(err));
+      });
+      return;
+    }
+    if (actOnNote && note) {
+      void send(ACT_ON_NOTE_PROMPT).catch((err: unknown) => {
+        setError(llmErrorCopy(err));
+      });
+    }
+  };
+
+  return (
+    <aside
+      className={open ? "assistant-sidebar" : "assistant-sidebar is-closed"}
+      hidden={!open}
+      inert={!open}
+      aria-hidden={!open}
+      aria-label="Assistant"
+    >
+      <header className="assistant-header">
+        <h1 className="pane-title assistant-title">
+          <IconAssistantStar />
+          Assistant
+        </h1>
+        <div className="assistant-header-actions">
+          <button
+            type="button"
+            className="text-button assistant-clear"
+            disabled={messages.length === 0 && !error}
+            onClick={clearConversation}
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            className="assistant-close"
+            aria-label="Close Assistant"
+            onClick={onClose}
+          >
+            <IconClose />
+          </button>
+          <kbd className="search-chip">{ASSISTANT_SHORTCUT_CHIP}</kbd>
+        </div>
+      </header>
+
+      <div
+        ref={threadRef}
+        className="assistant-thread"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+      >
+        {messages.map((turn) =>
+          turn.role === "user" ? (
+            <div key={turn.id} className="assistant-turn is-user">
+              <div className="assistant-user-bubble">{turn.content}</div>
+            </div>
+          ) : (
+            <div key={turn.id} className="assistant-turn is-assistant">
+              <AssistantMarkdown text={turn.content} />
+            </div>
+          ),
+        )}
+      </div>
+
+      {error ? (
+        <p className="assistant-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="assistant-composer">
+        <input
+          ref={inputRef}
+          id={inputId}
+          className="assistant-input"
+          aria-label="Ask the Assistant"
+          placeholder={ASSISTANT_PLACEHOLDER}
+          value={draft}
+          disabled={streaming}
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey) {
+              return;
+            }
+            event.preventDefault();
+            submit(event.metaKey || event.ctrlKey);
+          }}
+        />
+      </div>
+    </aside>
+  );
+}

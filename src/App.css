@@ -134,6 +134,7 @@ button {
 }
 
 .app-shell {
+  position: relative;
   display: grid;
   grid-template-columns: 16.5rem 1fr;
   min-height: 100%;
@@ -1219,6 +1220,9 @@ button {
 .daily-today {
   font-size: var(--text-sm);
   margin-left: var(--space-1);
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-suggest-active);
 }
 
 /* Title + day chevrons on one row (mockup). */
@@ -3551,4 +3555,161 @@ button {
   .has-mac-overlay-chrome.is-sidebar-collapsed .calendar-pane {
     padding-top: var(--mac-collapsed-gap);
   }
+}
+
+/* Assistant overlay (ENG-72 / mockup 1i). Absolute so the editor grid does not reflow. */
+.assistant-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  width: min(22.5rem, 100%);
+  background: var(--bg-main);
+  border-left: 1px solid
+    color-mix(in srgb, var(--border-subtle) 70%, transparent);
+}
+
+.assistant-sidebar.is-closed {
+  display: none;
+}
+
+.assistant-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+
+.assistant-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.assistant-star {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.assistant-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.assistant-clear {
+  color: var(--text-secondary);
+}
+
+.assistant-clear:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.assistant-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.assistant-close:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-sidebar-hover) 70%, transparent);
+}
+
+.assistant-close-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.assistant-thread {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-2) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.assistant-turn.is-user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.assistant-user-bubble {
+  max-width: 90%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg-chip);
+  color: var(--text);
+}
+
+.assistant-turn.is-assistant {
+  align-self: stretch;
+  color: var(--text);
+}
+
+.assistant-md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.assistant-md-heading,
+.assistant-md-p,
+.assistant-md-list {
+  margin: 0;
+}
+
+.assistant-md-list {
+  padding-left: 1.15rem;
+}
+
+.assistant-md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-code);
+  border-radius: var(--radius-sm);
+  padding: 0.05rem 0.25rem;
+}
+
+.assistant-error {
+  margin: 0 var(--space-4) var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.assistant-composer {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.assistant-input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+  outline: none;
+}
+
+.assistant-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+}
+
+.assistant-input:disabled {
+  color: var(--text-secondary);
 }

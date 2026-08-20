@@ -34,6 +34,8 @@ import { TasksView } from "./tasks/TasksView";
 import { tasksApi } from "./tasks/api";
 import type { Task } from "./tasks/types";
 import { LlmSettings } from "./settings/LlmSettings";
+import { llmApi as defaultLlmApi, type LlmApi } from "./llm/api";
+import { AssistantSidebar } from "./assistant/AssistantSidebar";
 import { IconWaveform } from "./ui/IconWaveform";
 import {
   isSearchKpiMode,
@@ -51,6 +53,10 @@ type NavId = "daily" | "notes" | "tasks" | "calendar";
 
 type Surface =
   { kind: NavId } | { kind: "note"; id: string } | { kind: "settings" };
+
+export type AppProps = {
+  llm?: LlmApi;
+};
 
 type PinMenu = { noteId: string; pinned: boolean; x: number; y: number };
 
@@ -377,7 +383,7 @@ const NAV_ITEMS: {
   { id: "calendar", label: "Calendar", icon: () => <IconCalendar /> },
 ];
 
-function App() {
+function App({ llm = defaultLlmApi }: AppProps) {
   const {
     notes,
     selectedId,
@@ -404,6 +410,7 @@ function App() {
   const macOverlayChrome = prefersMacOverlayChrome();
   const [recentOpen, setRecentOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
@@ -506,6 +513,17 @@ function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+
+      if (
+        event.altKey &&
+        !event.shiftKey &&
+        (event.code === "KeyA" || event.key.toLowerCase() === "a")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        setAssistantOpen((value) => !value);
         return;
       }
 
@@ -1315,7 +1333,7 @@ function App() {
                         setDailyDate(todayTitle);
                       }}
                     >
-                      Today
+                      Today →
                     </button>
                   ) : null}
                 </div>
@@ -1427,6 +1445,25 @@ function App() {
           </aside>
         ) : null}
       </main>
+
+      <AssistantSidebar
+        open={assistantOpen}
+        onClose={() => {
+          setAssistantOpen(false);
+        }}
+        note={
+          showEditor
+            ? {
+                title:
+                  surface.kind === "daily"
+                    ? dailyDisplayTitle(titleDraft)
+                    : titleDraft,
+                body: bodyDraft,
+              }
+            : null
+        }
+        api={llm}
+      />
 
       <SearchPalette
         open={searchOpen}
