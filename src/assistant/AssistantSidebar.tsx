@@ -71,6 +71,7 @@ export function AssistantSidebar({
   const sendingRef = useRef(false);
   const acceptingRef = useRef(false);
   const streamIdRef = useRef<string | null>(null);
+  const generationRef = useRef(0);
   const idRef = useRef(0);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatTurn[]>([]);
@@ -156,6 +157,9 @@ export function AssistantSidebar({
           ) {
             return;
           }
+          if (!acceptingRef.current) {
+            return;
+          }
           setError(llmErrorCopy(event));
           setStreaming(false);
           acceptingRef.current = false;
@@ -224,19 +228,16 @@ export function AssistantSidebar({
   }, [open, onClose]);
 
   const clearConversation = () => {
-    // #79 send-back: clear is sync on the same mutex as send. Do not
-    // invoke it while a stream is in flight (UI freeze).
-    if (sendingRef.current) {
-      return;
-    }
+    generationRef.current += 1;
+    acceptingRef.current = false;
+    sendingRef.current = false;
+    streamIdRef.current = null;
+    setStreaming(false);
     void api
       .clearConversation()
       .then(() => {
-        acceptingRef.current = false;
-        streamIdRef.current = null;
         setMessages([]);
         setError(null);
-        setStreaming(false);
         inputRef.current?.focus();
       })
       .catch((err: unknown) => {
@@ -253,6 +254,7 @@ export function AssistantSidebar({
       return;
     }
     sendingRef.current = true;
+    const generation = generationRef.current;
     setDraft("");
     setError(null);
     setStreaming(true);
@@ -269,6 +271,9 @@ export function AssistantSidebar({
         message: userText,
         note_id: noteId,
       });
+      if (generationRef.current !== generation) {
+        return;
+      }
       streamIdRef.current = result.stream_id;
       setMessages((current) => {
         const last = current[current.length - 1];
@@ -286,6 +291,9 @@ export function AssistantSidebar({
         ];
       });
     } catch (err) {
+      if (generationRef.current !== generation) {
+        return;
+      }
       setError(llmErrorCopy(err));
       setMessages((current) => {
         const last = current[current.length - 1];
@@ -295,9 +303,11 @@ export function AssistantSidebar({
         return current;
       });
     } finally {
-      sendingRef.current = false;
-      acceptingRef.current = false;
-      setStreaming(false);
+      if (generationRef.current === generation) {
+        sendingRef.current = false;
+        acceptingRef.current = false;
+        setStreaming(false);
+      }
     }
   };
 
@@ -333,7 +343,7 @@ export function AssistantSidebar({
           <button
             type="button"
             className="text-button assistant-clear"
-            disabled={streaming || (messages.length === 0 && !error)}
+            disabled={messages.length === 0 && !error}
             onClick={clearConversation}
           >
             Clear

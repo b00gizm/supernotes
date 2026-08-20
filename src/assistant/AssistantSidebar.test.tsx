@@ -191,7 +191,7 @@ describe("AssistantSidebar (ENG-72)", () => {
     expect(document.querySelector(".assistant-turn.is-assistant")).toBeNull();
   });
 
-  it("disables Clear while a stream is in flight and does not invoke it", async () => {
+  it("clears mid-stream and ignores leftover tokens", async () => {
     const user = userEvent.setup();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -218,21 +218,23 @@ describe("AssistantSidebar (ENG-72)", () => {
     await user.type(screen.getByLabelText("Ask the Assistant"), "Hello");
     await user.keyboard("{Enter}");
     const clear = screen.getByRole("button", { name: "Clear" });
-    expect(clear).toBeDisabled();
-    await user.click(clear);
-    expect(clearCalls).toBe(0);
+    expect(clear).toBeEnabled();
     expect(sent).toEqual([{ message: "Hello", note_id: "note-9" }]);
     expect(sent[0]).not.toHaveProperty("noteId");
 
-    release();
-    await waitFor(() => {
-      expect(screen.getByText("pong")).toBeInTheDocument();
-    });
-    expect(clear).toBeEnabled();
     await user.click(clear);
     await waitFor(() => {
       expect(clearCalls).toBe(1);
     });
+    expect(screen.queryByText("Hello")).not.toBeInTheDocument();
+
+    release();
+    await waitFor(() => {
+      expect(inner.history().some((turn) => turn.content === "pong")).toBe(
+        true,
+      );
+    });
+    expect(screen.queryByText("pong")).not.toBeInTheDocument();
     expect(screen.queryByText("Hello")).not.toBeInTheDocument();
   });
 
