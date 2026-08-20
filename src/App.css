@@ -3567,7 +3567,7 @@ button {
   display: flex;
   flex-direction: column;
   width: min(22.5rem, 100%);
-  background: var(--bg-main);
+  background: var(--bg-sidebar);
   border-left: 1px solid
     color-mix(in srgb, var(--border-subtle) 70%, transparent);
 }
@@ -3581,6 +3581,8 @@ button {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--border-subtle) 70%, transparent);
 }
 
 .assistant-title {
@@ -3589,6 +3591,10 @@ button {
   gap: var(--space-2);
   min-width: 0;
   flex: 1;
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
 }
 
 .assistant-star {
@@ -3620,7 +3626,7 @@ button {
   justify-content: center;
   width: 1.75rem;
   height: 1.75rem;
-  border: 1px solid var(--border-subtle);
+  border: 0;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
 }
@@ -3703,6 +3709,7 @@ button {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-main);
+  font-size: var(--text-md);
   outline: none;
 }
 

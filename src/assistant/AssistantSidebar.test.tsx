@@ -25,7 +25,8 @@ describe("AssistantSidebar (ENG-72)", () => {
     const title = within(pane).getByRole("heading", {
       name: ASSISTANT_PANEL_TITLE,
     });
-    expect(title).toHaveClass("pane-title", "assistant-title");
+    expect(title).toHaveClass("assistant-title");
+    expect(title).not.toHaveClass("pane-title");
     expect(title.querySelector(".assistant-star")).toBeTruthy();
     expect(within(pane).getByText(ASSISTANT_SHORTCUT_LABEL)).toHaveClass(
       "search-chip",

@@ -322,7 +322,7 @@ export function AssistantSidebar({
       aria-label={ASSISTANT_PANEL_TITLE}
     >
       <header className="assistant-header">
-        <h1 className="pane-title assistant-title">
+        <h1 className="assistant-title">
           <IconAssistantStar />
           {ASSISTANT_PANEL_TITLE}
         </h1>
