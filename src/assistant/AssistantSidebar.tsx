@@ -190,6 +190,30 @@ export function AssistantSidebar({
     thread.scrollTop = thread.scrollHeight;
   }, [messages, streaming]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      const target = event.target;
+      const inPanel =
+        target instanceof Element && target.closest(".assistant-sidebar");
+      if (!inPanel) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [open, onClose]);
+
   const clearConversation = () => {
     generationRef.current += 1;
     acceptingRef.current = false;

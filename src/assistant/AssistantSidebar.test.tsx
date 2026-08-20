@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ASSISTANT_PANEL_TITLE,
   ASSISTANT_SHORTCUT_LABEL,
@@ -278,6 +278,15 @@ describe("AssistantSidebar (ENG-72)", () => {
     await user.type(outside, "abc");
     expect(outside).toHaveValue("abc");
     expect(screen.getByLabelText("Ask the Assistant")).toHaveValue("");
+  });
+
+  it("closes on Escape when focus is in the panel", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<AssistantSidebar open onClose={onClose} noteId={null} />);
+    screen.getByLabelText("Ask the Assistant").focus();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("stays mounted but hidden when closed", () => {
