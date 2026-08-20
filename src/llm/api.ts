@@ -166,6 +166,19 @@ export function createMemoryLlmApi(options: MemoryLlmOptions = {}): LlmApi {
     return { stream_id: streamId, text, engine_id: settings.engine_id };
   };
 
+  // Yield so React can commit the empty assistant row before tokens land
+  // (Tauri invoke is async; a sync emit races setState).
+  const runStreamLater = (streamId: string): Promise<LlmChatResult> =>
+    new Promise((resolve, reject) => {
+      queueMicrotask(() => {
+        try {
+          resolve(runStream(streamId));
+        } catch (err) {
+          reject(toLlmError(err));
+        }
+      });
+    });
+
   return {
     getSettings() {
       return Promise.resolve(snapshot());
@@ -207,11 +220,7 @@ export function createMemoryLlmApi(options: MemoryLlmOptions = {}): LlmApi {
       return Promise.resolve(snapshot());
     },
     testConnection() {
-      try {
-        return Promise.resolve(runStream(`mem-${String(Date.now())}`));
-      } catch (err) {
-        return Promise.reject(toLlmError(err));
-      }
+      return runStreamLater(`mem-${String(Date.now())}`);
     },
     streamChat(input) {
       if (input.messages.length === 0) {
@@ -219,11 +228,7 @@ export function createMemoryLlmApi(options: MemoryLlmOptions = {}): LlmApi {
           new LlmError("invalid", "messages cannot be empty"),
         );
       }
-      try {
-        return Promise.resolve(runStream(`mem-${String(Date.now())}`));
-      } catch (err) {
-        return Promise.reject(toLlmError(err));
-      }
+      return runStreamLater(`mem-${String(Date.now())}`);
     },
   };
 }
@@ -257,10 +262,14 @@ async function subscribeEvent(
   handler: (payload: unknown) => void,
 ): Promise<() => void> {
   if (isTauriRuntime()) {
-    const { listen } = await import("@tauri-apps/api/event");
-    return listen(name, (event) => {
-      handler(event.payload);
-    });
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      return await listen(name, (event) => {
+        handler(event.payload);
+      });
+    } catch {
+      // jsdom tests stub `__TAURI_INTERNALS__` without listen.
+    }
   }
   if (typeof window === "undefined") {
     return () => {};
