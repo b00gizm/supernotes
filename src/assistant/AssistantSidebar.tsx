@@ -190,43 +190,6 @@ export function AssistantSidebar({
     thread.scrollTop = thread.scrollHeight;
   }, [messages, streaming]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (document.querySelector(".search-overlay")) {
-        return;
-      }
-      const target = event.target;
-      const inPanel =
-        target instanceof Element && target.closest(".assistant-sidebar");
-      if (event.key === "Escape" && inPanel) {
-        event.preventDefault();
-        event.stopPropagation();
-        onClose();
-        return;
-      }
-      // First keystrokes after ⌥⌘A must not land in the editor (ENG-130).
-      const printable =
-        event.key.length === 1 &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey;
-      if (!printable || inPanel) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      inputRef.current?.focus();
-      setDraft((current) => current + event.key);
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown, true);
-    };
-  }, [open, onClose]);
-
   const clearConversation = () => {
     generationRef.current += 1;
     acceptingRef.current = false;

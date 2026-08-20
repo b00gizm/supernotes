@@ -266,6 +266,20 @@ describe("AssistantSidebar (ENG-72)", () => {
     expect(screen.queryByText("Hello")).not.toBeInTheDocument();
   });
 
+  it("does not steal printable keys from the rest of the workspace", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <input aria-label="Outside" />
+        <AssistantSidebar open onClose={() => {}} noteId={null} />
+      </>,
+    );
+    const outside = screen.getByLabelText("Outside");
+    await user.type(outside, "abc");
+    expect(outside).toHaveValue("abc");
+    expect(screen.getByLabelText("Ask the Assistant")).toHaveValue("");
+  });
+
   it("stays mounted but hidden when closed", () => {
     const { rerender } = render(
       <AssistantSidebar open onClose={() => {}} noteId={null} />,
