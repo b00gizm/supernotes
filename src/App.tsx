@@ -34,7 +34,11 @@ import { TasksView } from "./tasks/TasksView";
 import { tasksApi } from "./tasks/api";
 import type { Task } from "./tasks/types";
 import { LlmSettings } from "./settings/LlmSettings";
-import { llmApi as defaultLlmApi, type LlmApi } from "./llm/api";
+import {
+  agentApi as defaultAgentApi,
+  subscribeAssistantToggle,
+  type AgentApi,
+} from "./agent/api";
 import { AssistantSidebar } from "./assistant/AssistantSidebar";
 import { IconWaveform } from "./ui/IconWaveform";
 import {
@@ -55,7 +59,7 @@ type Surface =
   { kind: NavId } | { kind: "note"; id: string } | { kind: "settings" };
 
 export type AppProps = {
-  llm?: LlmApi;
+  agent?: AgentApi;
 };
 
 type PinMenu = { noteId: string; pinned: boolean; x: number; y: number };
@@ -383,7 +387,7 @@ const NAV_ITEMS: {
   { id: "calendar", label: "Calendar", icon: () => <IconCalendar /> },
 ];
 
-function App({ llm = defaultLlmApi }: AppProps) {
+function App({ agent = defaultAgentApi }: AppProps) {
   const {
     notes,
     selectedId,
@@ -517,17 +521,6 @@ function App({ llm = defaultLlmApi }: AppProps) {
       }
 
       if (
-        event.altKey &&
-        !event.shiftKey &&
-        (event.code === "KeyA" || event.key.toLowerCase() === "a")
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        setAssistantOpen((value) => !value);
-        return;
-      }
-
-      if (
         event.shiftKey &&
         (event.key === "ArrowLeft" || event.key === "ArrowRight")
       ) {
@@ -593,6 +586,28 @@ function App({ llm = defaultLlmApi }: AppProps) {
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void subscribeAssistantToggle(() => {
+      setAssistantOpen((value) => !value);
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unlisten = fn;
+      })
+      .catch(() => {
+        // jsdom stubs `__TAURI_INTERNALS__` without listen.
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
     };
   }, []);
 
@@ -1451,18 +1466,8 @@ function App({ llm = defaultLlmApi }: AppProps) {
         onClose={() => {
           setAssistantOpen(false);
         }}
-        note={
-          showEditor
-            ? {
-                title:
-                  surface.kind === "daily"
-                    ? dailyDisplayTitle(titleDraft)
-                    : titleDraft,
-                body: bodyDraft,
-              }
-            : null
-        }
-        api={llm}
+        noteId={showEditor && selectedId ? selectedId : null}
+        api={agent}
       />
 
       <SearchPalette

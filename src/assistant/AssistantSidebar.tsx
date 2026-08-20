@@ -1,28 +1,24 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
-  llmApi as defaultLlmApi,
+  agentApi as defaultAgentApi,
+  ASSISTANT_PANEL_TITLE,
+  ASSISTANT_SHORTCUT_LABEL,
   subscribeLlmDone,
   subscribeLlmErrors,
   subscribeLlmTokens,
-  type LlmApi,
-  type LlmChatMessage,
-} from "../llm/api";
+  type AgentApi,
+} from "../agent/api";
 import { llmErrorCopy } from "../settings/errors";
 import { AssistantMarkdown } from "./markdown";
-import {
-  ACT_ON_NOTE_PROMPT,
-  buildChatMessages,
-  type OpenNoteContext,
-} from "./noteContext";
 
 export const ASSISTANT_PLACEHOLDER = "Ask, or ⌘↵ to act on this note";
-export const ASSISTANT_SHORTCUT_CHIP = "⌥⌘A";
+export const ACT_ON_NOTE_PROMPT = "Act on this note.";
 
 export type AssistantSidebarProps = {
   open: boolean;
   onClose: () => void;
-  note: OpenNoteContext | null;
-  api?: LlmApi;
+  noteId: string | null;
+  api?: AgentApi;
 };
 
 type ChatTurn = {
@@ -66,8 +62,8 @@ function IconClose() {
 export function AssistantSidebar({
   open,
   onClose,
-  note,
-  api = defaultLlmApi,
+  noteId,
+  api = defaultAgentApi,
 }: AssistantSidebarProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -108,12 +104,15 @@ export function AssistantSidebar({
           streamIdRef.current = event.stream_id;
           setMessages((current) => {
             const last = current[current.length - 1];
-            if (last?.role !== "assistant") {
-              return current;
+            if (last?.role === "assistant") {
+              return [
+                ...current.slice(0, -1),
+                { ...last, content: last.content + event.text },
+              ];
             }
             return [
-              ...current.slice(0, -1),
-              { ...last, content: last.content + event.text },
+              ...current,
+              { id: nextId(), role: "assistant", content: event.text },
             ];
           });
         }),
@@ -129,10 +128,19 @@ export function AssistantSidebar({
           streamIdRef.current = event.stream_id;
           setMessages((current) => {
             const last = current[current.length - 1];
-            if (last?.role !== "assistant") {
+            if (last?.role === "assistant") {
+              return [
+                ...current.slice(0, -1),
+                { ...last, content: event.text },
+              ];
+            }
+            if (!event.text) {
               return current;
             }
-            return [...current.slice(0, -1), { ...last, content: event.text }];
+            return [
+              ...current,
+              { id: nextId(), role: "assistant", content: event.text },
+            ];
           });
         }),
       );
@@ -151,6 +159,14 @@ export function AssistantSidebar({
           setError(llmErrorCopy(event));
           setStreaming(false);
           acceptingRef.current = false;
+          sendingRef.current = false;
+          setMessages((current) => {
+            const last = current[current.length - 1];
+            if (last?.role === "assistant" && last.content === "") {
+              return current.slice(0, -1);
+            }
+            return current;
+          });
         }),
       );
     })();
@@ -208,13 +224,24 @@ export function AssistantSidebar({
   }, [open, onClose]);
 
   const clearConversation = () => {
-    acceptingRef.current = false;
-    streamIdRef.current = null;
-    sendingRef.current = false;
-    setMessages([]);
-    setError(null);
-    setStreaming(false);
-    inputRef.current?.focus();
+    // #79 send-back: clear is sync on the same mutex as send. Do not
+    // invoke it while a stream is in flight (UI freeze).
+    if (sendingRef.current) {
+      return;
+    }
+    void api
+      .clearConversation()
+      .then(() => {
+        acceptingRef.current = false;
+        streamIdRef.current = null;
+        setMessages([]);
+        setError(null);
+        setStreaming(false);
+        inputRef.current?.focus();
+      })
+      .catch((err: unknown) => {
+        setError(llmErrorCopy(err));
+      });
   };
 
   const send = async (text: string) => {
@@ -226,35 +253,37 @@ export function AssistantSidebar({
       return;
     }
     sendingRef.current = true;
-    const history: LlmChatMessage[] = messages.map((turn) => ({
-      role: turn.role,
-      content: turn.content,
-    }));
     setDraft("");
     setError(null);
     setStreaming(true);
+    // User turn only. Assistant row appears on the first token so a
+    // failed stream never leaves a blank bubble.
     setMessages((current) => [
       ...current,
       { id: nextId(), role: "user", content: userText },
-      { id: nextId(), role: "assistant", content: "" },
     ]);
     acceptingRef.current = true;
     streamIdRef.current = null;
     try {
-      const result = await api.streamChat({
-        messages: buildChatMessages({
-          note,
-          history,
-          user: userText,
-        }),
+      const result = await api.sendChat({
+        message: userText,
+        note_id: noteId,
       });
       streamIdRef.current = result.stream_id;
       setMessages((current) => {
         const last = current[current.length - 1];
-        if (last?.role !== "assistant" || last.content) {
+        if (last?.role === "assistant") {
+          return last.content
+            ? current
+            : [...current.slice(0, -1), { ...last, content: result.text }];
+        }
+        if (!result.text) {
           return current;
         }
-        return [...current.slice(0, -1), { ...last, content: result.text }];
+        return [
+          ...current,
+          { id: nextId(), role: "assistant", content: result.text },
+        ];
       });
     } catch (err) {
       setError(llmErrorCopy(err));
@@ -280,7 +309,7 @@ export function AssistantSidebar({
       });
       return;
     }
-    if (actOnNote && note) {
+    if (actOnNote && noteId) {
       void send(ACT_ON_NOTE_PROMPT).catch((err: unknown) => {
         setError(llmErrorCopy(err));
       });
@@ -293,18 +322,18 @@ export function AssistantSidebar({
       hidden={!open}
       inert={!open}
       aria-hidden={!open}
-      aria-label="Assistant"
+      aria-label={ASSISTANT_PANEL_TITLE}
     >
       <header className="assistant-header">
         <h1 className="pane-title assistant-title">
           <IconAssistantStar />
-          Assistant
+          {ASSISTANT_PANEL_TITLE}
         </h1>
         <div className="assistant-header-actions">
           <button
             type="button"
             className="text-button assistant-clear"
-            disabled={messages.length === 0 && !error}
+            disabled={streaming || (messages.length === 0 && !error)}
             onClick={clearConversation}
           >
             Clear
@@ -312,12 +341,12 @@ export function AssistantSidebar({
           <button
             type="button"
             className="assistant-close"
-            aria-label="Close Assistant"
+            aria-label={`Close ${ASSISTANT_PANEL_TITLE}`}
             onClick={onClose}
           >
             <IconClose />
           </button>
-          <kbd className="search-chip">{ASSISTANT_SHORTCUT_CHIP}</kbd>
+          <kbd className="search-chip">{ASSISTANT_SHORTCUT_LABEL}</kbd>
         </div>
       </header>
 

@@ -2,42 +2,39 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import {
-  createMemoryLlmApi,
-  type LlmApi,
-  type StreamLlmChatInput,
-} from "../llm/api";
+  ASSISTANT_PANEL_TITLE,
+  ASSISTANT_SHORTCUT_LABEL,
+  createMemoryAgentApi,
+  type AgentApi,
+  type SendAgentChatInput,
+} from "../agent/api";
 import {
+  ACT_ON_NOTE_PROMPT,
   ASSISTANT_PLACEHOLDER,
-  ASSISTANT_SHORTCUT_CHIP,
   AssistantSidebar,
 } from "./AssistantSidebar";
-import { ACT_ON_NOTE_PROMPT } from "./noteContext";
-
-function wrapLlm(inner: LlmApi, sent: StreamLlmChatInput[]): LlmApi {
-  return {
-    ...inner,
-    streamChat(input) {
-      sent.push(input);
-      return inner.streamChat(input);
-    },
-  };
-}
 
 describe("AssistantSidebar (ENG-72)", () => {
   it("matches mockup 1i chrome", () => {
-    render(<AssistantSidebar open onClose={() => {}} note={null} />);
+    render(<AssistantSidebar open onClose={() => {}} noteId={null} />);
 
-    const pane = screen.getByRole("complementary", { name: "Assistant" });
-    const title = within(pane).getByRole("heading", { name: "Assistant" });
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    const title = within(pane).getByRole("heading", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
     expect(title).toHaveClass("pane-title", "assistant-title");
     expect(title.querySelector(".assistant-star")).toBeTruthy();
-    expect(within(pane).getByText(ASSISTANT_SHORTCUT_CHIP)).toHaveClass(
+    expect(within(pane).getByText(ASSISTANT_SHORTCUT_LABEL)).toHaveClass(
       "search-chip",
     );
     expect(within(pane).queryByText("⌘⇧A")).not.toBeInTheDocument();
     expect(within(pane).queryByText("⌘J")).not.toBeInTheDocument();
     expect(
-      within(pane).getByRole("button", { name: "Close Assistant" }),
+      within(pane).getByRole("button", {
+        name: `Close ${ASSISTANT_PANEL_TITLE}`,
+      }),
     ).toBeInTheDocument();
     expect(
       within(pane).getByRole("button", { name: "Clear" }),
@@ -50,18 +47,17 @@ describe("AssistantSidebar (ENG-72)", () => {
 
   it("proof-reads against the open note and streams markdown", async () => {
     const user = userEvent.setup();
-    const sent: StreamLlmChatInput[] = [];
-    const api = wrapLlm(
-      createMemoryLlmApi({ tokens: ["Looks ", "**fine**", "."] }),
-      sent,
-    );
+    const api = createMemoryAgentApi({
+      tokens: ["Looks ", "**fine**", "."],
+      notes: {
+        "note-1": {
+          title: "Thursday, Aug 6",
+          body_markdown: "Ths sentnce has typos.",
+        },
+      },
+    });
     render(
-      <AssistantSidebar
-        open
-        onClose={() => {}}
-        note={{ title: "Thursday, Aug 6", body: "Ths sentnce has typos." }}
-        api={api}
-      />,
+      <AssistantSidebar open onClose={() => {}} noteId="note-1" api={api} />,
     );
 
     await user.type(
@@ -71,18 +67,20 @@ describe("AssistantSidebar (ENG-72)", () => {
     await user.keyboard("{Enter}");
 
     await waitFor(() => {
-      expect(sent).toHaveLength(1);
+      expect(api.lastOutgoing().length).toBeGreaterThan(0);
     });
-    expect(sent[0]?.messages[0]).toEqual({
-      role: "system",
-      content: "Current note: Thursday, Aug 6\n\nThs sentnce has typos.",
-    });
-    expect(sent[0]?.messages[1]).toEqual({
+    const outgoing = api.lastOutgoing();
+    expect(outgoing[0]?.role).toBe("system");
+    expect(outgoing[0]?.content).toContain("Thursday, Aug 6");
+    expect(outgoing[0]?.content).toContain("Ths sentnce has typos.");
+    expect(outgoing[1]).toEqual({
       role: "user",
       content: "Please proof-read this",
     });
 
-    const pane = screen.getByRole("complementary", { name: "Assistant" });
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
     expect(
       within(pane)
         .getByText("Please proof-read this")
@@ -101,17 +99,17 @@ describe("AssistantSidebar (ENG-72)", () => {
 
   it("sends without note context when none is open", async () => {
     const user = userEvent.setup();
-    const sent: StreamLlmChatInput[] = [];
-    const api = wrapLlm(createMemoryLlmApi({ tokens: ["Hi"] }), sent);
-    render(<AssistantSidebar open onClose={() => {}} note={null} api={api} />);
+    const api = createMemoryAgentApi({ tokens: ["Hi"] });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
 
     await user.type(screen.getByLabelText("Ask the Assistant"), "Hello");
     await user.keyboard("{Enter}");
 
     await waitFor(() => {
-      expect(sent).toHaveLength(1);
+      expect(api.lastOutgoing()).toEqual([{ role: "user", content: "Hello" }]);
     });
-    expect(sent[0]?.messages).toEqual([{ role: "user", content: "Hello" }]);
     await waitFor(() => {
       expect(screen.getByText("Hi")).toBeInTheDocument();
     });
@@ -119,9 +117,10 @@ describe("AssistantSidebar (ENG-72)", () => {
 
   it("keeps session history and Clear wipes it", async () => {
     const user = userEvent.setup();
-    const sent: StreamLlmChatInput[] = [];
-    const api = wrapLlm(createMemoryLlmApi({ tokens: ["pong"] }), sent);
-    render(<AssistantSidebar open onClose={() => {}} note={null} api={api} />);
+    const api = createMemoryAgentApi({ tokens: ["pong"] });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
 
     const input = screen.getByLabelText("Ask the Assistant");
     await user.type(input, "first");
@@ -133,15 +132,17 @@ describe("AssistantSidebar (ENG-72)", () => {
     await user.type(input, "second");
     await user.keyboard("{Enter}");
     await waitFor(() => {
-      expect(sent).toHaveLength(2);
+      expect(api.lastOutgoing()).toEqual([
+        { role: "user", content: "first" },
+        { role: "assistant", content: "pong" },
+        { role: "user", content: "second" },
+      ]);
     });
-    expect(sent[1]?.messages).toEqual([
-      { role: "user", content: "first" },
-      { role: "assistant", content: "pong" },
-      { role: "user", content: "second" },
-    ]);
 
     await user.click(screen.getByRole("button", { name: "Clear" }));
+    await waitFor(() => {
+      expect(api.history()).toEqual([]);
+    });
     expect(screen.queryByText("first")).not.toBeInTheDocument();
     expect(screen.queryByText("pong")).not.toBeInTheDocument();
     expect(screen.queryByText("second")).not.toBeInTheDocument();
@@ -149,36 +150,36 @@ describe("AssistantSidebar (ENG-72)", () => {
 
   it("⌘↵ with an empty field acts on the open note", async () => {
     const user = userEvent.setup();
-    const sent: StreamLlmChatInput[] = [];
-    const api = wrapLlm(createMemoryLlmApi({ tokens: ["ok"] }), sent);
+    const api = createMemoryAgentApi({
+      tokens: ["ok"],
+      notes: {
+        "note-2": { title: "Roadmap", body_markdown: "Ship importer" },
+      },
+    });
     render(
-      <AssistantSidebar
-        open
-        onClose={() => {}}
-        note={{ title: "Roadmap", body: "Ship importer" }}
-        api={api}
-      />,
+      <AssistantSidebar open onClose={() => {}} noteId="note-2" api={api} />,
     );
 
     screen.getByLabelText("Ask the Assistant").focus();
     await user.keyboard("{Control>}{Enter}{/Control}");
 
     await waitFor(() => {
-      expect(sent).toHaveLength(1);
+      expect(api.lastOutgoing().at(-1)).toEqual({
+        role: "user",
+        content: ACT_ON_NOTE_PROMPT,
+      });
     });
-    expect(sent[0]?.messages.at(-1)).toEqual({
-      role: "user",
-      content: ACT_ON_NOTE_PROMPT,
-    });
-    expect(sent[0]?.messages[0]?.content).toContain("Ship importer");
+    expect(api.lastOutgoing()[0]?.content).toContain("Ship importer");
   });
 
   it("surfaces a failed stream instead of keeping a silent bubble", async () => {
     const user = userEvent.setup();
-    const api = createMemoryLlmApi({
+    const api = createMemoryAgentApi({
       fail: { code: "unreachable", message: "down" },
     });
-    render(<AssistantSidebar open onClose={() => {}} note={null} api={api} />);
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
 
     await user.type(screen.getByLabelText("Ask the Assistant"), "Hello");
     await user.keyboard("{Enter}");
@@ -187,19 +188,67 @@ describe("AssistantSidebar (ENG-72)", () => {
       "Could not reach the API",
     );
     expect(screen.getByText("Hello")).toBeInTheDocument();
+    expect(document.querySelector(".assistant-turn.is-assistant")).toBeNull();
+  });
+
+  it("disables Clear while a stream is in flight and does not invoke it", async () => {
+    const user = userEvent.setup();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inner = createMemoryAgentApi({ tokens: ["pong"] });
+    const sent: SendAgentChatInput[] = [];
+    let clearCalls = 0;
+    const api: AgentApi = {
+      async sendChat(input) {
+        sent.push(input);
+        await gate;
+        return inner.sendChat(input);
+      },
+      clearConversation() {
+        clearCalls += 1;
+        return inner.clearConversation();
+      },
+    };
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId="note-9" api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "Hello");
+    await user.keyboard("{Enter}");
+    const clear = screen.getByRole("button", { name: "Clear" });
+    expect(clear).toBeDisabled();
+    await user.click(clear);
+    expect(clearCalls).toBe(0);
+    expect(sent).toEqual([{ message: "Hello", note_id: "note-9" }]);
+    expect(sent[0]).not.toHaveProperty("noteId");
+
+    release();
+    await waitFor(() => {
+      expect(screen.getByText("pong")).toBeInTheDocument();
+    });
+    expect(clear).toBeEnabled();
+    await user.click(clear);
+    await waitFor(() => {
+      expect(clearCalls).toBe(1);
+    });
+    expect(screen.queryByText("Hello")).not.toBeInTheDocument();
   });
 
   it("stays mounted but hidden when closed", () => {
     const { rerender } = render(
-      <AssistantSidebar open onClose={() => {}} note={null} />,
+      <AssistantSidebar open onClose={() => {}} noteId={null} />,
     );
     expect(
-      screen.getByRole("complementary", { name: "Assistant" }),
+      screen.getByRole("complementary", { name: ASSISTANT_PANEL_TITLE }),
     ).not.toHaveAttribute("hidden");
 
-    rerender(<AssistantSidebar open={false} onClose={() => {}} note={null} />);
+    rerender(
+      <AssistantSidebar open={false} onClose={() => {}} noteId={null} />,
+    );
     expect(
-      screen.queryByRole("complementary", { name: "Assistant" }),
+      screen.queryByRole("complementary", { name: ASSISTANT_PANEL_TITLE }),
     ).not.toBeInTheDocument();
     expect(document.querySelector(".assistant-sidebar")).toHaveClass(
       "is-closed",

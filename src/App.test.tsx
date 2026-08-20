@@ -27,11 +27,11 @@ import {
   type SummaryParticipant,
 } from "./meetings/summaryApi";
 import {
-  createMemoryLlmApi,
-  type LlmApi,
-  type StreamLlmChatInput,
-} from "./llm/api";
-import { ASSISTANT_SHORTCUT_CHIP } from "./assistant/AssistantSidebar";
+  ASSISTANT_SHORTCUT_LABEL,
+  createMemoryAgentApi,
+  type AgentApi,
+  type SendAgentChatInput,
+} from "./agent/api";
 
 const summaryApiRef: { current: MeetingSummaryApi } = {
   current: createMemoryMeetingSummaryApi(),
@@ -1838,7 +1838,9 @@ describe("App shell", () => {
     const pane = await screen.findByRole("complementary", {
       name: "Assistant",
     });
-    expect(within(pane).getByText(ASSISTANT_SHORTCUT_CHIP)).toBeInTheDocument();
+    expect(
+      within(pane).getByText(ASSISTANT_SHORTCUT_LABEL),
+    ).toBeInTheDocument();
     expect(pane).toHaveClass("assistant-sidebar");
     expect(pane).not.toHaveClass("is-closed");
     expect(title.getBoundingClientRect()).toEqual(before);
@@ -1899,17 +1901,27 @@ describe("App shell", () => {
         updated_at: stamp,
       },
     ]);
-    const sent: StreamLlmChatInput[] = [];
-    const inner = createMemoryLlmApi({ tokens: ["ok"] });
-    const llm: LlmApi = {
-      ...inner,
-      streamChat(input) {
+    const sent: SendAgentChatInput[] = [];
+    const inner = createMemoryAgentApi({
+      tokens: ["ok"],
+      notes: {
+        "daily-1": {
+          title: today,
+          body_markdown: "Ths sentnce has typos.",
+        },
+      },
+    });
+    const agent: AgentApi = {
+      sendChat(input) {
         sent.push(input);
-        return inner.streamChat(input);
+        return inner.sendChat(input);
+      },
+      clearConversation() {
+        return inner.clearConversation();
       },
     };
 
-    render(<App llm={llm} />);
+    render(<App agent={agent} />);
     await screen.findByLabelText("Note title");
     await toggleAssistant(user);
     await user.type(
@@ -1921,12 +1933,14 @@ describe("App shell", () => {
     await waitFor(() => {
       expect(sent).toHaveLength(1);
     });
-    expect(sent[0]?.messages[0]?.role).toBe("system");
-    expect(sent[0]?.messages[0]?.content).toContain("Ths sentnce has typos.");
-    expect(sent[0]?.messages.at(-1)).toEqual({
-      role: "user",
-      content: "Please proof-read this",
+    expect(sent[0]).toEqual({
+      message: "Please proof-read this",
+      note_id: "daily-1",
     });
+    expect(inner.lastOutgoing()[0]?.role).toBe("system");
+    expect(inner.lastOutgoing()[0]?.content).toContain(
+      "Ths sentnce has typos.",
+    );
 
     await user.click(screen.getByRole("button", { name: "Notes" }));
     await screen.findByRole("region", { name: "Notes overview" });
@@ -1938,9 +1952,13 @@ describe("App shell", () => {
     await waitFor(() => {
       expect(sent).toHaveLength(2);
     });
-    expect(sent[1]?.messages.some((message) => message.role === "system")).toBe(
-      false,
-    );
+    expect(sent[1]).toEqual({
+      message: "What can you do?",
+      note_id: null,
+    });
+    expect(
+      inner.lastOutgoing().some((message) => message.role === "system"),
+    ).toBe(false);
   });
 
   it("does not open Assistant with Cmd+J or ⌘⇧A", async () => {
