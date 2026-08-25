@@ -55,6 +55,6 @@ describe("tool-read row copy (ENG-73)", () => {
       "unknown tool: nope",
     );
     expect(formatToolResult(null)).toBe("null");
-    expect(formatToolResult(undefined)).toBe("null");
+    expect(formatToolResult(undefined)).toBe("");
   });
 });

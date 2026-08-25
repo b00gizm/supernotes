@@ -46,14 +46,20 @@ type ToolTurn = {
 
 type ChatTurn = UserTurn | AssistantTurn | ToolTurn;
 
-function isLiveStream(
+/** Tool results may arrive after sendChat resolves; pair by stream_id. */
+function acceptToolEvent(
+  cancelled: boolean,
+  accepting: boolean,
   streamId: string | null,
-  eventStreamId: string | undefined,
+  eventStreamId: string,
 ): boolean {
-  if (streamId && eventStreamId && streamId !== eventStreamId) {
+  if (cancelled) {
     return false;
   }
-  return true;
+  if (streamId) {
+    return eventStreamId === streamId;
+  }
+  return accepting;
 }
 
 function upsertToolTurn(
@@ -102,7 +108,11 @@ function ToolReadRow({ turn }: { turn: ToolTurn }) {
         </span>
         <span className="assistant-tool-label">{label}</span>
       </button>
-      {open ? <pre className="assistant-tool-result">{result}</pre> : null}
+      {open ? (
+        <pre className="assistant-tool-result">
+          {turn.result === undefined ? "" : result}
+        </pre>
+      ) : null}
     </div>
   );
 }
@@ -223,6 +233,7 @@ export function AssistantSidebar({
               { id: nextId(), role: "assistant", content: event.text },
             ];
           });
+          acceptingRef.current = false;
         }),
       );
       unsubs.push(
@@ -255,10 +266,14 @@ export function AssistantSidebar({
       );
       unsubs.push(
         await subscribeAgentTools((event) => {
-          if (cancelled || !acceptingRef.current) {
-            return;
-          }
-          if (!isLiveStream(streamIdRef.current, event.stream_id)) {
+          if (
+            !acceptToolEvent(
+              cancelled,
+              acceptingRef.current,
+              streamIdRef.current,
+              event.stream_id,
+            )
+          ) {
             return;
           }
           streamIdRef.current = event.stream_id;
@@ -273,10 +288,14 @@ export function AssistantSidebar({
       );
       unsubs.push(
         await subscribeAgentToolResults((event) => {
-          if (cancelled || !acceptingRef.current) {
-            return;
-          }
-          if (!isLiveStream(streamIdRef.current, event.stream_id)) {
+          if (
+            !acceptToolEvent(
+              cancelled,
+              acceptingRef.current,
+              streamIdRef.current,
+              event.stream_id,
+            )
+          ) {
             return;
           }
           streamIdRef.current = event.stream_id;
@@ -398,6 +417,7 @@ export function AssistantSidebar({
       if (generationRef.current !== generation) {
         return;
       }
+      acceptingRef.current = false;
       setError(llmErrorCopy(err));
       setMessages((current) => {
         const last = current[current.length - 1];
@@ -409,7 +429,6 @@ export function AssistantSidebar({
     } finally {
       if (generationRef.current === generation) {
         sendingRef.current = false;
-        acceptingRef.current = false;
         setStreaming(false);
       }
     }
