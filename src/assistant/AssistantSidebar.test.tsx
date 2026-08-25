@@ -560,4 +560,80 @@ describe("AssistantSidebar tool-read rows (ENG-73)", () => {
       within(pane).queryByText("Nothing is written until you approve."),
     ).toBeNull();
   });
+
+  it("toggles the paired result from the chevron even when the result is empty", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "miss-1",
+              name: "get_note",
+              arguments: '{"id_or_title":"missing"}',
+            },
+            {
+              id: "empty-1",
+              name: "search_notes",
+              arguments: '{"query":""}',
+            },
+          ],
+        },
+        { tokens: ["Nothing found."] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "lookup");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(pane.querySelectorAll(".assistant-tool-row")).toHaveLength(2);
+    });
+    const [miss, empty] = [...pane.querySelectorAll(".assistant-tool-row")];
+    expect(miss).toBeTruthy();
+    expect(empty).toBeTruthy();
+
+    const missChevron = miss?.querySelector(".assistant-tool-chevron");
+    expect(missChevron).toBeTruthy();
+    await user.click(missChevron as HTMLElement);
+    expect(miss?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(miss?.querySelector(".assistant-tool-result")?.textContent).toBe(
+      "null",
+    );
+
+    await user.click(missChevron as HTMLElement);
+    expect(miss?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(miss?.querySelector(".assistant-tool-result")).toBeNull();
+
+    const emptyLabel = empty?.querySelector(".assistant-tool-label");
+    expect(emptyLabel).toHaveTextContent("Searched notes · 0 results");
+    await user.click(emptyLabel as HTMLElement);
+    expect(empty?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(empty?.querySelector(".assistant-tool-result")?.textContent).toBe(
+      "[]",
+    );
+    await user.click(
+      empty?.querySelector(".assistant-tool-summary") as HTMLElement,
+    );
+    expect(empty?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(empty?.querySelector(".assistant-tool-result")).toBeNull();
+  });
 });

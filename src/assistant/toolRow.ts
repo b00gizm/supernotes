@@ -141,11 +141,11 @@ export function formatToolRowLabel(input: {
 
 export function formatToolResult(result: unknown): string {
   if (result === undefined) {
-    return "";
+    return "null";
   }
   try {
     return JSON.stringify(result, null, 2);
   } catch {
-    return "";
+    return "null";
   }
 }

@@ -3570,6 +3570,10 @@ button {
   background: var(--bg-sidebar);
   border-left: 1px solid
     color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  /* Overlay sits over the titlebar drag strip; WKWebView would steal clicks. */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  pointer-events: auto;
 }
 
 .assistant-sidebar.is-closed {

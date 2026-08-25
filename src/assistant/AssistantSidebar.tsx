@@ -100,11 +100,9 @@ function ToolReadRow({ turn }: { turn: ToolTurn }) {
         <span className="assistant-tool-chevron" aria-hidden="true">
           {">"}
         </span>
-        {label}
+        <span className="assistant-tool-label">{label}</span>
       </button>
-      {open && result ? (
-        <pre className="assistant-tool-result">{result}</pre>
-      ) : null}
+      {open ? <pre className="assistant-tool-result">{result}</pre> : null}
     </div>
   );
 }
