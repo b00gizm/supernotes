@@ -146,6 +146,6 @@ export function formatToolResult(result: unknown): string {
   try {
     return JSON.stringify(result, null, 2);
   } catch {
-    return String(result);
+    return "";
   }
 }
