@@ -364,7 +364,11 @@ describe("AssistantSidebar tool-read rows (ENG-73)", () => {
       "Searched notes · 'pricing' · 4 results",
     );
     expect(row.querySelector(".assistant-tool-chevron")?.textContent).toBe(">");
-    expect(row).not.toHaveAttribute("open");
+    expect(row.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(row.querySelector(".assistant-tool-result")).toBeNull();
 
     await waitFor(() => {
       expect(within(pane).getByText("Four hits.")).toBeInTheDocument();
@@ -379,7 +383,10 @@ describe("AssistantSidebar tool-read rows (ENG-73)", () => {
     ]);
 
     await user.click(within(row).getByText(/Searched notes/));
-    expect(row).toHaveAttribute("open");
+    expect(row.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     const result = row.querySelector(".assistant-tool-result");
     expect(result?.textContent).toContain("pricing north");
     expect(result?.textContent).toContain("pricing west");
@@ -445,11 +452,18 @@ describe("AssistantSidebar tool-read rows (ENG-73)", () => {
     ]);
 
     await user.click(within(rows[0] as HTMLElement).getByText(/Read calendar/));
-    expect(rows[0]).toHaveAttribute("open");
+    expect(rows[0]?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     expect(
       rows[0]?.querySelector(".assistant-tool-result")?.textContent,
     ).toContain("Pricing review");
-    expect(rows[1]).not.toHaveAttribute("open");
+    expect(rows[1]?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(rows[1]?.querySelector(".assistant-tool-result")).toBeNull();
   });
 
   it("uses the same row chrome for the other read tools", async () => {
@@ -532,8 +546,13 @@ describe("AssistantSidebar tool-read rows (ENG-73)", () => {
         ">",
       );
       expect(row).toHaveClass("assistant-tool-row");
-      expect(row).not.toHaveAttribute("open");
-      expect(row.textContent).toContain(" · ");
+      expect(row.querySelector(".assistant-tool-summary")).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      expect(
+        row.querySelector(".assistant-tool-summary")?.textContent,
+      ).toContain(" · ");
     }
     expect(within(pane).queryByText("Append to daily note")).toBeNull();
     expect(within(pane).queryByText("Add 3 blocks")).toBeNull();

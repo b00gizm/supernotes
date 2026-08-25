@@ -3682,12 +3682,15 @@ button {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  list-style: none;
-}
-
-.assistant-tool-summary::-webkit-details-marker {
-  display: none;
 }
 
 .assistant-tool-chevron {

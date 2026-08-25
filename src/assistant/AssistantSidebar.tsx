@@ -84,18 +84,28 @@ function upsertToolTurn(
 }
 
 function ToolReadRow({ turn }: { turn: ToolTurn }) {
+  const [open, setOpen] = useState(false);
   const label = formatToolRowLabel(turn);
   const result = formatToolResult(turn.result);
   return (
-    <details className="assistant-tool-row">
-      <summary className="assistant-tool-summary">
+    <div className="assistant-tool-row">
+      <button
+        type="button"
+        className="assistant-tool-summary"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((current) => !current);
+        }}
+      >
         <span className="assistant-tool-chevron" aria-hidden="true">
           {">"}
         </span>
         {label}
-      </summary>
-      {result ? <pre className="assistant-tool-result">{result}</pre> : null}
-    </details>
+      </button>
+      {open && result ? (
+        <pre className="assistant-tool-result">{result}</pre>
+      ) : null}
+    </div>
   );
 }
 
