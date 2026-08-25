@@ -1,3 +1,4 @@
+mod agent;
 mod calendar;
 pub mod db;
 mod llm;
@@ -9,6 +10,7 @@ mod notes;
 mod tasks;
 mod transcription;
 
+use agent::{clear_agent_conversation, send_agent_chat, AgentSession};
 use calendar::{
     create_calendar_event, delete_calendar_event, get_calendar_event, list_calendar_events,
     update_calendar_event,
@@ -54,7 +56,9 @@ pub fn run() {
             app.manage(db);
             app.manage(production_recorder(data_dir.join("models")));
             app.manage(production_llm());
+            app.manage(AgentSession::default());
             menu_nav::install_app_menu(app)?;
+            let _ = agent::register_assistant_shortcut();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -100,6 +104,8 @@ pub fn run() {
             clear_llm_api_key,
             test_llm_connection,
             stream_llm_chat,
+            send_agent_chat,
+            clear_agent_conversation,
             save_note_image,
             resolve_note_image_path
         ])

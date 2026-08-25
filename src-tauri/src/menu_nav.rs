@@ -27,6 +27,9 @@ pub fn install_app_menu<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     let next = MenuItemBuilder::with_id("daily-next", "Next Day")
         .accelerator("CmdOrCtrl+Shift+Right")
         .build(app)?;
+    let assistant = MenuItemBuilder::with_id("agent-toggle", "Assistant")
+        .accelerator(crate::agent::TOGGLE_ACCELERATOR)
+        .build(app)?;
 
     let edit = SubmenuBuilder::new(app, "Edit")
         .undo()
@@ -46,6 +49,8 @@ pub fn install_app_menu<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
         .separator()
         .item(&prev)
         .item(&next)
+        .separator()
+        .item(&assistant)
         .build()?;
 
     // macOS menu bar requires Submenu roots; first submenu becomes the app menu.
@@ -80,6 +85,9 @@ pub fn install_app_menu<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
             "nav-daily" | "nav-notes" | "nav-tasks" | "nav-calendar" | "daily-prev"
             | "daily-next" => {
                 let _ = app.emit("menu-nav", id);
+            }
+            "agent-toggle" => {
+                let _ = app.emit(crate::agent::TOGGLE_EVENT, ());
             }
             _ => {}
         }
