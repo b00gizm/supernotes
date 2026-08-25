@@ -243,6 +243,33 @@ describe("memory agent session (ENG-72)", () => {
     unlisten();
   });
 
+  it("falls back to window events when TAURI internals are stubbed", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+    try {
+      const names: string[] = [];
+      const unlisten = await subscribeAgentTools((event) => {
+        names.push(event.name);
+      });
+      window.dispatchEvent(
+        new CustomEvent(AGENT_TOOL_EVENT, {
+          detail: {
+            stream_id: "s",
+            id: "c1",
+            name: "search_notes",
+            arguments: "{}",
+          },
+        }),
+      );
+      expect(names).toEqual(["search_notes"]);
+      unlisten();
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
   it("rejects an empty message", async () => {
     const agent = createMemoryAgentApi();
     await expect(

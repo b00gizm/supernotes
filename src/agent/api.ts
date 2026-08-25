@@ -485,10 +485,14 @@ async function subscribeEvent(
   handler: (payload: unknown) => void,
 ): Promise<() => void> {
   if (isTauriRuntime()) {
-    const { listen } = await import("@tauri-apps/api/event");
-    return listen(name, (event) => {
-      handler(event.payload);
-    });
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      return await listen(name, (event) => {
+        handler(event.payload);
+      });
+    } catch {
+      // jsdom tests stub `__TAURI_INTERNALS__` without listen.
+    }
   }
   if (typeof window === "undefined") {
     return () => {};
