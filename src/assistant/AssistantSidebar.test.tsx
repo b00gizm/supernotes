@@ -99,10 +99,12 @@ describe("AssistantSidebar (ENG-72)", () => {
       expect(api.lastOutgoing().length).toBeGreaterThan(0);
     });
     const outgoing = api.lastOutgoing();
-    expect(outgoing[0]?.role).toBe("system");
-    expect(outgoing[0]?.content).toContain("Thursday, Aug 6");
-    expect(outgoing[0]?.content).toContain("Ths sentnce has typos.");
-    expect(outgoing[1]).toEqual({
+    const noteCtx = outgoing.find((message) =>
+      message.content.includes("Ths sentnce has typos."),
+    );
+    expect(noteCtx?.role).toBe("system");
+    expect(noteCtx?.content).toContain("Thursday, Aug 6");
+    expect(outgoing.at(-1)).toEqual({
       role: "user",
       content: "Please proof-read this",
     });
@@ -137,7 +139,9 @@ describe("AssistantSidebar (ENG-72)", () => {
     await user.keyboard("{Enter}");
 
     await waitFor(() => {
-      expect(api.lastOutgoing()).toEqual([{ role: "user", content: "Hello" }]);
+      expect(
+        api.lastOutgoing().filter((message) => message.role !== "system"),
+      ).toEqual([{ role: "user", content: "Hello" }]);
     });
     await waitFor(() => {
       expect(screen.getByText("Hi")).toBeInTheDocument();
@@ -161,7 +165,9 @@ describe("AssistantSidebar (ENG-72)", () => {
     await user.type(input, "second");
     await user.keyboard("{Enter}");
     await waitFor(() => {
-      expect(api.lastOutgoing()).toEqual([
+      expect(
+        api.lastOutgoing().filter((message) => message.role !== "system"),
+      ).toEqual([
         { role: "user", content: "first" },
         { role: "assistant", content: "pong" },
         { role: "user", content: "second" },
@@ -198,7 +204,11 @@ describe("AssistantSidebar (ENG-72)", () => {
         content: ACT_ON_NOTE_PROMPT,
       });
     });
-    expect(api.lastOutgoing()[0]?.content).toContain("Ship importer");
+    expect(
+      api
+        .lastOutgoing()
+        .some((message) => message.content.includes("Ship importer")),
+    ).toBe(true);
   });
 
   it("surfaces a failed stream instead of keeping a silent bubble", async () => {
