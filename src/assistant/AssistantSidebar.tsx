@@ -3,6 +3,8 @@ import {
   agentApi as defaultAgentApi,
   ASSISTANT_PANEL_TITLE,
   ASSISTANT_SHORTCUT_LABEL,
+  subscribeAgentToolResults,
+  subscribeAgentTools,
   subscribeLlmDone,
   subscribeLlmErrors,
   subscribeLlmTokens,
@@ -10,6 +12,7 @@ import {
 } from "../agent/api";
 import { llmErrorCopy } from "../settings/errors";
 import { AssistantMarkdown } from "./markdown";
+import { formatToolResult, formatToolRowLabel } from "./toolRow";
 
 export const ASSISTANT_PLACEHOLDER = "Ask, or ⌘↵ to act on this note";
 export const ACT_ON_NOTE_PROMPT = "Act on this note.";
@@ -21,11 +24,80 @@ export type AssistantSidebarProps = {
   api?: AgentApi;
 };
 
-type ChatTurn = {
+type UserTurn = {
   id: string;
-  role: "user" | "assistant";
+  role: "user";
   content: string;
 };
+
+type AssistantTurn = {
+  id: string;
+  role: "assistant";
+  content: string;
+};
+
+type ToolTurn = {
+  id: string;
+  role: "tool";
+  name: string;
+  arguments: string;
+  result?: unknown;
+};
+
+type ChatTurn = UserTurn | AssistantTurn | ToolTurn;
+
+function isLiveStream(
+  streamId: string | null,
+  eventStreamId: string | undefined,
+): boolean {
+  if (streamId && eventStreamId && streamId !== eventStreamId) {
+    return false;
+  }
+  return true;
+}
+
+function upsertToolTurn(
+  current: ChatTurn[],
+  next: Omit<ToolTurn, "role">,
+): ChatTurn[] {
+  const existing = current.findIndex(
+    (turn) => turn.role === "tool" && turn.id === next.id,
+  );
+  if (existing === -1) {
+    return [...current, { role: "tool", ...next }];
+  }
+  const prev = current[existing];
+  if (prev?.role !== "tool") {
+    return current;
+  }
+  const merged: ToolTurn = {
+    ...prev,
+    name: next.name || prev.name,
+    arguments: next.arguments || prev.arguments,
+    result: next.result === undefined ? prev.result : next.result,
+  };
+  return [
+    ...current.slice(0, existing),
+    merged,
+    ...current.slice(existing + 1),
+  ];
+}
+
+function ToolReadRow({ turn }: { turn: ToolTurn }) {
+  const label = formatToolRowLabel(turn);
+  const result = formatToolResult(turn.result);
+  return (
+    <details className="assistant-tool-row">
+      <summary className="assistant-tool-summary">
+        <span className="assistant-tool-chevron" aria-hidden="true">
+          {">"}
+        </span>
+        {label}
+      </summary>
+      {result ? <pre className="assistant-tool-result">{result}</pre> : null}
+    </details>
+  );
+}
 
 function IconAssistantStar() {
   return (
@@ -171,6 +243,43 @@ export function AssistantSidebar({
             }
             return current;
           });
+        }),
+      );
+      unsubs.push(
+        await subscribeAgentTools((event) => {
+          if (cancelled || !acceptingRef.current) {
+            return;
+          }
+          if (!isLiveStream(streamIdRef.current, event.stream_id)) {
+            return;
+          }
+          streamIdRef.current = event.stream_id;
+          setMessages((current) =>
+            upsertToolTurn(current, {
+              id: event.id,
+              name: event.name,
+              arguments: event.arguments,
+            }),
+          );
+        }),
+      );
+      unsubs.push(
+        await subscribeAgentToolResults((event) => {
+          if (cancelled || !acceptingRef.current) {
+            return;
+          }
+          if (!isLiveStream(streamIdRef.current, event.stream_id)) {
+            return;
+          }
+          streamIdRef.current = event.stream_id;
+          setMessages((current) =>
+            upsertToolTurn(current, {
+              id: event.id,
+              name: event.name,
+              arguments: "",
+              result: event.result,
+            }),
+          );
         }),
       );
     })();
@@ -354,17 +463,27 @@ export function AssistantSidebar({
         aria-live="polite"
         aria-relevant="additions"
       >
-        {messages.map((turn) =>
-          turn.role === "user" ? (
-            <div key={turn.id} className="assistant-turn is-user">
-              <div className="assistant-user-bubble">{turn.content}</div>
-            </div>
-          ) : (
+        {messages.map((turn) => {
+          if (turn.role === "user") {
+            return (
+              <div key={turn.id} className="assistant-turn is-user">
+                <div className="assistant-user-bubble">{turn.content}</div>
+              </div>
+            );
+          }
+          if (turn.role === "tool") {
+            return (
+              <div key={turn.id} className="assistant-turn is-tool">
+                <ToolReadRow turn={turn} />
+              </div>
+            );
+          }
+          return (
             <div key={turn.id} className="assistant-turn is-assistant">
               <AssistantMarkdown text={turn.content} />
             </div>
-          ),
-        )}
+          );
+        })}
       </div>
 
       {error ? (

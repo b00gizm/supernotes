@@ -3669,6 +3669,42 @@ button {
   color: var(--text);
 }
 
+.assistant-turn.is-tool {
+  align-self: stretch;
+}
+
+.assistant-tool-row {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.assistant-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  cursor: pointer;
+  list-style: none;
+}
+
+.assistant-tool-summary::-webkit-details-marker {
+  display: none;
+}
+
+.assistant-tool-chevron {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+.assistant-tool-result {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
 .assistant-md {
   display: flex;
   flex-direction: column;

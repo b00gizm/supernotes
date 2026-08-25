@@ -319,3 +319,226 @@ describe("AssistantSidebar (ENG-72)", () => {
     );
   });
 });
+
+describe("AssistantSidebar tool-read rows (ENG-73)", () => {
+  const pricingNotes = {
+    a: { title: "pricing north", body_markdown: "N" },
+    b: { title: "pricing south", body_markdown: "S" },
+    c: { title: "pricing east", body_markdown: "E" },
+    d: { title: "pricing west", body_markdown: "W" },
+  };
+
+  it("renders search_notes copy, count, and expand of the paired result", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      notes: pricingNotes,
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "search-1",
+              name: "search_notes",
+              arguments: '{"query":"pricing"}',
+            },
+          ],
+        },
+        { tokens: ["Four hits."] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "pricing?");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    const row = await waitFor(() => {
+      const found = pane.querySelector(".assistant-tool-row");
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    expect(row.querySelector(".assistant-tool-summary")).toHaveTextContent(
+      "Searched notes · 'pricing' · 4 results",
+    );
+    expect(row.querySelector(".assistant-tool-chevron")?.textContent).toBe(">");
+    expect(row).not.toHaveAttribute("open");
+
+    await waitFor(() => {
+      expect(within(pane).getByText("Four hits.")).toBeInTheDocument();
+    });
+    const turns = [...pane.querySelectorAll(".assistant-turn")].map(
+      (node) => node.className,
+    );
+    expect(turns).toEqual([
+      "assistant-turn is-user",
+      "assistant-turn is-tool",
+      "assistant-turn is-assistant",
+    ]);
+
+    await user.click(within(row).getByText(/Searched notes/));
+    expect(row).toHaveAttribute("open");
+    const result = row.querySelector(".assistant-tool-result");
+    expect(result?.textContent).toContain("pricing north");
+    expect(result?.textContent).toContain("pricing west");
+  });
+
+  it("labels list_calendar_events with the short day and pairs by id", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      notes: pricingNotes,
+      events: [
+        {
+          id: "e1",
+          title: "Pricing review",
+          start: "2026-08-13T14:00:00.000Z",
+          end: "2026-08-13T15:00:00.000Z",
+          task_id: null,
+        },
+      ],
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "cal-1",
+              name: "list_calendar_events",
+              arguments: '{"date":"2026-08-13"}',
+            },
+            {
+              id: "search-2",
+              name: "search_notes",
+              arguments: '{"query":"pricing"}',
+            },
+            {
+              id: "search-miss",
+              name: "search_notes",
+              arguments: '{"query":"zzzz"}',
+            },
+          ],
+        },
+        { tokens: ["Calendar first."] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "agenda");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(pane.querySelectorAll(".assistant-tool-row")).toHaveLength(3);
+    });
+    const rows = [...pane.querySelectorAll(".assistant-tool-row")];
+    const labels = rows.map(
+      (row) => row.querySelector(".assistant-tool-summary")?.textContent,
+    );
+    expect(labels).toEqual([
+      ">Read calendar · Thu, Aug 13",
+      ">Searched notes · 'pricing' · 4 results",
+      ">Searched notes · 'zzzz' · 0 results",
+    ]);
+
+    await user.click(within(rows[0] as HTMLElement).getByText(/Read calendar/));
+    expect(rows[0]).toHaveAttribute("open");
+    expect(
+      rows[0]?.querySelector(".assistant-tool-result")?.textContent,
+    ).toContain("Pricing review");
+    expect(rows[1]).not.toHaveAttribute("open");
+  });
+
+  it("uses the same row chrome for the other read tools", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      notes: {
+        "note-9": {
+          title: "Mike Q3 sync",
+          body_markdown: "4.2M",
+          note_type: "regular",
+        },
+        "2026-08-13": {
+          title: "2026-08-13",
+          body_markdown: "daily",
+          note_type: "daily",
+        },
+      },
+      tasks: [
+        {
+          id: "t1",
+          title: "Send deck",
+          state: "open",
+          due_date: "2026-08-13",
+        },
+        {
+          id: "t2",
+          title: "Wait",
+          state: "waiting",
+          due_date: "2026-08-14",
+        },
+      ],
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "note-1",
+              name: "get_note",
+              arguments: '{"id_or_title":"Mike Q3 sync"}',
+            },
+            {
+              id: "tasks-1",
+              name: "list_tasks",
+              arguments: '{"state":"open"}',
+            },
+            {
+              id: "daily-1",
+              name: "get_daily_note",
+              arguments: '{"date":"2026-08-13"}',
+            },
+          ],
+        },
+        { tokens: ["Brief."] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "brief");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(pane.querySelectorAll(".assistant-tool-row")).toHaveLength(3);
+    });
+    const rows = [...pane.querySelectorAll(".assistant-tool-row")];
+    expect(
+      rows.map(
+        (row) => row.querySelector(".assistant-tool-summary")?.textContent,
+      ),
+    ).toEqual([
+      ">Read note · 'Mike Q3 sync'",
+      ">Listed tasks · open · 1 result",
+      ">Read daily note · Thu, Aug 13",
+    ]);
+    for (const row of rows) {
+      expect(row.querySelector(".assistant-tool-chevron")?.textContent).toBe(
+        ">",
+      );
+      expect(row).toHaveClass("assistant-tool-row");
+      expect(row).not.toHaveAttribute("open");
+      expect(row.textContent).toContain(" · ");
+    }
+    expect(within(pane).queryByText("Append to daily note")).toBeNull();
+    expect(within(pane).queryByText("Add 3 blocks")).toBeNull();
+    expect(
+      within(pane).queryByText("Nothing is written until you approve."),
+    ).toBeNull();
+  });
+});
