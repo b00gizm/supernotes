@@ -34,6 +34,12 @@ import { TasksView } from "./tasks/TasksView";
 import { tasksApi } from "./tasks/api";
 import type { Task } from "./tasks/types";
 import { LlmSettings } from "./settings/LlmSettings";
+import {
+  agentApi as defaultAgentApi,
+  subscribeAssistantToggle,
+  type AgentApi,
+} from "./agent/api";
+import { AssistantSidebar } from "./assistant/AssistantSidebar";
 import { IconWaveform } from "./ui/IconWaveform";
 import {
   isSearchKpiMode,
@@ -51,6 +57,10 @@ type NavId = "daily" | "notes" | "tasks" | "calendar";
 
 type Surface =
   { kind: NavId } | { kind: "note"; id: string } | { kind: "settings" };
+
+export type AppProps = {
+  agent?: AgentApi;
+};
 
 type PinMenu = { noteId: string; pinned: boolean; x: number; y: number };
 
@@ -377,7 +387,7 @@ const NAV_ITEMS: {
   { id: "calendar", label: "Calendar", icon: () => <IconCalendar /> },
 ];
 
-function App() {
+function App({ agent = defaultAgentApi }: AppProps) {
   const {
     notes,
     selectedId,
@@ -404,6 +414,7 @@ function App() {
   const macOverlayChrome = prefersMacOverlayChrome();
   const [recentOpen, setRecentOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [pinMenu, setPinMenu] = useState<PinMenu | null>(null);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
@@ -575,6 +586,28 @@ function App() {
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void subscribeAssistantToggle(() => {
+      setAssistantOpen((value) => !value);
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unlisten = fn;
+      })
+      .catch(() => {
+        // jsdom stubs `__TAURI_INTERNALS__` without listen.
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
     };
   }, []);
 
@@ -1315,7 +1348,7 @@ function App() {
                         setDailyDate(todayTitle);
                       }}
                     >
-                      Today
+                      Today →
                     </button>
                   ) : null}
                 </div>
@@ -1427,6 +1460,15 @@ function App() {
           </aside>
         ) : null}
       </main>
+
+      <AssistantSidebar
+        open={assistantOpen}
+        onClose={() => {
+          setAssistantOpen(false);
+        }}
+        noteId={showEditor && selectedId ? selectedId : null}
+        api={agent}
+      />
 
       <SearchPalette
         open={searchOpen}

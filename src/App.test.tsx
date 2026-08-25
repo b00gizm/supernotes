@@ -26,6 +26,12 @@ import {
   type MeetingSummaryApi,
   type SummaryParticipant,
 } from "./meetings/summaryApi";
+import {
+  ASSISTANT_SHORTCUT_LABEL,
+  createMemoryAgentApi,
+  type AgentApi,
+  type SendAgentChatInput,
+} from "./agent/api";
 
 const summaryApiRef: { current: MeetingSummaryApi } = {
   current: createMemoryMeetingSummaryApi(),
@@ -1452,14 +1458,14 @@ describe("App shell", () => {
     expect(await screen.findByLabelText("Note title")).toHaveValue(
       formatDailyDisplayTitle(yesterday),
     );
-    expect(screen.getByRole("button", { name: "Today" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Today →" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Today" }));
+    await user.click(screen.getByRole("button", { name: "Today →" }));
     expect(await screen.findByLabelText("Note title")).toHaveValue(
       formatDailyDisplayTitle(),
     );
     expect(
-      screen.queryByRole("button", { name: "Today" }),
+      screen.queryByRole("button", { name: "Today →" }),
     ).not.toBeInTheDocument();
   });
 
@@ -1811,6 +1817,163 @@ describe("App shell", () => {
     );
     expect(
       screen.queryByLabelText("Search notes and tasks"),
+    ).not.toBeInTheDocument();
+  });
+
+  async function toggleAssistant(user: ReturnType<typeof userEvent.setup>) {
+    await user.keyboard("{Control>}{Alt>}a{/Alt}{/Control}");
+  }
+
+  it("toggles the Assistant overlay from every view without shifting the editor (ENG-72)", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const title = await screen.findByLabelText("Note title");
+    const before = title.getBoundingClientRect();
+
+    expect(
+      screen.queryByRole("complementary", { name: "Assistant" }),
+    ).not.toBeInTheDocument();
+
+    await toggleAssistant(user);
+    const pane = await screen.findByRole("complementary", {
+      name: "Assistant",
+    });
+    expect(
+      within(pane).getByText(ASSISTANT_SHORTCUT_LABEL),
+    ).toBeInTheDocument();
+    expect(pane).toHaveClass("assistant-sidebar");
+    expect(pane).not.toHaveClass("is-closed");
+    expect(title.getBoundingClientRect()).toEqual(before);
+    expect(screen.getByLabelText("Supernotes").className).not.toMatch(
+      /assistant/,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Close Assistant" }));
+    expect(
+      screen.queryByRole("complementary", { name: "Assistant" }),
+    ).not.toBeInTheDocument();
+
+    const views: Array<{ name: string; ready: () => Promise<unknown> }> = [
+      {
+        name: "Notes",
+        ready: () => screen.findByRole("region", { name: "Notes overview" }),
+      },
+      {
+        name: "Tasks",
+        ready: () => screen.findByRole("region", { name: "Tasks" }),
+      },
+      {
+        name: "Calendar",
+        ready: () => screen.findByRole("region", { name: "Calendar" }),
+      },
+      {
+        name: "Settings",
+        ready: () => screen.findByRole("heading", { name: "Settings" }),
+      },
+    ];
+
+    for (const view of views) {
+      await user.click(screen.getByRole("button", { name: view.name }));
+      await view.ready();
+      await toggleAssistant(user);
+      expect(
+        await screen.findByRole("complementary", { name: "Assistant" }),
+      ).toBeInTheDocument();
+      await toggleAssistant(user);
+      expect(
+        screen.queryByRole("complementary", { name: "Assistant" }),
+      ).not.toBeInTheDocument();
+    }
+  });
+
+  it("includes the open daily in proof-read and omits context on Notes (ENG-72)", async () => {
+    const user = userEvent.setup();
+    const today = formatDailyTitle();
+    const stamp = "2026-08-06T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily-1",
+        title: today,
+        body_markdown: "Ths sentnce has typos.",
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    const sent: SendAgentChatInput[] = [];
+    const inner = createMemoryAgentApi({
+      tokens: ["ok"],
+      notes: {
+        "daily-1": {
+          title: today,
+          body_markdown: "Ths sentnce has typos.",
+        },
+      },
+    });
+    const agent: AgentApi = {
+      sendChat(input) {
+        sent.push(input);
+        return inner.sendChat(input);
+      },
+      clearConversation() {
+        return inner.clearConversation();
+      },
+    };
+
+    render(<App agent={agent} />);
+    await screen.findByLabelText("Note title");
+    await toggleAssistant(user);
+    await user.type(
+      await screen.findByLabelText("Ask the Assistant"),
+      "Please proof-read this",
+    );
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(sent).toHaveLength(1);
+    });
+    expect(sent[0]).toEqual({
+      message: "Please proof-read this",
+      note_id: "daily-1",
+    });
+    expect(inner.lastOutgoing()[0]?.role).toBe("system");
+    expect(inner.lastOutgoing()[0]?.content).toContain(
+      "Ths sentnce has typos.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    await screen.findByRole("region", { name: "Notes overview" });
+    await user.type(
+      screen.getByLabelText("Ask the Assistant"),
+      "What can you do?",
+    );
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(sent).toHaveLength(2);
+    });
+    expect(sent[1]).toEqual({
+      message: "What can you do?",
+      note_id: null,
+    });
+    expect(
+      inner.lastOutgoing().some((message) => message.role === "system"),
+    ).toBe(false);
+  });
+
+  it("does not open Assistant with Cmd+J or ⌘⇧A", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByLabelText("Note title");
+
+    await user.keyboard("{Control>}j{/Control}");
+    expect(
+      screen.queryByRole("complementary", { name: "Assistant" }),
+    ).not.toBeInTheDocument();
+
+    await user.keyboard("{Control>}{Shift>}a{/Shift}{/Control}");
+    expect(
+      screen.queryByRole("complementary", { name: "Assistant" }),
     ).not.toBeInTheDocument();
   });
 });
