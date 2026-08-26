@@ -15,7 +15,7 @@ pub use error::{DbError, DbResult};
 pub use migrate::{current_version, migrate};
 pub use models::*;
 pub use repo::Repository;
-pub use time::{local_ms_of_day, utc_now};
+pub use time::{local_date_and_hm, local_ms_of_day, local_today, utc_now};
 pub use wikilinks::{extract_wikilink_titles, rewrite_wikilink_title};
 
 const DB_FILE_NAME: &str = "supernotes.sqlite3";

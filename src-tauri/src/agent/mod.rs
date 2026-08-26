@@ -1,10 +1,12 @@
-//! In-memory agent chat session on top of the ENG-70 LLM stream (ENG-72/73).
+//! In-memory agent chat session on top of the ENG-70 LLM stream (ENG-72/73/75).
 //!
 //! History lives in process memory only. Restart = empty. Optional open-note
 //! context is loaded here from `notes`; missing/unknown ids are skipped.
-//! Read-only tools run against the existing SQLite repos. The session mutex
-//! is never held across `stream_turn` or tool I/O.
+//! Read tools run against the existing SQLite repos. Write tools stage a
+//! pending plan; only approve applies via the existing writers. The session
+//! mutex is never held across `stream_turn`, tool I/O, or plan apply.
 
+mod plan;
 mod tools;
 
 use std::sync::Mutex;
@@ -16,6 +18,12 @@ use uuid::Uuid;
 use crate::db::{Db, Repository};
 use crate::llm::{ChatMessage, EventSink, Llm, LlmChatResult, LlmDoneEvent, LlmIpcError};
 
+use plan::{apply_plan, build_plan_event, PendingPlan, PlanSlot, StagedAction};
+
+pub use plan::{
+    AgentPlanEvent, ApprovePlanResult, DeclinePlanResult, PlanIdInput, PLAN_DECLINE_LABEL,
+    PLAN_REASSURANCE,
+};
 pub use tools::{chat_tools, execute_tool};
 
 /// Baymax listens for this to toggle the Assistant sidebar. No UI here.
@@ -24,15 +32,17 @@ pub const TOGGLE_EVENT: &str = "agent://toggle";
 pub const TOGGLE_ACCELERATOR: &str = "Alt+CmdOrCtrl+A";
 pub const TOOL_EVENT: &str = "agent://tool";
 pub const TOOL_RESULT_EVENT: &str = "agent://tool-result";
+pub const PLAN_EVENT: &str = "agent://plan";
 pub const MAX_TOOL_ITERATIONS: usize = 8;
 
-const TOOLS_SYSTEM: &str = "You have read-only tools for the user's notes, tasks, calendar, and daily notes. Use them to answer from real app data instead of guessing. The final reply must be note-ready: lead with the useful content (headings, lists, facts). No process narration. No closing offers or questions. Short tool-loop chatter is fine; the last assistant message is what gets copied into a note.";
+const TOOLS_SYSTEM: &str = "You have tools for the user's notes, tasks, calendar, and daily notes. Read tools return live app data. Write tools (create_task, update_task, create_calendar_event) only stage a plan; nothing is written until the user approves. Use tools instead of guessing. The final reply must be note-ready: lead with the useful content (headings, lists, facts). No process narration. No closing offers or questions. Short tool-loop chatter is fine; the last assistant message is what gets copied into a note.";
 
 #[derive(Debug, Default)]
 struct SessionInner {
     turns: Vec<ChatMessage>,
     /// Bumped on clear so an in-flight send does not append after a wipe.
     generation: u64,
+    plan: PlanSlot,
 }
 
 #[derive(Debug, Default)]
@@ -66,6 +76,7 @@ pub struct AgentToolResultEvent {
 pub trait ToolEventSink: Send + Sync {
     fn emit_tool(&self, event: &AgentToolEvent);
     fn emit_tool_result(&self, event: &AgentToolResultEvent);
+    fn emit_plan(&self, event: &AgentPlanEvent);
 }
 
 impl ToolEventSink for AppHandle {
@@ -75,12 +86,16 @@ impl ToolEventSink for AppHandle {
     fn emit_tool_result(&self, event: &AgentToolResultEvent) {
         let _ = self.emit(TOOL_RESULT_EVENT, event);
     }
+    fn emit_plan(&self, event: &AgentPlanEvent) {
+        let _ = self.emit(PLAN_EVENT, event);
+    }
 }
 
 impl AgentSession {
     pub fn clear(&self) {
         let mut inner = self.inner.lock().expect("agent session poisoned");
         inner.turns.clear();
+        inner.plan = PlanSlot::Empty;
         inner.generation = inner.generation.wrapping_add(1);
     }
 
@@ -109,16 +124,107 @@ impl AgentSession {
         let result = run_tool_loop(db, llm, sink, tools, &stream_id, &history, context.as_ref());
 
         match result {
-            Ok(result) => {
-                let mut inner = self.inner.lock().expect("agent session poisoned");
-                if inner.generation == generation {
-                    inner
-                        .turns
-                        .push(ChatMessage::new("assistant", result.text.clone()));
+            Ok((result, staged)) => {
+                let plan_event = if staged.is_empty() {
+                    None
+                } else {
+                    let plan = PendingPlan {
+                        id: Uuid::new_v4().to_string(),
+                        items: staged,
+                    };
+                    let event = build_plan_event(db, &stream_id, &plan);
+                    Some((plan, event))
+                };
+                let mut emit_plan = None;
+                {
+                    let mut inner = self.inner.lock().expect("agent session poisoned");
+                    if inner.generation == generation {
+                        inner
+                            .turns
+                            .push(ChatMessage::new("assistant", result.text.clone()));
+                        if let Some((plan, event)) = plan_event {
+                            inner.plan = PlanSlot::Pending(plan);
+                            emit_plan = Some(event);
+                        }
+                    }
+                }
+                if let Some(event) = emit_plan {
+                    tools.emit_plan(&event);
                 }
                 Ok(result)
             }
             Err(error) => Err(error),
+        }
+    }
+
+    pub fn approve_plan(&self, db: &Db, plan_id: &str) -> Result<ApprovePlanResult, String> {
+        let plan_id = plan_id.trim();
+        if plan_id.is_empty() {
+            return Err("plan_id is required".into());
+        }
+        let plan = {
+            let mut inner = self.inner.lock().expect("agent session poisoned");
+            match std::mem::replace(&mut inner.plan, PlanSlot::Empty) {
+                PlanSlot::Pending(plan) if plan.id == plan_id => plan,
+                PlanSlot::Applied { plan, results } if plan.id == plan_id => {
+                    inner.plan = PlanSlot::Applied {
+                        plan: plan.clone(),
+                        results: results.clone(),
+                    };
+                    return Ok(ApprovePlanResult {
+                        plan_id: plan.id,
+                        items: results,
+                    });
+                }
+                other => {
+                    inner.plan = other;
+                    return Err("plan not found".into());
+                }
+            }
+        };
+        match apply_plan(db, &plan) {
+            Ok(items) => {
+                let mut inner = self.inner.lock().expect("agent session poisoned");
+                inner.plan = PlanSlot::Applied {
+                    plan: plan.clone(),
+                    results: items.clone(),
+                };
+                Ok(ApprovePlanResult {
+                    plan_id: plan.id,
+                    items,
+                })
+            }
+            Err(err) => {
+                let mut inner = self.inner.lock().expect("agent session poisoned");
+                if matches!(inner.plan, PlanSlot::Empty) {
+                    inner.plan = PlanSlot::Pending(plan);
+                }
+                Err(err)
+            }
+        }
+    }
+
+    pub fn decline_plan(&self, plan_id: &str) -> Result<DeclinePlanResult, String> {
+        let plan_id = plan_id.trim();
+        if plan_id.is_empty() {
+            return Err("plan_id is required".into());
+        }
+        let mut inner = self.inner.lock().expect("agent session poisoned");
+        match &inner.plan {
+            PlanSlot::Pending(plan) if plan.id == plan_id => {
+                inner.plan = PlanSlot::Declined {
+                    id: plan_id.to_string(),
+                };
+                Ok(DeclinePlanResult {
+                    plan_id: plan_id.to_string(),
+                    declined: true,
+                })
+            }
+            PlanSlot::Declined { id } if id == plan_id => Ok(DeclinePlanResult {
+                plan_id: plan_id.to_string(),
+                declined: true,
+            }),
+            _ => Err("plan not found".into()),
         }
     }
 
@@ -130,6 +236,14 @@ impl AgentSession {
             .turns
             .clone()
     }
+
+    #[cfg(test)]
+    fn pending_plan_id(&self) -> Option<String> {
+        match &self.inner.lock().expect("agent session poisoned").plan {
+            PlanSlot::Pending(plan) => Some(plan.id.clone()),
+            _ => None,
+        }
+    }
 }
 
 fn run_tool_loop(
@@ -140,7 +254,7 @@ fn run_tool_loop(
     stream_id: &str,
     history: &[ChatMessage],
     context: Option<&ChatMessage>,
-) -> Result<LlmChatResult, LlmIpcError> {
+) -> Result<(LlmChatResult, Vec<StagedAction>), LlmIpcError> {
     let catalog = chat_tools();
     let mut outgoing = Vec::with_capacity(history.len() + 2);
     outgoing.push(ChatMessage::new("system", TOOLS_SYSTEM));
@@ -151,6 +265,7 @@ fn run_tool_loop(
 
     let mut last_text = String::new();
     let mut engine_id = String::new();
+    let mut staged = Vec::new();
     for _ in 0..MAX_TOOL_ITERATIONS {
         let turn = llm.stream_turn(db, &outgoing, Some(&catalog), sink, stream_id, false)?;
         engine_id = turn.result.engine_id;
@@ -171,16 +286,20 @@ fn run_tool_loop(
                 name: call.function.name.clone(),
                 arguments: call.function.arguments.clone(),
             });
-            let result = execute_tool(db, &call.function.name, &call.function.arguments);
+            let outcome =
+                tools::execute_tool_with_stage(db, &call.function.name, &call.function.arguments);
+            if let Some(action) = outcome.staged {
+                staged.push(action);
+            }
             tools.emit_tool_result(&AgentToolResultEvent {
                 stream_id: stream_id.to_string(),
                 id: call.id.clone(),
                 name: call.function.name.clone(),
-                result: result.clone(),
+                result: outcome.value.clone(),
             });
             outgoing.push(ChatMessage {
                 role: "tool".into(),
-                content: result.to_string(),
+                content: outcome.value.to_string(),
                 tool_calls: None,
                 tool_call_id: Some(call.id),
             });
@@ -191,11 +310,14 @@ fn run_tool_loop(
         stream_id: stream_id.to_string(),
         text: last_text.clone(),
     });
-    Ok(LlmChatResult {
-        stream_id: stream_id.to_string(),
-        text: last_text,
-        engine_id,
-    })
+    Ok((
+        LlmChatResult {
+            stream_id: stream_id.to_string(),
+            text: last_text,
+            engine_id,
+        },
+        staged,
+    ))
 }
 
 pub fn format_note_context(title: &str, body: &str) -> String {
@@ -246,6 +368,23 @@ pub fn clear_agent_conversation(session: State<'_, AgentSession>) {
     session.clear();
 }
 
+#[tauri::command(async)]
+pub fn approve_agent_plan(
+    db: State<'_, Db>,
+    session: State<'_, AgentSession>,
+    input: PlanIdInput,
+) -> Result<ApprovePlanResult, String> {
+    session.approve_plan(&db, &input.plan_id)
+}
+
+#[tauri::command(async)]
+pub fn decline_agent_plan(
+    session: State<'_, AgentSession>,
+    input: PlanIdInput,
+) -> Result<DeclinePlanResult, String> {
+    session.decline_plan(&input.plan_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +402,7 @@ mod tests {
     struct CollectingTools {
         calls: Mutex<Vec<AgentToolEvent>>,
         results: Mutex<Vec<AgentToolResultEvent>>,
+        plans: Mutex<Vec<AgentPlanEvent>>,
     }
 
     impl CollectingTools {
@@ -278,6 +418,10 @@ mod tests {
         fn results(&self) -> Vec<AgentToolResultEvent> {
             self.results.lock().expect("tools poisoned").clone()
         }
+
+        fn plans(&self) -> Vec<AgentPlanEvent> {
+            self.plans.lock().expect("tools poisoned").clone()
+        }
     }
 
     impl ToolEventSink for CollectingTools {
@@ -289,6 +433,12 @@ mod tests {
         }
         fn emit_tool_result(&self, event: &AgentToolResultEvent) {
             self.results
+                .lock()
+                .expect("tools poisoned")
+                .push(event.clone());
+        }
+        fn emit_plan(&self, event: &AgentPlanEvent) {
+            self.plans
                 .lock()
                 .expect("tools poisoned")
                 .push(event.clone());
@@ -435,6 +585,9 @@ mod tests {
 
         let none: SendAgentChatInput = serde_json::from_str(r#"{"message":"hi"}"#).unwrap();
         assert_eq!(none.note_id, None);
+
+        let plan: PlanIdInput = serde_json::from_str(r#"{"plan_id":"plan-1"}"#).unwrap();
+        assert_eq!(plan.plan_id, "plan-1");
     }
 
     #[test]
@@ -456,7 +609,7 @@ mod tests {
         assert_eq!(recorder.last_messages()[0].role, "system");
         assert!(recorder.last_messages()[0]
             .content
-            .contains("read-only tools"));
+            .contains("only stage a plan"));
 
         session
             .send(&db, &llm, &sink, &tools, "again", None)
@@ -492,7 +645,7 @@ mod tests {
             .unwrap();
         let sent = recorder.last_messages();
         assert_eq!(sent[0].role, "system");
-        assert!(sent[0].content.contains("read-only tools"));
+        assert!(sent[0].content.contains("only stage a plan"));
         assert!(sent[0].content.contains("note-ready"));
         assert!(sent[0].content.contains("lead with the useful content"));
         assert!(sent[0].content.contains("No process narration"));
@@ -585,6 +738,7 @@ mod tests {
         assert_eq!(TOGGLE_EVENT, "agent://toggle");
         assert_eq!(TOOL_EVENT, "agent://tool");
         assert_eq!(TOOL_RESULT_EVENT, "agent://tool-result");
+        assert_eq!(PLAN_EVENT, "agent://plan");
         assert!(register_assistant_shortcut().is_ok());
     }
 
@@ -864,5 +1018,199 @@ mod tests {
             .unwrap();
         assert_eq!(second.text, "next works");
         assert_eq!(session.turns().last().unwrap().content, "next works");
+    }
+
+    fn count_events(db: &Db) -> usize {
+        db.with_conn(|conn| Repository::new(conn).list_calendar_events(None, None))
+            .unwrap()
+            .len()
+    }
+
+    fn count_tasks(db: &Db) -> usize {
+        db.with_conn(|conn| Repository::new(conn).search_tasks_by_title(""))
+            .unwrap()
+            .len()
+    }
+
+    #[test]
+    fn write_tools_stage_without_touching_sqlite() {
+        let (db, llm, session, recorder) = harness(FakeClient::scripted_turns(vec![
+            FakeChatTurn::tool_calls(vec![
+                ToolCall::function(
+                    "call_a",
+                    "create_calendar_event",
+                    r#"{"title":"Finalize tier table","start":"2026-08-13T09:00:00.000Z","end":"2026-08-13T10:30:00.000Z"}"#,
+                ),
+                ToolCall::function(
+                    "call_b",
+                    "create_calendar_event",
+                    r#"{"title":"Pricing survey email","start":"2026-08-13T13:00:00.000Z","end":"2026-08-13T13:45:00.000Z"}"#,
+                ),
+            ]),
+            FakeChatTurn::tokens(&["Thursday has room."]),
+        ]));
+        let sink = CollectingSink::default();
+        let tools = CollectingTools::default();
+        session
+            .send(
+                &db,
+                &llm,
+                &sink,
+                &tools,
+                "Block time Thursday to finish it",
+                None,
+            )
+            .unwrap();
+        assert_eq!(count_events(&db), 0);
+        assert_eq!(count_tasks(&db), 0);
+        assert_eq!(tools.results()[0].result["staged"], true);
+        assert_eq!(tools.plans().len(), 1);
+        assert_eq!(tools.plans()[0].title, "2 time blocks");
+        assert_eq!(tools.plans()[0].approve_label, "Add 2 blocks");
+        assert_eq!(tools.plans()[0].decline_label, PLAN_DECLINE_LABEL);
+        assert_eq!(tools.plans()[0].reassurance, PLAN_REASSURANCE);
+        assert_eq!(tools.plans()[0].date_label.as_deref(), Some("Thu, Aug 13"));
+        assert_eq!(tools.plans()[0].items.len(), 2);
+        assert!(recorder.last_messages()[0]
+            .content
+            .contains("only stage a plan"));
+        assert!(session.pending_plan_id().is_some());
+    }
+
+    #[test]
+    fn approve_applies_batch_via_existing_writers_and_links_task() {
+        let db = Db::open_in_memory().unwrap();
+        let note_id = insert_note(&db, "Work", "");
+        let task_id = db
+            .with_conn(|conn| {
+                Repository::new(conn).create_task(
+                    &note_id,
+                    "Finish pricing",
+                    crate::db::TaskState::Open,
+                    None,
+                    None,
+                )
+            })
+            .unwrap()
+            .id;
+        let args_a = format!(
+            r#"{{"title":"Finalize tier table","start":"2026-08-13T09:00:00.000Z","end":"2026-08-13T10:30:00.000Z","task_id":"{task_id}"}}"#
+        );
+        let args_b = format!(
+            r#"{{"title":"Pricing survey email","start":"2026-08-13T13:00:00.000Z","end":"2026-08-13T13:45:00.000Z","task_id":"{task_id}"}}"#
+        );
+        let recorder = Arc::new(RecordingClient::new(FakeClient::scripted_turns(vec![
+            FakeChatTurn::tool_calls(vec![
+                ToolCall::function("call_a", "create_calendar_event", &args_a),
+                ToolCall::function("call_b", "create_calendar_event", &args_b),
+            ]),
+            FakeChatTurn::tokens(&["Thursday has room."]),
+        ])));
+        let llm = Llm::new(recorder, Arc::new(MemorySecretStore::default()));
+        let session = AgentSession::default();
+        let sink = CollectingSink::default();
+        let tools = CollectingTools::default();
+        session
+            .send(&db, &llm, &sink, &tools, "Block time Thursday", None)
+            .unwrap();
+        assert_eq!(count_events(&db), 0);
+        let plan_id = session.pending_plan_id().expect("pending plan");
+        let applied = session.approve_plan(&db, &plan_id).unwrap();
+        assert_eq!(applied.items.len(), 2);
+        let events = db
+            .with_conn(|conn| Repository::new(conn).list_calendar_events(None, None))
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        assert!(events
+            .iter()
+            .all(|event| event.task_id.as_deref() == Some(task_id.as_str())));
+        let again = session.approve_plan(&db, &plan_id).unwrap();
+        assert_eq!(again.items.len(), 2);
+        assert_eq!(count_events(&db), 2);
+    }
+
+    #[test]
+    fn decline_writes_nothing() {
+        let (db, llm, session, _) = harness(FakeClient::scripted_turns(vec![
+            FakeChatTurn::tool_calls(vec![ToolCall::function(
+                "call_a",
+                "create_calendar_event",
+                r#"{"title":"Focus","start":"2026-08-13T15:00:00.000Z","end":"2026-08-13T16:00:00.000Z"}"#,
+            )]),
+            FakeChatTurn::tokens(&["ok"]),
+        ]));
+        let sink = CollectingSink::default();
+        let tools = CollectingTools::default();
+        session
+            .send(&db, &llm, &sink, &tools, "block focus", None)
+            .unwrap();
+        let plan_id = session.pending_plan_id().expect("pending plan");
+        session.decline_plan(&plan_id).unwrap();
+        assert_eq!(count_events(&db), 0);
+        assert_eq!(count_tasks(&db), 0);
+        assert!(session.approve_plan(&db, &plan_id).is_err());
+    }
+
+    #[test]
+    fn create_task_approve_uses_todays_daily_note() {
+        let (db, llm, session, _) = harness(FakeClient::scripted_turns(vec![
+            FakeChatTurn::tool_calls(vec![ToolCall::function(
+                "call_t",
+                "create_task",
+                r#"{"title":"Ship brief","due_date":"2026-08-13","priority":"high","today":"2026-08-13"}"#,
+            )]),
+            FakeChatTurn::tokens(&["Staged."]),
+        ]));
+        let sink = CollectingSink::default();
+        let tools = CollectingTools::default();
+        session
+            .send(&db, &llm, &sink, &tools, "add a task", None)
+            .unwrap();
+        assert_eq!(count_tasks(&db), 0);
+        assert!(db
+            .with_conn(|conn| Repository::new(conn).find_daily("2026-08-13"))
+            .unwrap()
+            .is_none());
+        let plan_id = session.pending_plan_id().expect("pending plan");
+        session.approve_plan(&db, &plan_id).unwrap();
+        let tasks = db
+            .with_conn(|conn| Repository::new(conn).search_tasks_by_title("Ship"))
+            .unwrap();
+        assert_eq!(tasks.len(), 1);
+        let daily = db
+            .with_conn(|conn| Repository::new(conn).find_daily("2026-08-13"))
+            .unwrap()
+            .expect("daily created on approve");
+        assert_eq!(tasks[0].note_id, daily.id);
+        assert_eq!(tasks[0].due_date.as_deref(), Some("2026-08-13"));
+    }
+
+    #[test]
+    fn failed_write_tool_does_not_poison_or_stage() {
+        let (db, llm, session, _) = harness(FakeClient::scripted_turns(vec![
+            FakeChatTurn::tool_calls(vec![ToolCall::function(
+                "call_bad",
+                "create_calendar_event",
+                r#"{"title":"x","start":"2026-08-13T16:00:00.000Z","end":"2026-08-13T15:00:00.000Z"}"#,
+            )]),
+            FakeChatTurn::tokens(&["I could not stage that."]),
+            FakeChatTurn::tokens(&["next works"]),
+        ]));
+        let sink = CollectingSink::default();
+        let tools = CollectingTools::default();
+        let first = session
+            .send(&db, &llm, &sink, &tools, "bad block", None)
+            .unwrap();
+        assert_eq!(first.text, "I could not stage that.");
+        assert!(tools.plans().is_empty());
+        assert!(session.pending_plan_id().is_none());
+        assert!(tools.results()[0].result["error"]
+            .as_str()
+            .unwrap()
+            .contains("end must be after start"));
+        let second = session
+            .send(&db, &llm, &sink, &tools, "hello again", None)
+            .unwrap();
+        assert_eq!(second.text, "next works");
     }
 }

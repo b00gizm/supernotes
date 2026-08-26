@@ -1,5 +1,6 @@
-//! Read-only agent tools over the existing SQLite repos (ENG-73).
+//! Agent tools over the existing SQLite repos (ENG-73/75).
 //!
+//! Reads return live rows. Writes stage into a pending plan and never insert.
 //! Failed calls return an error JSON object for the model. They do not become
 //! IPC errors and they do not create rows (`get_daily_note` looks up only).
 
@@ -9,6 +10,14 @@ use serde_json::{json, Value};
 
 use crate::db::{utc_now, CalendarEvent, Db, DbError, Note, Repository, TaskListFilter, TaskState};
 use crate::llm::ChatTool;
+
+use super::plan::{stage_write, StagedAction};
+
+#[derive(Debug, Clone)]
+pub struct ToolOutcome {
+    pub value: Value,
+    pub staged: Option<StagedAction>,
+}
 
 const SNIPPET_CHARS: usize = 200;
 
@@ -81,28 +90,112 @@ pub fn chat_tools() -> Vec<ChatTool> {
                 "required": ["date"]
             }),
         ),
+        ChatTool::function(
+            "create_task",
+            "Stage a task in today's daily note. Nothing is written until the user approves the plan.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "due_date": { "type": "string", "description": "YYYY-MM-DD" },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["none", "low", "medium", "high", "urgent"]
+                    },
+                    "today": { "type": "string", "description": "Local YYYY-MM-DD for the daily note (tests / override)" }
+                },
+                "required": ["title"]
+            }),
+        ),
+        ChatTool::function(
+            "update_task",
+            "Stage a task patch (state, due_date, and/or priority). Nothing is written until the user approves.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "state": {
+                        "type": "string",
+                        "enum": ["open", "waiting", "done", "cancelled"]
+                    },
+                    "due_date": { "type": "string", "description": "YYYY-MM-DD; JSON null clears" },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["none", "low", "medium", "high", "urgent"]
+                    }
+                },
+                "required": ["id"]
+            }),
+        ),
+        ChatTool::function(
+            "create_calendar_event",
+            "Stage a calendar time block. Set task_id to link an existing task. Nothing is written until the user approves.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "start": { "type": "string", "description": "ISO-8601 start" },
+                    "end": { "type": "string", "description": "ISO-8601 end" },
+                    "task_id": { "type": "string", "description": "Existing task id to link" }
+                },
+                "required": ["title", "start", "end"]
+            }),
+        ),
     ]
 }
 
 pub fn execute_tool(db: &Db, name: &str, arguments: &str) -> Value {
+    execute_tool_with_stage(db, name, arguments).value
+}
+
+pub fn execute_tool_with_stage(db: &Db, name: &str, arguments: &str) -> ToolOutcome {
     let args: Value = match serde_json::from_str(arguments) {
         Ok(value) => value,
-        Err(err) => return json!({ "error": format!("invalid arguments: {err}") }),
-    };
-    match db.with_conn(|conn| {
-        let repo = Repository::new(conn);
-        match name {
-            "search_notes" => search_notes(&repo, &args),
-            "get_note" => get_note(&repo, &args),
-            "list_tasks" => list_tasks(conn, &repo, &args),
-            "list_calendar_events" => list_calendar_events(conn, &repo, &args),
-            "get_daily_note" => get_daily_note(&repo, &args),
-            other => Ok(json!({ "error": format!("unknown tool: {other}") })),
+        Err(err) => {
+            return ToolOutcome {
+                value: json!({ "error": format!("invalid arguments: {err}") }),
+                staged: None,
+            };
         }
-    }) {
-        Ok(value) => value,
-        Err(err) => json!({ "error": err.to_string() }),
+    };
+    match db.with_conn(|conn| dispatch_tool(conn, name, &args)) {
+        Ok(outcome) => outcome,
+        Err(err) => ToolOutcome {
+            value: json!({ "error": err.to_string() }),
+            staged: None,
+        },
     }
+}
+
+fn dispatch_tool(conn: &Connection, name: &str, args: &Value) -> Result<ToolOutcome, DbError> {
+    match stage_write(conn, name, args) {
+        Ok(Some(action)) => {
+            return Ok(ToolOutcome {
+                value: action.model_payload(),
+                staged: Some(action),
+            });
+        }
+        Ok(None) => {}
+        Err(err) => {
+            return Ok(ToolOutcome {
+                value: json!({ "error": err.to_string() }),
+                staged: None,
+            });
+        }
+    }
+    let repo = Repository::new(conn);
+    let value = match name {
+        "search_notes" => search_notes(&repo, args)?,
+        "get_note" => get_note(&repo, args)?,
+        "list_tasks" => list_tasks(conn, &repo, args)?,
+        "list_calendar_events" => list_calendar_events(conn, &repo, args)?,
+        "get_daily_note" => get_daily_note(&repo, args)?,
+        other => json!({ "error": format!("unknown tool: {other}") }),
+    };
+    Ok(ToolOutcome {
+        value,
+        staged: None,
+    })
 }
 
 fn arg_str<'a>(args: &'a Value, keys: &[&str]) -> &'a str {
