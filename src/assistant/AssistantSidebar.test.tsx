@@ -936,6 +936,63 @@ describe("AssistantSidebar answer actions (ENG-74)", () => {
     });
   });
 
+  it("shows actions only on the last assistant turn after a tool loop", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const finalAnswer = "## Banff tips\n\nPack layers.";
+    const api = createMemoryAgentApi({
+      notes: { a: { title: "Banff", body_markdown: "lake" } },
+      turns: [
+        {
+          tokens: ["Let me check your tasks and calendar…"],
+          tool_calls: [
+            {
+              id: "search-banff",
+              name: "search_notes",
+              arguments: '{"query":"Banff"}',
+            },
+          ],
+        },
+        { tokens: [finalAnswer] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId="note-1" api={api} />,
+    );
+    await user.type(screen.getByLabelText("Ask the Assistant"), "Banff tips");
+    await user.keyboard("{Enter}");
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(within(pane).getByText("Pack layers.")).toBeInTheDocument();
+    });
+    const assistantTurns = [
+      ...pane.querySelectorAll(".assistant-turn.is-assistant"),
+    ];
+    expect(assistantTurns).toHaveLength(2);
+    expect(
+      within(assistantTurns[0] as HTMLElement).queryByRole("button", {
+        name: "Copy",
+      }),
+    ).not.toBeInTheDocument();
+    const last = assistantTurns[1] as HTMLElement;
+    expect(
+      within(last).getByRole("button", { name: "Copy" }),
+    ).toBeInTheDocument();
+    expect(within(pane).getAllByRole("button", { name: "Copy" })).toHaveLength(
+      1,
+    );
+    await user.click(within(last).getByRole("button", { name: "Copy" }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(finalAnswer);
+    });
+  });
+
   it("copy writes the answer markdown", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);

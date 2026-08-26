@@ -104,13 +104,15 @@ function isCompletedAnswer(
   turns: ChatTurn[],
   streaming: boolean,
 ): turn is AssistantTurn {
-  if (turn.role !== "assistant" || !turn.content) {
+  if (streaming || turn.role !== "assistant" || !turn.content) {
     return false;
   }
-  if (!streaming) {
-    return true;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    if (turns[i]?.role === "assistant") {
+      return index === i;
+    }
   }
-  return index < turns.length - 1;
+  return false;
 }
 
 function AnswerActionRow({
