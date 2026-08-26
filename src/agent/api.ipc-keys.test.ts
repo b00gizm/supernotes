@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { invoke } = vi.hoisted(() => ({
-  invoke: vi.fn(() => Promise.resolve({})),
+  invoke: vi.fn(() =>
+    Promise.resolve({
+      streamId: "ipc-1",
+      text: "",
+      engineId: "fake",
+    }),
+  ),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -20,10 +26,11 @@ describe("tauri agent IPC arg keys (ENG-72)", () => {
 
   it("send / clear pass camelCase top-level keys", async () => {
     const { agentApi } = await import("./api");
-    await agentApi.sendChat({
+    const first = await agentApi.sendChat({
       message: "Please proof-read this",
       note_id: "note-1",
     });
+    expect(first.stream_id).toBe("ipc-1");
     await agentApi.sendChat({ message: "no note", note_id: null });
     await agentApi.clearConversation();
 

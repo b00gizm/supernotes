@@ -3,6 +3,8 @@ import {
   agentApi as defaultAgentApi,
   ASSISTANT_PANEL_TITLE,
   ASSISTANT_SHORTCUT_LABEL,
+  subscribeAgentToolResults,
+  subscribeAgentTools,
   subscribeLlmDone,
   subscribeLlmErrors,
   subscribeLlmTokens,
@@ -10,6 +12,7 @@ import {
 } from "../agent/api";
 import { llmErrorCopy } from "../settings/errors";
 import { AssistantMarkdown } from "./markdown";
+import { formatToolResult, formatToolRowLabel } from "./toolRow";
 
 export const ASSISTANT_PLACEHOLDER = "Ask, or ⌘↵ to act on this note";
 export const ACT_ON_NOTE_PROMPT = "Act on this note.";
@@ -21,11 +24,98 @@ export type AssistantSidebarProps = {
   api?: AgentApi;
 };
 
-type ChatTurn = {
+type UserTurn = {
   id: string;
-  role: "user" | "assistant";
+  role: "user";
   content: string;
 };
+
+type AssistantTurn = {
+  id: string;
+  role: "assistant";
+  content: string;
+};
+
+type ToolTurn = {
+  id: string;
+  role: "tool";
+  name: string;
+  arguments: string;
+  result?: unknown;
+};
+
+type ChatTurn = UserTurn | AssistantTurn | ToolTurn;
+
+/** Tool results may arrive after sendChat resolves; pair by stream_id. */
+function acceptToolEvent(
+  cancelled: boolean,
+  accepting: boolean,
+  streamId: string | null,
+  eventStreamId: string,
+): boolean {
+  if (cancelled) {
+    return false;
+  }
+  if (streamId) {
+    return eventStreamId === streamId;
+  }
+  return accepting;
+}
+
+function upsertToolTurn(
+  current: ChatTurn[],
+  next: Omit<ToolTurn, "role">,
+): ChatTurn[] {
+  const existing = current.findIndex(
+    (turn) => turn.role === "tool" && turn.id === next.id,
+  );
+  if (existing === -1) {
+    return [...current, { role: "tool", ...next }];
+  }
+  const prev = current[existing];
+  if (prev?.role !== "tool") {
+    return current;
+  }
+  const merged: ToolTurn = {
+    ...prev,
+    name: next.name || prev.name,
+    arguments: next.arguments || prev.arguments,
+    result: next.result === undefined ? prev.result : next.result,
+  };
+  return [
+    ...current.slice(0, existing),
+    merged,
+    ...current.slice(existing + 1),
+  ];
+}
+
+function ToolReadRow({ turn }: { turn: ToolTurn }) {
+  const [open, setOpen] = useState(false);
+  const label = formatToolRowLabel(turn);
+  const result = formatToolResult(turn.result);
+  return (
+    <div className="assistant-tool-row">
+      <button
+        type="button"
+        className="assistant-tool-summary"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((current) => !current);
+        }}
+      >
+        <span className="assistant-tool-chevron" aria-hidden="true">
+          {">"}
+        </span>
+        <span className="assistant-tool-label">{label}</span>
+      </button>
+      {open ? (
+        <pre className="assistant-tool-result">
+          {turn.result === undefined ? "" : result}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
 
 function IconAssistantStar() {
   return (
@@ -143,6 +233,7 @@ export function AssistantSidebar({
               { id: nextId(), role: "assistant", content: event.text },
             ];
           });
+          acceptingRef.current = false;
         }),
       );
       unsubs.push(
@@ -171,6 +262,51 @@ export function AssistantSidebar({
             }
             return current;
           });
+        }),
+      );
+      unsubs.push(
+        await subscribeAgentTools((event) => {
+          if (
+            !acceptToolEvent(
+              cancelled,
+              acceptingRef.current,
+              streamIdRef.current,
+              event.stream_id,
+            )
+          ) {
+            return;
+          }
+          streamIdRef.current = event.stream_id;
+          setMessages((current) =>
+            upsertToolTurn(current, {
+              id: event.id,
+              name: event.name,
+              arguments: event.arguments,
+            }),
+          );
+        }),
+      );
+      unsubs.push(
+        await subscribeAgentToolResults((event) => {
+          if (
+            !acceptToolEvent(
+              cancelled,
+              acceptingRef.current,
+              streamIdRef.current,
+              event.stream_id,
+            )
+          ) {
+            return;
+          }
+          streamIdRef.current = event.stream_id;
+          setMessages((current) =>
+            upsertToolTurn(current, {
+              id: event.id,
+              name: event.name,
+              arguments: "",
+              result: event.result,
+            }),
+          );
         }),
       );
     })();
@@ -281,6 +417,7 @@ export function AssistantSidebar({
       if (generationRef.current !== generation) {
         return;
       }
+      acceptingRef.current = false;
       setError(llmErrorCopy(err));
       setMessages((current) => {
         const last = current[current.length - 1];
@@ -292,7 +429,6 @@ export function AssistantSidebar({
     } finally {
       if (generationRef.current === generation) {
         sendingRef.current = false;
-        acceptingRef.current = false;
         setStreaming(false);
       }
     }
@@ -354,17 +490,27 @@ export function AssistantSidebar({
         aria-live="polite"
         aria-relevant="additions"
       >
-        {messages.map((turn) =>
-          turn.role === "user" ? (
-            <div key={turn.id} className="assistant-turn is-user">
-              <div className="assistant-user-bubble">{turn.content}</div>
-            </div>
-          ) : (
+        {messages.map((turn) => {
+          if (turn.role === "user") {
+            return (
+              <div key={turn.id} className="assistant-turn is-user">
+                <div className="assistant-user-bubble">{turn.content}</div>
+              </div>
+            );
+          }
+          if (turn.role === "tool") {
+            return (
+              <div key={turn.id} className="assistant-turn is-tool">
+                <ToolReadRow turn={turn} />
+              </div>
+            );
+          }
+          return (
             <div key={turn.id} className="assistant-turn is-assistant">
               <AssistantMarkdown text={turn.content} />
             </div>
-          ),
-        )}
+          );
+        })}
       </div>
 
       {error ? (

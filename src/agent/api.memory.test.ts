@@ -11,6 +11,7 @@ import {
   LLM_TOKEN_EVENT,
   LlmError,
   MAX_TOOL_ITERATIONS,
+  parseLlmChatResult,
   subscribeAgentToolResults,
   subscribeAgentTools,
   subscribeAssistantToggle,
@@ -240,6 +241,111 @@ describe("memory agent session (ENG-72)", () => {
     expect(results).toEqual([[], null, { error: "unknown tool: not_a_tool" }]);
     const second = await agent.sendChat({ message: "again", note_id: null });
     expect(second.text).toBe("pong");
+    unlisten();
+  });
+
+  it("falls back to window events when TAURI internals are stubbed", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+    try {
+      const names: string[] = [];
+      const unlisten = await subscribeAgentTools((event) => {
+        names.push(event.name);
+      });
+      window.dispatchEvent(
+        new CustomEvent(AGENT_TOOL_EVENT, {
+          detail: {
+            stream_id: "s",
+            id: "c1",
+            name: "search_notes",
+            arguments: "{}",
+          },
+        }),
+      );
+      expect(names).toEqual(["search_notes"]);
+      unlisten();
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
+  it("parses camelCase sendChat results at the invoke boundary", () => {
+    expect(
+      parseLlmChatResult({
+        streamId: "s",
+        text: "Four hits.",
+        engineId: "fake",
+      }),
+    ).toEqual({
+      stream_id: "s",
+      text: "Four hits.",
+      engine_id: "fake",
+    });
+  });
+
+  it("parses camelCase tool.result payloads at the subscribe boundary", async () => {
+    const seen: unknown[] = [];
+    const unlisten = await subscribeAgentToolResults((event) => {
+      seen.push(event);
+    });
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          streamId: "s1",
+          id: "t1",
+          name: "search_notes",
+          result: [
+            { title: "pricing north" },
+            { title: "pricing south" },
+            { title: "pricing east" },
+            { title: "pricing west" },
+          ],
+        },
+      }),
+    );
+    expect(seen).toEqual([
+      {
+        stream_id: "s1",
+        id: "t1",
+        name: "search_notes",
+        result: [
+          { title: "pricing north" },
+          { title: "pricing south" },
+          { title: "pricing east" },
+          { title: "pricing west" },
+        ],
+      },
+    ]);
+    unlisten();
+  });
+
+  it("keeps JSON null and drops a missing result field", async () => {
+    const seen: unknown[] = [];
+    const unlisten = await subscribeAgentToolResults((event) => {
+      seen.push(event.result);
+    });
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          stream_id: "s",
+          id: "null-1",
+          name: "get_note",
+          result: null,
+        },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          stream_id: "s",
+          id: "miss-1",
+          name: "get_note",
+        },
+      }),
+    );
+    expect(seen).toEqual([null]);
     unlisten();
   });
 

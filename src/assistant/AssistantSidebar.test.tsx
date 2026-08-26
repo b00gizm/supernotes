@@ -2,6 +2,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
+  AGENT_TOOL_EVENT,
+  AGENT_TOOL_RESULT_EVENT,
   ASSISTANT_PANEL_TITLE,
   ASSISTANT_SHORTCUT_LABEL,
   createMemoryAgentApi,
@@ -317,5 +319,515 @@ describe("AssistantSidebar (ENG-72)", () => {
     expect(document.querySelector(".assistant-sidebar")).toHaveClass(
       "is-closed",
     );
+  });
+});
+
+describe("AssistantSidebar tool-read rows (ENG-73)", () => {
+  const pricingNotes = {
+    a: { title: "pricing north", body_markdown: "N" },
+    b: { title: "pricing south", body_markdown: "S" },
+    c: { title: "pricing east", body_markdown: "E" },
+    d: { title: "pricing west", body_markdown: "W" },
+  };
+
+  it("renders search_notes copy, count, and expand of the paired result", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      notes: pricingNotes,
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "search-1",
+              name: "search_notes",
+              arguments: '{"query":"pricing"}',
+            },
+          ],
+        },
+        { tokens: ["Four hits."] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "pricing?");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    const row = await waitFor(() => {
+      const found = pane.querySelector(".assistant-tool-row");
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    expect(row.querySelector(".assistant-tool-summary")).toHaveTextContent(
+      "Searched notes · 'pricing' · 4 results",
+    );
+    expect(row.querySelector(".assistant-tool-chevron")?.textContent).toBe(">");
+    expect(row.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(row.querySelector(".assistant-tool-result")).toBeNull();
+
+    await waitFor(() => {
+      expect(within(pane).getByText("Four hits.")).toBeInTheDocument();
+    });
+    const turns = [...pane.querySelectorAll(".assistant-turn")].map(
+      (node) => node.className,
+    );
+    expect(turns).toEqual([
+      "assistant-turn is-user",
+      "assistant-turn is-tool",
+      "assistant-turn is-assistant",
+    ]);
+
+    await user.click(within(row).getByText(/Searched notes/));
+    expect(row.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    const result = row.querySelector(".assistant-tool-result");
+    expect(result?.textContent).not.toBe("");
+    expect(result?.textContent).not.toBe("null");
+    expect(result?.textContent).toContain("pricing north");
+    expect(result?.textContent).toContain("pricing south");
+    expect(result?.textContent).toContain("pricing east");
+    expect(result?.textContent).toContain("pricing west");
+  });
+
+  it("labels list_calendar_events with the short day and pairs by id", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      notes: pricingNotes,
+      events: [
+        {
+          id: "e1",
+          title: "Pricing review",
+          start: "2026-08-13T14:00:00.000Z",
+          end: "2026-08-13T15:00:00.000Z",
+          task_id: null,
+        },
+      ],
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "cal-1",
+              name: "list_calendar_events",
+              arguments: '{"date":"2026-08-13"}',
+            },
+            {
+              id: "search-2",
+              name: "search_notes",
+              arguments: '{"query":"pricing"}',
+            },
+            {
+              id: "search-miss",
+              name: "search_notes",
+              arguments: '{"query":"zzzz"}',
+            },
+          ],
+        },
+        { tokens: ["Calendar first."] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "agenda");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(pane.querySelectorAll(".assistant-tool-row")).toHaveLength(3);
+    });
+    const rows = [...pane.querySelectorAll(".assistant-tool-row")];
+    const labels = rows.map(
+      (row) => row.querySelector(".assistant-tool-summary")?.textContent,
+    );
+    expect(labels).toEqual([
+      ">Read calendar · Thu, Aug 13",
+      ">Searched notes · 'pricing' · 4 results",
+      ">Searched notes · 'zzzz' · 0 results",
+    ]);
+
+    await user.click(within(rows[0] as HTMLElement).getByText(/Read calendar/));
+    expect(rows[0]?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(
+      rows[0]?.querySelector(".assistant-tool-result")?.textContent,
+    ).toContain("Pricing review");
+    expect(rows[1]?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(rows[1]?.querySelector(".assistant-tool-result")).toBeNull();
+  });
+
+  it("uses the same row chrome for the other read tools", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      notes: {
+        "note-9": {
+          title: "Mike Q3 sync",
+          body_markdown: "4.2M",
+          note_type: "regular",
+        },
+        "2026-08-13": {
+          title: "2026-08-13",
+          body_markdown: "daily",
+          note_type: "daily",
+        },
+      },
+      tasks: [
+        {
+          id: "t1",
+          title: "Send deck",
+          state: "open",
+          due_date: "2026-08-13",
+        },
+        {
+          id: "t2",
+          title: "Wait",
+          state: "waiting",
+          due_date: "2026-08-14",
+        },
+      ],
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "note-1",
+              name: "get_note",
+              arguments: '{"id_or_title":"Mike Q3 sync"}',
+            },
+            {
+              id: "tasks-1",
+              name: "list_tasks",
+              arguments: '{"state":"open"}',
+            },
+            {
+              id: "daily-1",
+              name: "get_daily_note",
+              arguments: '{"date":"2026-08-13"}',
+            },
+          ],
+        },
+        { tokens: ["Brief."] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "brief");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(pane.querySelectorAll(".assistant-tool-row")).toHaveLength(3);
+    });
+    const rows = [...pane.querySelectorAll(".assistant-tool-row")];
+    expect(
+      rows.map(
+        (row) => row.querySelector(".assistant-tool-summary")?.textContent,
+      ),
+    ).toEqual([
+      ">Read note · 'Mike Q3 sync'",
+      ">Listed tasks · open · 1 result",
+      ">Read daily note · Thu, Aug 13",
+    ]);
+    for (const row of rows) {
+      expect(row.querySelector(".assistant-tool-chevron")?.textContent).toBe(
+        ">",
+      );
+      expect(row).toHaveClass("assistant-tool-row");
+      expect(row.querySelector(".assistant-tool-summary")).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      expect(
+        row.querySelector(".assistant-tool-summary")?.textContent,
+      ).toContain(" · ");
+    }
+    expect(within(pane).queryByText("Append to daily note")).toBeNull();
+    expect(within(pane).queryByText("Add 3 blocks")).toBeNull();
+    expect(
+      within(pane).queryByText("Nothing is written until you approve."),
+    ).toBeNull();
+  });
+
+  it("toggles the paired result from the chevron even when the result is empty", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "miss-1",
+              name: "get_note",
+              arguments: '{"id_or_title":"missing"}',
+            },
+            {
+              id: "empty-1",
+              name: "search_notes",
+              arguments: '{"query":""}',
+            },
+          ],
+        },
+        { tokens: ["Nothing found."] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "lookup");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(pane.querySelectorAll(".assistant-tool-row")).toHaveLength(2);
+    });
+    const [miss, empty] = [...pane.querySelectorAll(".assistant-tool-row")];
+    expect(miss).toBeTruthy();
+    expect(empty).toBeTruthy();
+
+    const missChevron = miss?.querySelector(".assistant-tool-chevron");
+    expect(missChevron).toBeTruthy();
+    await user.click(missChevron as HTMLElement);
+    expect(miss?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(miss?.querySelector(".assistant-tool-result")?.textContent).toBe(
+      "null",
+    );
+
+    await user.click(missChevron as HTMLElement);
+    expect(miss?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(miss?.querySelector(".assistant-tool-result")).toBeNull();
+
+    const emptyLabel = empty?.querySelector(".assistant-tool-label");
+    expect(emptyLabel).toHaveTextContent("Searched notes · 0 results");
+    await user.click(emptyLabel as HTMLElement);
+    expect(empty?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(empty?.querySelector(".assistant-tool-result")?.textContent).toBe(
+      "[]",
+    );
+    await user.click(
+      empty?.querySelector(".assistant-tool-summary") as HTMLElement,
+    );
+    expect(empty?.querySelector(".assistant-tool-summary")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(empty?.querySelector(".assistant-tool-result")).toBeNull();
+  });
+
+  it("pairs a search_notes payload that arrives after sendChat resolves", async () => {
+    const user = userEvent.setup();
+    const hits = [
+      { id: "a", title: "pricing north", snippet: "N" },
+      { id: "b", title: "pricing south", snippet: "S" },
+      { id: "c", title: "pricing east", snippet: "E" },
+      { id: "d", title: "pricing west", snippet: "W" },
+    ];
+    const api: AgentApi = {
+      sendChat() {
+        const stream_id = "late-1";
+        window.dispatchEvent(
+          new CustomEvent(AGENT_TOOL_EVENT, {
+            detail: {
+              stream_id,
+              id: "search-late",
+              name: "search_notes",
+              arguments: '{"query":"pricing"}',
+            },
+          }),
+        );
+        return Promise.resolve({
+          stream_id,
+          text: "Four hits.",
+          engine_id: "fake",
+        });
+      },
+      clearConversation() {
+        return Promise.resolve();
+      },
+    };
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "pricing?");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    const row = await waitFor(() => {
+      const found = pane.querySelector(".assistant-tool-row");
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    await user.click(within(row).getByText(/Searched notes/));
+    expect(row.querySelector(".assistant-tool-result")?.textContent).toBe("");
+    expect(row.querySelector(".assistant-tool-result")?.textContent).not.toBe(
+      "null",
+    );
+
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          stream_id: "late-1",
+          id: "search-late",
+          name: "search_notes",
+          result: hits,
+        },
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        row.querySelector(".assistant-tool-result")?.textContent,
+      ).toContain("pricing north");
+    });
+    const body = row.querySelector(".assistant-tool-result")?.textContent;
+    expect(body).not.toBe("null");
+    expect(body).toContain("pricing south");
+    expect(body).toContain("pricing east");
+    expect(body).toContain("pricing west");
+  });
+
+  it("pairs a camelCase tool.result payload after sendChat resolves", async () => {
+    const user = userEvent.setup();
+    const hits = [
+      { id: "a", title: "pricing north", snippet: "N" },
+      { id: "b", title: "pricing south", snippet: "S" },
+      { id: "c", title: "pricing east", snippet: "E" },
+      { id: "d", title: "pricing west", snippet: "W" },
+    ];
+    const api: AgentApi = {
+      sendChat() {
+        window.dispatchEvent(
+          new CustomEvent(AGENT_TOOL_EVENT, {
+            detail: {
+              streamId: "late-camel",
+              id: "search-camel",
+              name: "search_notes",
+              arguments: '{"query":"pricing"}',
+            },
+          }),
+        );
+        return Promise.resolve({
+          stream_id: "late-camel",
+          text: "Four hits.",
+          engine_id: "fake",
+        });
+      },
+      clearConversation() {
+        return Promise.resolve();
+      },
+    };
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "pricing?");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    const row = await waitFor(() => {
+      const found = pane.querySelector(".assistant-tool-row");
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    await user.click(within(row).getByText(/Searched notes/));
+
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          streamId: "late-camel",
+          id: "search-camel",
+          name: "search_notes",
+          result: hits,
+        },
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        row.querySelector(".assistant-tool-result")?.textContent,
+      ).toContain("pricing north");
+    });
+    const body = row.querySelector(".assistant-tool-result")?.textContent;
+    expect(body).not.toBe("");
+    expect(body).not.toBe("null");
+    expect(body).toContain("pricing south");
+    expect(body).toContain("pricing east");
+    expect(body).toContain("pricing west");
+  });
+
+  it("does not print the word null when no tool result has arrived", async () => {
+    const user = userEvent.setup();
+    const api: AgentApi = {
+      sendChat() {
+        window.dispatchEvent(
+          new CustomEvent(AGENT_TOOL_EVENT, {
+            detail: {
+              stream_id: "pending-1",
+              id: "pending-note",
+              name: "get_note",
+              arguments: '{"id_or_title":"x"}',
+            },
+          }),
+        );
+        return Promise.resolve({
+          stream_id: "pending-1",
+          text: "ok",
+          engine_id: "fake",
+        });
+      },
+      clearConversation() {
+        return Promise.resolve();
+      },
+    };
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "x");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    const row = await waitFor(() => {
+      const found = pane.querySelector(".assistant-tool-row");
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    await user.click(within(row).getByText(/Read note/));
+    expect(row.querySelector(".assistant-tool-result")?.textContent).toBe("");
+    expect(row.textContent).not.toMatch(/(^|[^a-z])null([^a-z]|$)/i);
   });
 });
