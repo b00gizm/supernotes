@@ -105,10 +105,11 @@ describe("tauri listen unwrap (ENG-73)", () => {
 });
 
 describe("tauri event name charset", () => {
-  it("marks agent://tool.result illegal because of the dot", () => {
+  it("uses a Tauri-legal tool-result name", () => {
     expect(isLegalTauriEventName(AGENT_TOOL_EVENT)).toBe(true);
     expect(isLegalTauriEventName("llm://token")).toBe(true);
-    expect(isLegalTauriEventName(AGENT_TOOL_RESULT_EVENT)).toBe(false);
-    expect(AGENT_TOOL_RESULT_EVENT.includes(".")).toBe(true);
+    expect(isLegalTauriEventName("agent://tool.result")).toBe(false);
+    expect(isLegalTauriEventName(AGENT_TOOL_RESULT_EVENT)).toBe(true);
+    expect(AGENT_TOOL_RESULT_EVENT).toBe("agent://tool-result");
   });
 });
