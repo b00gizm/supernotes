@@ -966,18 +966,27 @@ function App({ agent = defaultAgentApi }: AppProps) {
 
   const appendAnswerToDaily = (markdown: string) => {
     pendingAppendRef.current = markdown;
+    setTaskActionError(null);
     void (async () => {
-      const daily = await openDaily(new Date(dayStamp));
-      if (!daily) {
+      try {
+        const daily = await openDaily(new Date(dayStamp));
+        if (!daily) {
+          pendingAppendRef.current = null;
+          setTaskActionError("Could not open today's daily note");
+          return;
+        }
+        setDailyDate(daily.title);
+        setSurface({ kind: "daily" });
+        queueMicrotask(flushPendingAppend);
+      } catch (err) {
         pendingAppendRef.current = null;
-        return;
+        setTaskActionError(
+          err instanceof Error
+            ? err.message
+            : "Could not open today's daily note",
+        );
       }
-      setDailyDate(daily.title);
-      setSurface({ kind: "daily" });
-      queueMicrotask(flushPendingAppend);
-    })().catch(() => {
-      pendingAppendRef.current = null;
-    });
+    })();
   };
 
   const shellClass = [

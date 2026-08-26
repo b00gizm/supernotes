@@ -2147,4 +2147,41 @@ describe("App shell", () => {
       expect(body.querySelector("h2")?.textContent).toBe("Executive summary");
     });
   });
+
+  it("shows why append-to-daily failed when openDaily cannot create the note", async () => {
+    const user = userEvent.setup();
+    const inner = createMemoryNotesApi();
+    apiRef.current = {
+      ...inner,
+      getOrCreateDaily: () =>
+        Promise.reject(new Error("daily store unavailable")),
+    };
+    render(<App agent={createMemoryAgentApi({ tokens: [summaryMd] })} />);
+    await user.click(await screen.findByRole("button", { name: "Notes" }));
+    await screen.findByRole("region", { name: "Notes overview" });
+    await toggleAssistant(user);
+    await user.type(
+      await screen.findByLabelText("Ask the Assistant"),
+      "Create an executive summary for the H2 roadmap planning meeting",
+    );
+    await user.keyboard("{Enter}");
+    const pane = await screen.findByRole("complementary", {
+      name: "Assistant",
+    });
+    await waitFor(() => {
+      expect(within(pane).getByText("Executive summary")).toBeInTheDocument();
+    });
+    await user.click(
+      within(pane).getByRole("button", {
+        name: "Append to today's daily note",
+      }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /daily store unavailable|Could not open today's daily note/,
+    );
+    expect(
+      screen.getByRole("region", { name: "Notes overview" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Note body")).not.toBeInTheDocument();
+  });
 });
