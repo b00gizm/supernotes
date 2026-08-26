@@ -270,6 +270,70 @@ describe("memory agent session (ENG-72)", () => {
     }
   });
 
+  it("parses camelCase tool.result payloads at the subscribe boundary", async () => {
+    const seen: unknown[] = [];
+    const unlisten = await subscribeAgentToolResults((event) => {
+      seen.push(event);
+    });
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          streamId: "s1",
+          id: "t1",
+          name: "search_notes",
+          result: [
+            { title: "pricing north" },
+            { title: "pricing south" },
+            { title: "pricing east" },
+            { title: "pricing west" },
+          ],
+        },
+      }),
+    );
+    expect(seen).toEqual([
+      {
+        stream_id: "s1",
+        id: "t1",
+        name: "search_notes",
+        result: [
+          { title: "pricing north" },
+          { title: "pricing south" },
+          { title: "pricing east" },
+          { title: "pricing west" },
+        ],
+      },
+    ]);
+    unlisten();
+  });
+
+  it("keeps JSON null and drops a missing result field", async () => {
+    const seen: unknown[] = [];
+    const unlisten = await subscribeAgentToolResults((event) => {
+      seen.push(event.result);
+    });
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          stream_id: "s",
+          id: "null-1",
+          name: "get_note",
+          result: null,
+        },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          stream_id: "s",
+          id: "miss-1",
+          name: "get_note",
+        },
+      }),
+    );
+    expect(seen).toEqual([null]);
+    unlisten();
+  });
+
   it("rejects an empty message", async () => {
     const agent = createMemoryAgentApi();
     await expect(

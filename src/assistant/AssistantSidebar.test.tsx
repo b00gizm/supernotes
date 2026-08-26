@@ -390,6 +390,7 @@ describe("AssistantSidebar tool-read rows (ENG-73)", () => {
       "true",
     );
     const result = row.querySelector(".assistant-tool-result");
+    expect(result?.textContent).not.toBe("");
     expect(result?.textContent).not.toBe("null");
     expect(result?.textContent).toContain("pricing north");
     expect(result?.textContent).toContain("pricing south");
@@ -710,6 +711,76 @@ describe("AssistantSidebar tool-read rows (ENG-73)", () => {
       ).toContain("pricing north");
     });
     const body = row.querySelector(".assistant-tool-result")?.textContent;
+    expect(body).not.toBe("null");
+    expect(body).toContain("pricing south");
+    expect(body).toContain("pricing east");
+    expect(body).toContain("pricing west");
+  });
+
+  it("pairs a camelCase tool.result payload after sendChat resolves", async () => {
+    const user = userEvent.setup();
+    const hits = [
+      { id: "a", title: "pricing north", snippet: "N" },
+      { id: "b", title: "pricing south", snippet: "S" },
+      { id: "c", title: "pricing east", snippet: "E" },
+      { id: "d", title: "pricing west", snippet: "W" },
+    ];
+    const api: AgentApi = {
+      sendChat() {
+        window.dispatchEvent(
+          new CustomEvent(AGENT_TOOL_EVENT, {
+            detail: {
+              streamId: "late-camel",
+              id: "search-camel",
+              name: "search_notes",
+              arguments: '{"query":"pricing"}',
+            },
+          }),
+        );
+        return Promise.resolve({
+          stream_id: "late-camel",
+          text: "Four hits.",
+          engine_id: "fake",
+        });
+      },
+      clearConversation() {
+        return Promise.resolve();
+      },
+    };
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId={null} api={api} />,
+    );
+
+    await user.type(screen.getByLabelText("Ask the Assistant"), "pricing?");
+    await user.keyboard("{Enter}");
+
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    const row = await waitFor(() => {
+      const found = pane.querySelector(".assistant-tool-row");
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    await user.click(within(row).getByText(/Searched notes/));
+
+    window.dispatchEvent(
+      new CustomEvent(AGENT_TOOL_RESULT_EVENT, {
+        detail: {
+          streamId: "late-camel",
+          id: "search-camel",
+          name: "search_notes",
+          result: hits,
+        },
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        row.querySelector(".assistant-tool-result")?.textContent,
+      ).toContain("pricing north");
+    });
+    const body = row.querySelector(".assistant-tool-result")?.textContent;
+    expect(body).not.toBe("");
     expect(body).not.toBe("null");
     expect(body).toContain("pricing south");
     expect(body).toContain("pricing east");
