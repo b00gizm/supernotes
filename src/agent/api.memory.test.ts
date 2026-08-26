@@ -11,6 +11,7 @@ import {
   LLM_TOKEN_EVENT,
   LlmError,
   MAX_TOOL_ITERATIONS,
+  parseLlmChatResult,
   subscribeAgentToolResults,
   subscribeAgentTools,
   subscribeAssistantToggle,
@@ -268,6 +269,20 @@ describe("memory agent session (ENG-72)", () => {
     } finally {
       Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
     }
+  });
+
+  it("parses camelCase sendChat results at the invoke boundary", () => {
+    expect(
+      parseLlmChatResult({
+        streamId: "s",
+        text: "Four hits.",
+        engineId: "fake",
+      }),
+    ).toEqual({
+      stream_id: "s",
+      text: "Four hits.",
+      engine_id: "fake",
+    });
   });
 
   it("parses camelCase tool.result payloads at the subscribe boundary", async () => {

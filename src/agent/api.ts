@@ -66,6 +66,81 @@ export type AgentToolResultEvent = {
   result: unknown;
 };
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      return asRecord(JSON.parse(value) as unknown);
+    } catch {
+      return null;
+    }
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function readString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+/** Tauri 2 invoke/events may use streamId; the domain type is stream_id. */
+export function parseLlmChatResult(payload: unknown): LlmChatResult | null {
+  const record = asRecord(payload);
+  if (!record) {
+    return null;
+  }
+  const stream_id = readString(record, ["stream_id", "streamId"]);
+  if (!stream_id) {
+    return null;
+  }
+  return {
+    stream_id,
+    text: typeof record.text === "string" ? record.text : "",
+    engine_id: readString(record, ["engine_id", "engineId"]) ?? "",
+  };
+}
+
+export function parseAgentToolEvent(payload: unknown): AgentToolEvent | null {
+  const record = asRecord(payload);
+  if (!record) {
+    return null;
+  }
+  const stream_id = readString(record, ["stream_id", "streamId"]);
+  const id = readString(record, ["id"]);
+  const name = readString(record, ["name"]);
+  const args = record.arguments;
+  if (!stream_id || !id || !name || typeof args !== "string") {
+    return null;
+  }
+  return { stream_id, id, name, arguments: args };
+}
+
+export function parseAgentToolResultEvent(
+  payload: unknown,
+): AgentToolResultEvent | null {
+  const record = asRecord(payload);
+  if (!record) {
+    return null;
+  }
+  const stream_id = readString(record, ["stream_id", "streamId"]);
+  const id = readString(record, ["id"]);
+  const name = readString(record, ["name"]);
+  if (!stream_id || !id || !name || !("result" in record)) {
+    return null;
+  }
+  return { stream_id, id, name, result: record.result };
+}
+
 export type AgentChatMessage = LlmChatMessage & {
   tool_calls?: AgentToolCall[];
   tool_call_id?: string;
@@ -108,7 +183,15 @@ async function invokeAgent<T>(
 }
 
 const tauriAgentApi: AgentApi = {
-  sendChat: (input) => invokeAgent<LlmChatResult>("send_agent_chat", { input }),
+  sendChat: async (input) => {
+    const parsed = parseLlmChatResult(
+      await invokeAgent<unknown>("send_agent_chat", { input }),
+    );
+    if (!parsed) {
+      throw new LlmError("request_failed", "invalid chat result");
+    }
+    return parsed;
+  },
   clearConversation: async () => {
     await invokeAgent<unknown>("clear_agent_conversation");
   },
@@ -445,7 +528,10 @@ export async function subscribeAgentTools(
   handler: (event: AgentToolEvent) => void,
 ): Promise<() => void> {
   return subscribeEvent(AGENT_TOOL_EVENT, (payload) => {
-    handler(payload as AgentToolEvent);
+    const event = parseAgentToolEvent(payload);
+    if (event) {
+      handler(event);
+    }
   });
 }
 
@@ -453,7 +539,10 @@ export async function subscribeAgentToolResults(
   handler: (event: AgentToolResultEvent) => void,
 ): Promise<() => void> {
   return subscribeEvent(AGENT_TOOL_RESULT_EVENT, (payload) => {
-    handler(payload as AgentToolResultEvent);
+    const event = parseAgentToolResultEvent(payload);
+    if (event) {
+      handler(event);
+    }
   });
 }
 
