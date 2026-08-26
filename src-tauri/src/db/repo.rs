@@ -106,6 +106,17 @@ impl<'a> Repository<'a> {
             .map_err(DbError::from)
     }
 
+    /// Read-only daily lookup. Does not create a row (agent tools stay read-only).
+    pub fn find_daily(&self, date: &str) -> DbResult<Option<Note>> {
+        let date = date.trim();
+        if !is_daily_title(date) {
+            return Err(DbError::Invalid(format!(
+                "daily date must be YYYY-MM-DD, got {date:?}"
+            )));
+        }
+        self.find_daily_by_title(date)
+    }
+
     pub fn get_note(&self, id: &str) -> DbResult<Note> {
         self.conn
             .query_row(

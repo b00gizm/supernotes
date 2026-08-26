@@ -1937,10 +1937,15 @@ describe("App shell", () => {
       message: "Please proof-read this",
       note_id: "daily-1",
     });
-    expect(inner.lastOutgoing()[0]?.role).toBe("system");
-    expect(inner.lastOutgoing()[0]?.content).toContain(
-      "Ths sentnce has typos.",
-    );
+    expect(
+      inner
+        .lastOutgoing()
+        .some(
+          (message) =>
+            message.role === "system" &&
+            message.content.includes("Ths sentnce has typos."),
+        ),
+    ).toBe(true);
 
     await user.click(screen.getByRole("button", { name: "Notes" }));
     await screen.findByRole("region", { name: "Notes overview" });
@@ -1957,7 +1962,9 @@ describe("App shell", () => {
       note_id: null,
     });
     expect(
-      inner.lastOutgoing().some((message) => message.role === "system"),
+      inner
+        .lastOutgoing()
+        .some((message) => message.content.includes("Ths sentnce has typos.")),
     ).toBe(false);
   });
 

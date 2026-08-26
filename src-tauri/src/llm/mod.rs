@@ -17,9 +17,11 @@ use uuid::Uuid;
 use crate::db::Db;
 
 pub use client::{
-    ChatMessage, ChatRequest, FakeClient, LlmClient, OpenAiCompatibleClient, TEST_MAX_TOKENS,
-    TEST_PROMPT,
+    ChatMessage, ChatRequest, ChatTool, FakeClient, LlmClient, OpenAiCompatibleClient, ToolCall,
+    TEST_MAX_TOKENS, TEST_PROMPT,
 };
+#[cfg(test)]
+pub use client::{ChatOutcome, FakeChatTurn};
 pub use secrets::{KeyringSecretStore, MemorySecretStore, SecretStore};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -262,13 +264,14 @@ impl Llm {
     ) -> Result<LlmChatResult, LlmIpcError> {
         self.stream(
             db,
-            &[ChatMessage {
-                role: "user".into(),
-                content: TEST_PROMPT.into(),
-            }],
+            &[ChatMessage::new("user", TEST_PROMPT)],
             Some(TEST_MAX_TOKENS),
+            None,
             sink,
+            None,
+            true,
         )
+        .map(|turn| turn.result)
     }
 
     pub fn stream_chat(
@@ -280,7 +283,24 @@ impl Llm {
         if messages.is_empty() {
             return Err(LlmIpcError::invalid("messages cannot be empty"));
         }
-        self.stream(db, messages, None, sink)
+        self.stream(db, messages, None, None, sink, None, true)
+            .map(|turn| turn.result)
+    }
+
+    /// One model round-trip. Caller owns `stream_id` and when to emit `llm://done`.
+    pub fn stream_turn(
+        &self,
+        db: &Db,
+        messages: &[ChatMessage],
+        tools: Option<&[ChatTool]>,
+        sink: &dyn EventSink,
+        stream_id: &str,
+        emit_done: bool,
+    ) -> Result<ChatTurn, LlmIpcError> {
+        if messages.is_empty() {
+            return Err(LlmIpcError::invalid("messages cannot be empty"));
+        }
+        self.stream(db, messages, None, tools, sink, Some(stream_id), emit_done)
     }
 
     fn stream(
@@ -288,17 +308,23 @@ impl Llm {
         db: &Db,
         messages: &[ChatMessage],
         max_tokens: Option<u32>,
+        tools: Option<&[ChatTool]>,
         sink: &dyn EventSink,
-    ) -> Result<LlmChatResult, LlmIpcError> {
+        stream_id: Option<&str>,
+        emit_done: bool,
+    ) -> Result<ChatTurn, LlmIpcError> {
         let settings = self.settings(db)?;
         let api_key = self.secrets.get_api_key()?;
-        let stream_id = Uuid::new_v4().to_string();
+        let stream_id = stream_id
+            .map(str::to_string)
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
         let request = ChatRequest {
             base_url: settings.base_url,
             model: settings.model,
             api_key,
             messages: messages.to_vec(),
             max_tokens,
+            tools: tools.map(|tools| tools.to_vec()),
         };
 
         let mut assembled = String::new();
@@ -311,15 +337,20 @@ impl Llm {
         });
 
         match result {
-            Ok(()) => {
-                sink.emit_done(&LlmDoneEvent {
-                    stream_id: stream_id.clone(),
-                    text: assembled.clone(),
-                });
-                Ok(LlmChatResult {
-                    stream_id,
-                    text: assembled,
-                    engine_id: self.client.id().to_string(),
+            Ok(outcome) => {
+                if emit_done {
+                    sink.emit_done(&LlmDoneEvent {
+                        stream_id: stream_id.clone(),
+                        text: assembled.clone(),
+                    });
+                }
+                Ok(ChatTurn {
+                    result: LlmChatResult {
+                        stream_id,
+                        text: assembled,
+                        engine_id: self.client.id().to_string(),
+                    },
+                    tool_calls: outcome.tool_calls,
                 })
             }
             Err(error) => {
@@ -332,6 +363,12 @@ impl Llm {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatTurn {
+    pub result: LlmChatResult,
+    pub tool_calls: Vec<ToolCall>,
 }
 
 #[tauri::command]

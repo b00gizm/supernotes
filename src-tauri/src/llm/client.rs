@@ -1,5 +1,6 @@
 //! Trait-backed OpenAI-compatible chat completions (streaming).
 
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{BufRead, BufReader, Read};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -15,9 +16,91 @@ pub const TEST_PROMPT: &str = "Reply with the single word pong.";
 pub const TEST_MAX_TOKENS: u32 = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCallFunction {
+    pub name: String,
+    pub arguments: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub function: ToolCallFunction,
+}
+
+impl ToolCall {
+    pub fn function(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            type_: "function".into(),
+            function: ToolCallFunction {
+                name: name.into(),
+                arguments: arguments.into(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatToolFunction {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatTool {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub function: ChatToolFunction,
+}
+
+impl ChatTool {
+    pub fn function(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        parameters: serde_json::Value,
+    ) -> Self {
+        Self {
+            type_: "function".into(),
+            function: ChatToolFunction {
+                name: name.into(),
+                description: description.into(),
+                parameters,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChatOutcome {
+    pub tool_calls: Vec<ToolCall>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ChatMessage {
     pub role: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+impl ChatMessage {
+    pub fn new(role: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: role.into(),
+            content: content.into(),
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -27,6 +110,7 @@ pub struct ChatRequest {
     pub api_key: Option<String>,
     pub messages: Vec<ChatMessage>,
     pub max_tokens: Option<u32>,
+    pub tools: Option<Vec<ChatTool>>,
 }
 
 impl std::fmt::Debug for ChatRequest {
@@ -37,6 +121,10 @@ impl std::fmt::Debug for ChatRequest {
             .field("has_api_key", &self.api_key.is_some())
             .field("messages", &self.messages)
             .field("max_tokens", &self.max_tokens)
+            .field(
+                "has_tools",
+                &self.tools.as_ref().is_some_and(|t| !t.is_empty()),
+            )
             .finish()
     }
 }
@@ -47,7 +135,31 @@ pub trait LlmClient: Send + Sync {
         &self,
         request: &ChatRequest,
         on_token: &mut dyn FnMut(&str),
-    ) -> Result<(), LlmIpcError>;
+    ) -> Result<ChatOutcome, LlmIpcError>;
+}
+
+/// One scripted `stream_chat` response for `FakeClient`.
+#[derive(Debug, Clone, Default)]
+pub struct FakeChatTurn {
+    pub tokens: Vec<String>,
+    pub tool_calls: Vec<ToolCall>,
+}
+
+#[cfg(test)]
+impl FakeChatTurn {
+    pub fn tokens(tokens: &[&str]) -> Self {
+        Self {
+            tokens: tokens.iter().map(|t| (*t).to_string()).collect(),
+            tool_calls: Vec::new(),
+        }
+    }
+
+    pub fn tool_calls(calls: Vec<ToolCall>) -> Self {
+        Self {
+            tokens: Vec::new(),
+            tool_calls: calls,
+        }
+    }
 }
 
 /// Deterministic stand-in so CI / `SUPERNOTES_FAKE_LLM` never need a live API.
@@ -55,6 +167,7 @@ pub trait LlmClient: Send + Sync {
 pub struct FakeClient {
     pub tokens: Mutex<Vec<String>>,
     pub error: Mutex<Option<LlmIpcError>>,
+    turns: Mutex<VecDeque<FakeChatTurn>>,
 }
 
 impl Default for FakeClient {
@@ -62,24 +175,34 @@ impl Default for FakeClient {
         Self {
             tokens: Mutex::new(vec!["p".into(), "ong".into()]),
             error: Mutex::new(None),
+            turns: Mutex::new(VecDeque::new()),
         }
     }
 }
 
+#[cfg(test)]
 impl FakeClient {
-    #[cfg(test)]
     pub fn failing(error: LlmIpcError) -> Self {
         Self {
             tokens: Mutex::new(Vec::new()),
             error: Mutex::new(Some(error)),
+            turns: Mutex::new(VecDeque::new()),
         }
     }
 
-    #[cfg(test)]
     pub fn scripted(tokens: &[&str]) -> Self {
         Self {
             tokens: Mutex::new(tokens.iter().map(|t| (*t).to_string()).collect()),
             error: Mutex::new(None),
+            turns: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    pub fn scripted_turns(turns: Vec<FakeChatTurn>) -> Self {
+        Self {
+            tokens: Mutex::new(Vec::new()),
+            error: Mutex::new(None),
+            turns: Mutex::new(turns.into()),
         }
     }
 }
@@ -93,14 +216,27 @@ impl LlmClient for FakeClient {
         &self,
         _request: &ChatRequest,
         on_token: &mut dyn FnMut(&str),
-    ) -> Result<(), LlmIpcError> {
+    ) -> Result<ChatOutcome, LlmIpcError> {
         if let Some(error) = self.error.lock().expect("fake llm error poisoned").clone() {
             return Err(error);
+        }
+        if let Some(turn) = self
+            .turns
+            .lock()
+            .expect("fake llm turns poisoned")
+            .pop_front()
+        {
+            for token in &turn.tokens {
+                on_token(token);
+            }
+            return Ok(ChatOutcome {
+                tool_calls: turn.tool_calls,
+            });
         }
         for token in self.tokens.lock().expect("fake llm tokens poisoned").iter() {
             on_token(token);
         }
-        Ok(())
+        Ok(ChatOutcome::default())
     }
 }
 
@@ -133,7 +269,7 @@ impl LlmClient for OpenAiCompatibleClient {
         &self,
         request: &ChatRequest,
         on_token: &mut dyn FnMut(&str),
-    ) -> Result<(), LlmIpcError> {
+    ) -> Result<ChatOutcome, LlmIpcError> {
         let url = chat_completions_url(&request.base_url);
         let mut body = json!({
             "model": request.model,
@@ -142,6 +278,11 @@ impl LlmClient for OpenAiCompatibleClient {
         });
         if let Some(max_tokens) = request.max_tokens {
             body["max_tokens"] = json!(max_tokens);
+        }
+        if let Some(tools) = &request.tools {
+            if !tools.is_empty() {
+                body["tools"] = json!(tools);
+            }
         }
 
         // Match curl-ish defaults: some gateways 401 empty bodies on `User-Agent: ureq`.
@@ -182,17 +323,20 @@ pub fn chat_completions_url(base_url: &str) -> String {
 pub fn consume_sse<R: BufRead>(
     reader: R,
     on_token: &mut dyn FnMut(&str),
-) -> Result<(), LlmIpcError> {
+) -> Result<ChatOutcome, LlmIpcError> {
+    let mut acc = ToolCallAcc::default();
     for line in reader.lines() {
         let line =
             line.map_err(|err| LlmIpcError::unreachable(format!("Lost the LLM stream ({err}).")))?;
-        match sse_token(&line) {
-            SseLine::Done => return Ok(()),
+        match sse_token(&line, &mut acc) {
+            SseLine::Done => break,
             SseLine::Token(text) => on_token(&text),
             SseLine::Ignore => {}
         }
     }
-    Ok(())
+    Ok(ChatOutcome {
+        tool_calls: acc.finish(),
+    })
 }
 
 enum SseLine {
@@ -201,7 +345,68 @@ enum SseLine {
     Ignore,
 }
 
-fn sse_token(line: &str) -> SseLine {
+#[derive(Default)]
+struct ToolCallAcc {
+    calls: BTreeMap<usize, PartialToolCall>,
+}
+
+#[derive(Default)]
+struct PartialToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+impl ToolCallAcc {
+    fn apply_value(&mut self, value: &serde_json::Value) {
+        apply_tool_calls_array(self, value.pointer("/choices/0/delta/tool_calls"));
+        apply_tool_calls_array(self, value.pointer("/choices/0/message/tool_calls"));
+    }
+
+    fn finish(self) -> Vec<ToolCall> {
+        self.calls
+            .into_iter()
+            .filter(|(_, part)| !part.name.is_empty())
+            .map(|(index, part)| {
+                let id = if part.id.is_empty() {
+                    format!("call_{index}")
+                } else {
+                    part.id
+                };
+                ToolCall::function(id, part.name, part.arguments)
+            })
+            .collect()
+    }
+}
+
+fn apply_tool_calls_array(acc: &mut ToolCallAcc, array: Option<&serde_json::Value>) {
+    let Some(items) = array.and_then(|v| v.as_array()) else {
+        return;
+    };
+    for (fallback_index, item) in items.iter().enumerate() {
+        let index = item
+            .get("index")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(fallback_index);
+        let part = acc.calls.entry(index).or_default();
+        if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+            if !id.is_empty() {
+                part.id = id.to_string();
+            }
+        }
+        if let Some(name) = item.pointer("/function/name").and_then(|v| v.as_str()) {
+            if !name.is_empty() {
+                part.name = name.to_string();
+            }
+        }
+        if let Some(args) = item.pointer("/function/arguments").and_then(|v| v.as_str()) {
+            part.arguments.push_str(args);
+        }
+    }
+}
+
+fn sse_token(line: &str, acc: &mut ToolCallAcc) -> SseLine {
     let line = line.trim();
     let Some(data) = line.strip_prefix("data:") else {
         return SseLine::Ignore;
@@ -217,6 +422,7 @@ fn sse_token(line: &str) -> SseLine {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
         return SseLine::Ignore;
     };
+    acc.apply_value(&value);
     match sse_delta_text(&value) {
         Some(text) => SseLine::Token(text),
         None => SseLine::Ignore,
@@ -446,15 +652,14 @@ mod tests {
             base_url: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
             api_key: Some("sk-secret-should-never-print".into()),
-            messages: vec![ChatMessage {
-                role: "user".into(),
-                content: "hi".into(),
-            }],
+            messages: vec![ChatMessage::new("user", "hi")],
             max_tokens: Some(8),
+            tools: None,
         };
         let debug = format!("{req:?}");
         assert!(!debug.contains("sk-secret"));
         assert!(debug.contains("has_api_key: true"));
+        assert!(debug.contains("has_tools: false"));
     }
 
     #[test]
@@ -500,6 +705,83 @@ data: [DONE]\n";
             .stream_chat(&dummy_request(), &mut |token| seen.push(token.to_string()))
             .unwrap();
         assert_eq!(seen, ["p", "ong"]);
+    }
+
+    #[test]
+    fn consume_sse_accumulates_streamed_tool_calls() {
+        let body = "\
+data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"search_notes\",\"arguments\":\"\"}}]}}]}\n\
+data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"query\\\":\"}}]}}]}\n\
+data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Q3\\\"}\"}}]}}]}\n\
+data: [DONE]\n";
+        let mut seen = Vec::new();
+        let outcome =
+            consume_sse(body.as_bytes(), &mut |token| seen.push(token.to_string())).unwrap();
+        assert!(seen.is_empty());
+        assert_eq!(
+            outcome.tool_calls,
+            [ToolCall::function(
+                "call_1",
+                "search_notes",
+                r#"{"query":"Q3"}"#
+            )]
+        );
+    }
+
+    #[test]
+    fn consume_sse_reads_message_tool_calls() {
+        let body = "\
+data: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"call_9\",\"type\":\"function\",\"function\":{\"name\":\"get_note\",\"arguments\":\"{\\\"id_or_title\\\":\\\"Mike\\\"}\"}}]}}]}\n\
+data: [DONE]\n";
+        let outcome = consume_sse(body.as_bytes(), &mut |_| {}).unwrap();
+        assert_eq!(
+            outcome.tool_calls,
+            [ToolCall::function(
+                "call_9",
+                "get_note",
+                r#"{"id_or_title":"Mike"}"#
+            )]
+        );
+    }
+
+    #[test]
+    fn fake_client_scripts_tool_calls_then_tokens() {
+        let client = FakeClient::scripted_turns(vec![
+            FakeChatTurn::tool_calls(vec![ToolCall::function(
+                "call_1",
+                "search_notes",
+                r#"{"query":"Q3"}"#,
+            )]),
+            FakeChatTurn::tokens(&["done"]),
+        ]);
+        let first = client.stream_chat(&dummy_request(), &mut |_| {}).unwrap();
+        assert_eq!(first.tool_calls[0].function.name, "search_notes");
+        let mut seen = Vec::new();
+        let second = client
+            .stream_chat(&dummy_request(), &mut |token| seen.push(token.to_string()))
+            .unwrap();
+        assert!(second.tool_calls.is_empty());
+        assert_eq!(seen, ["done"]);
+    }
+
+    #[test]
+    fn openai_client_sends_tools_in_request_body() {
+        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n\
+             data: [DONE]\n\n";
+        let (url, body_rx) = serve_capture_body(sse);
+        let client = OpenAiCompatibleClient::with_timeout(Duration::from_secs(2));
+        let mut req = dummy_request();
+        req.base_url = url;
+        req.tools = Some(vec![ChatTool::function(
+            "search_notes",
+            "Search notes by title",
+            json!({"type":"object","properties":{"query":{"type":"string"}}}),
+        )]);
+        client.stream_chat(&req, &mut |_| {}).unwrap();
+        let body = body_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(json["tools"][0]["function"]["name"], "search_notes");
+        assert_eq!(json["stream"], true);
     }
 
     #[test]
@@ -765,15 +1047,13 @@ data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n";
             base_url: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
             api_key: None,
-            messages: vec![ChatMessage {
-                role: "user".into(),
-                content: TEST_PROMPT.into(),
-            }],
+            messages: vec![ChatMessage::new("user", TEST_PROMPT)],
             max_tokens: Some(8),
+            tools: None,
         }
     }
 
-    fn request_against(base_url: &str, api_key: Option<&str>) -> Result<(), LlmIpcError> {
+    fn request_against(base_url: &str, api_key: Option<&str>) -> Result<ChatOutcome, LlmIpcError> {
         let client = OpenAiCompatibleClient::with_timeout(Duration::from_secs(2));
         let mut req = dummy_request();
         req.base_url = base_url.to_string();

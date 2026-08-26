@@ -347,14 +347,11 @@ pub fn generate_summary(
     let previous = get_summary(db, meeting_note_id)?;
 
     let messages = [
-        ChatMessage {
-            role: "system".into(),
-            content: SYSTEM_PROMPT.into(),
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: build_user_prompt(&meeting, &meeting_note.title, &transcript.body_markdown),
-        },
+        ChatMessage::new("system", SYSTEM_PROMPT),
+        ChatMessage::new(
+            "user",
+            build_user_prompt(&meeting, &meeting_note.title, &transcript.body_markdown),
+        ),
     ];
     let assembled = llm.stream_chat(db, &messages, &NullSink)?.text;
     let draft = parse_summary_draft(&assembled)?;
@@ -921,14 +918,14 @@ mod tests {
             &self,
             _request: &crate::llm::ChatRequest,
             on_token: &mut dyn FnMut(&str),
-        ) -> Result<(), LlmIpcError> {
+        ) -> Result<crate::llm::ChatOutcome, LlmIpcError> {
             if let Some(rx) = self.hold.lock().expect("hold poisoned").take() {
                 let _ = rx.recv();
             }
             for token in &self.tokens {
                 on_token(token);
             }
-            Ok(())
+            Ok(crate::llm::ChatOutcome::default())
         }
     }
 
