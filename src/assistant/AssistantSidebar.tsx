@@ -11,6 +11,12 @@ import {
   type AgentApi,
 } from "../agent/api";
 import { llmErrorCopy } from "../settings/errors";
+import {
+  ANSWER_ACTION_LABEL,
+  actionsFor,
+  noteTargetFromId,
+  type AnswerActionId,
+} from "./answerActions";
 import { AssistantMarkdown } from "./markdown";
 import { formatToolResult, formatToolRowLabel } from "./toolRow";
 
@@ -22,6 +28,9 @@ export type AssistantSidebarProps = {
   onClose: () => void;
   noteId: string | null;
   api?: AgentApi;
+  onAppendToNote?: (markdown: string) => void;
+  onReplaceNote?: (markdown: string) => void;
+  onAppendToDaily?: (markdown: string) => void;
 };
 
 type UserTurn = {
@@ -89,6 +98,116 @@ function upsertToolTurn(
   ];
 }
 
+function isCompletedAnswer(
+  turn: ChatTurn,
+  index: number,
+  turns: ChatTurn[],
+  streaming: boolean,
+): turn is AssistantTurn {
+  if (streaming || turn.role !== "assistant" || !turn.content) {
+    return false;
+  }
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    if (turns[i]?.role === "assistant") {
+      return index === i;
+    }
+  }
+  return false;
+}
+
+function AnswerActionRow({
+  markdown,
+  noteId,
+  onAppendToNote,
+  onReplaceNote,
+  onAppendToDaily,
+  onCopyError,
+}: {
+  markdown: string;
+  noteId: string | null;
+  onAppendToNote?: ((markdown: string) => void) | undefined;
+  onReplaceNote?: ((markdown: string) => void) | undefined;
+  onAppendToDaily?: ((markdown: string) => void) | undefined;
+  onCopyError: (message: string) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const actions = actionsFor(noteTargetFromId(noteId));
+
+  useEffect(() => {
+    if (confirming) {
+      confirmRef.current?.focus();
+    }
+  }, [confirming]);
+
+  const run = (id: AnswerActionId) => {
+    if (id === "replace") {
+      setConfirming(true);
+      return;
+    }
+    if (id === "copy") {
+      void navigator.clipboard.writeText(markdown).catch((err: unknown) => {
+        onCopyError(err instanceof Error ? err.message : String(err));
+      });
+      return;
+    }
+    if (id === "append") {
+      onAppendToNote?.(markdown);
+      return;
+    }
+    onAppendToDaily?.(markdown);
+  };
+
+  if (confirming) {
+    return (
+      <div
+        className="assistant-answer-actions"
+        role="group"
+        aria-label="Replace current note?"
+      >
+        <span className="assistant-answer-confirm">Replace this note?</span>
+        <button
+          ref={confirmRef}
+          type="button"
+          className="text-button danger"
+          onClick={() => {
+            onReplaceNote?.(markdown);
+            setConfirming(false);
+          }}
+        >
+          Replace
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => {
+            setConfirming(false);
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="assistant-answer-actions">
+      {actions.map((id) => (
+        <button
+          key={id}
+          type="button"
+          className={id === "replace" ? "text-button danger" : "text-button"}
+          onClick={() => {
+            run(id);
+          }}
+        >
+          {ANSWER_ACTION_LABEL[id]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ToolReadRow({ turn }: { turn: ToolTurn }) {
   const [open, setOpen] = useState(false);
   const label = formatToolRowLabel(turn);
@@ -154,6 +273,9 @@ export function AssistantSidebar({
   onClose,
   noteId,
   api = defaultAgentApi,
+  onAppendToNote,
+  onReplaceNote,
+  onAppendToDaily,
 }: AssistantSidebarProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -490,7 +612,7 @@ export function AssistantSidebar({
         aria-live="polite"
         aria-relevant="additions"
       >
-        {messages.map((turn) => {
+        {messages.map((turn, index) => {
           if (turn.role === "user") {
             return (
               <div key={turn.id} className="assistant-turn is-user">
@@ -508,6 +630,18 @@ export function AssistantSidebar({
           return (
             <div key={turn.id} className="assistant-turn is-assistant">
               <AssistantMarkdown text={turn.content} />
+              {isCompletedAnswer(turn, index, messages, streaming) ? (
+                <AnswerActionRow
+                  markdown={turn.content}
+                  noteId={noteId}
+                  onAppendToNote={onAppendToNote}
+                  onReplaceNote={onReplaceNote}
+                  onAppendToDaily={onAppendToDaily}
+                  onCopyError={(message) => {
+                    setError(message);
+                  }}
+                />
+              ) : null}
             </div>
           );
         })}

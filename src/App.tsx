@@ -21,7 +21,7 @@ import {
   shiftDailyTitle,
   startOfLocalDay,
 } from "./notes/format";
-import { NoteEditor } from "./editor/NoteEditor";
+import { NoteEditor, type NoteEditorHandle } from "./editor/NoteEditor";
 import { Backlinks } from "./notes/Backlinks";
 import { CalendarView } from "./calendar/CalendarView";
 import type { CalendarEvent } from "./calendar/types";
@@ -425,6 +425,8 @@ function App({ agent = defaultAgentApi }: AppProps) {
   const [kpiResult, setKpiResult] = useState<SearchKpiResult | null>(null);
   const [lastSearchMs, setLastSearchMs] = useState<number | null>(null);
   const dailyOpening = useRef(false);
+  const editorHandleRef = useRef<NoteEditorHandle | null>(null);
+  const pendingAppendRef = useRef<string | null>(null);
   const creatingTaskRef = useRef(false);
   const creatingMeetingRef = useRef(false);
   const creatingNoteRef = useRef(false);
@@ -944,6 +946,49 @@ function App({ agent = defaultAgentApi }: AppProps) {
     (surface.kind === "daily" || surface.kind === "note") &&
     Boolean(selectedId);
 
+  const flushPendingAppend = () => {
+    const pending = pendingAppendRef.current;
+    if (!pending || !editorHandleRef.current) {
+      return;
+    }
+    if (editorHandleRef.current.appendMarkdown(pending)) {
+      pendingAppendRef.current = null;
+    }
+  };
+
+  const appendAnswerToNote = (markdown: string) => {
+    editorHandleRef.current?.appendMarkdown(markdown);
+  };
+
+  const replaceNoteWithAnswer = (markdown: string) => {
+    editorHandleRef.current?.replaceMarkdown(markdown);
+  };
+
+  const appendAnswerToDaily = (markdown: string) => {
+    pendingAppendRef.current = markdown;
+    setTaskActionError(null);
+    void (async () => {
+      try {
+        const daily = await openDaily(new Date(dayStamp));
+        if (!daily) {
+          pendingAppendRef.current = null;
+          setTaskActionError("Could not open today's daily note");
+          return;
+        }
+        setDailyDate(daily.title);
+        setSurface({ kind: "daily" });
+        queueMicrotask(flushPendingAppend);
+      } catch (err) {
+        pendingAppendRef.current = null;
+        setTaskActionError(
+          err instanceof Error
+            ? err.message
+            : "Could not open today's daily note",
+        );
+      }
+    })();
+  };
+
   const shellClass = [
     "app-shell",
     sidebarCollapsed ? "is-sidebar-collapsed" : "",
@@ -1400,6 +1445,8 @@ function App({ agent = defaultAgentApi }: AppProps) {
                 onFocusedTask={() => {
                   setFocusTaskId(null);
                 }}
+                handleRef={editorHandleRef}
+                onReady={flushPendingAppend}
               />
             ) : null}
             {selectedId && surface.kind === "daily" ? (
@@ -1468,6 +1515,9 @@ function App({ agent = defaultAgentApi }: AppProps) {
         }}
         noteId={showEditor && selectedId ? selectedId : null}
         api={agent}
+        onAppendToNote={appendAnswerToNote}
+        onReplaceNote={replaceNoteWithAnswer}
+        onAppendToDaily={appendAnswerToDaily}
       />
 
       <SearchPalette

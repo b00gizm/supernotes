@@ -1,13 +1,19 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import type { EditorView } from "@tiptap/pm/view";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type RefObject,
+} from "react";
 import type { Note } from "../notes/types";
 import { highlightMatch } from "../ui/highlightMatch";
 import { rankNotesForWikiLink } from "../notes/wikilinks";
 import { tasksApi } from "../tasks/api";
 import { noteEditorExtensions } from "./extensions";
-import { getEditorMarkdown } from "./markdown";
+import { appendMarkdown, getEditorMarkdown, replaceMarkdown } from "./markdown";
 import { openExternalUrl, saveNoteImage } from "./media";
 import {
   insertWikiLink,
@@ -15,6 +21,11 @@ import {
   wikiLinkQueryRect,
   type WikiLinkQuery,
 } from "./wikiLink";
+
+export type NoteEditorHandle = {
+  appendMarkdown: (markdown: string) => boolean;
+  replaceMarkdown: (markdown: string) => boolean;
+};
 
 export type NoteEditorProps = {
   /** Initial markdown; remount (via `key`) when switching notes. */
@@ -28,6 +39,10 @@ export type NoteEditorProps = {
   /** After open from Tasks view: scroll the matching pill into view once. */
   focusTaskId?: string | null;
   onFocusedTask?: () => void;
+  /** Imperative append/replace so TipTap history stays intact. */
+  handleRef?: RefObject<NoteEditorHandle | null>;
+  /** Fires after the handle is bound. Used to flush a pending daily append. */
+  onReady?: () => void;
 };
 
 function IconNoteDoc() {
@@ -140,6 +155,8 @@ export function NoteEditor({
   onOpenWikiLink,
   focusTaskId = null,
   onFocusedTask,
+  handleRef,
+  onReady,
 }: NoteEditorProps) {
   const notesRef = useRef(notes);
   const currentNoteIdRef = useRef(currentNoteId);
@@ -386,6 +403,27 @@ export function NoteEditor({
   });
 
   editorRef.current = editor;
+
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+
+  useEffect(() => {
+    if (!handleRef) {
+      return;
+    }
+    if (!editor || editor.isDestroyed) {
+      handleRef.current = null;
+      return;
+    }
+    handleRef.current = {
+      appendMarkdown: (next) => appendMarkdown(editor, next),
+      replaceMarkdown: (next) => replaceMarkdown(editor, next),
+    };
+    onReadyRef.current?.();
+    return () => {
+      handleRef.current = null;
+    };
+  }, [editor, handleRef]);
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) {

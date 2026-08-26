@@ -831,3 +831,225 @@ describe("AssistantSidebar tool-read rows (ENG-73)", () => {
     expect(row.textContent).not.toMatch(/(^|[^a-z])null([^a-z]|$)/i);
   });
 });
+
+describe("AssistantSidebar answer actions (ENG-74)", () => {
+  const summary = "## Executive summary\n\n- Ship importer";
+
+  async function completeAnswer(
+    user: ReturnType<typeof userEvent.setup>,
+    noteId: string | null,
+    handlers: {
+      onAppendToNote?: (markdown: string) => void;
+      onReplaceNote?: (markdown: string) => void;
+      onAppendToDaily?: (markdown: string) => void;
+    } = {},
+  ) {
+    const api = createMemoryAgentApi({ tokens: [summary] });
+    render(
+      <AssistantSidebar
+        open
+        onClose={() => {}}
+        noteId={noteId}
+        api={api}
+        {...handlers}
+      />,
+    );
+    await user.type(
+      screen.getByLabelText("Ask the Assistant"),
+      "Create an executive summary for the H2 roadmap planning meeting",
+    );
+    await user.keyboard("{Enter}");
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(within(pane).getByText("Executive summary")).toBeInTheDocument();
+    });
+    return pane;
+  }
+
+  it("shows append, replace, and copy when a note is open", async () => {
+    const user = userEvent.setup();
+    const pane = await completeAnswer(user, "note-1");
+    expect(
+      within(pane).getByRole("button", { name: "Append to current note" }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: "Replace current note" }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: "Copy" }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).queryByRole("button", {
+        name: "Append to today's daily note",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows daily append and copy when no note is open", async () => {
+    const user = userEvent.setup();
+    const pane = await completeAnswer(user, null);
+    expect(
+      within(pane).getByRole("button", {
+        name: "Append to today's daily note",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: "Copy" }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).queryByRole("button", { name: "Append to current note" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(pane).queryByRole("button", { name: "Replace current note" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show actions while the last answer is still streaming", async () => {
+    const user = userEvent.setup();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inner = createMemoryAgentApi({ tokens: [summary] });
+    const api: AgentApi = {
+      async sendChat(input) {
+        await gate;
+        return inner.sendChat(input);
+      },
+      clearConversation() {
+        return inner.clearConversation();
+      },
+    };
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId="note-1" api={api} />,
+    );
+    await user.type(screen.getByLabelText("Ask the Assistant"), "summary");
+    await user.keyboard("{Enter}");
+    expect(
+      screen.queryByRole("button", { name: "Copy" }),
+    ).not.toBeInTheDocument();
+    release();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+    });
+  });
+
+  it("shows actions only on the last assistant turn after a tool loop", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const finalAnswer = "## Banff tips\n\nPack layers.";
+    const api = createMemoryAgentApi({
+      notes: { a: { title: "Banff", body_markdown: "lake" } },
+      turns: [
+        {
+          tokens: ["Let me check your tasks and calendar…"],
+          tool_calls: [
+            {
+              id: "search-banff",
+              name: "search_notes",
+              arguments: '{"query":"Banff"}',
+            },
+          ],
+        },
+        { tokens: [finalAnswer] },
+      ],
+    });
+    render(
+      <AssistantSidebar open onClose={() => {}} noteId="note-1" api={api} />,
+    );
+    await user.type(screen.getByLabelText("Ask the Assistant"), "Banff tips");
+    await user.keyboard("{Enter}");
+    const pane = screen.getByRole("complementary", {
+      name: ASSISTANT_PANEL_TITLE,
+    });
+    await waitFor(() => {
+      expect(within(pane).getByText("Pack layers.")).toBeInTheDocument();
+    });
+    const assistantTurns = [
+      ...pane.querySelectorAll(".assistant-turn.is-assistant"),
+    ];
+    expect(assistantTurns).toHaveLength(2);
+    expect(
+      within(assistantTurns[0] as HTMLElement).queryByRole("button", {
+        name: "Copy",
+      }),
+    ).not.toBeInTheDocument();
+    const last = assistantTurns[1] as HTMLElement;
+    expect(
+      within(last).getByRole("button", { name: "Copy" }),
+    ).toBeInTheDocument();
+    expect(within(pane).getAllByRole("button", { name: "Copy" })).toHaveLength(
+      1,
+    );
+    await user.click(within(last).getByRole("button", { name: "Copy" }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(finalAnswer);
+    });
+  });
+
+  it("copy writes the answer markdown", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const pane = await completeAnswer(user, "note-1");
+    await user.click(within(pane).getByRole("button", { name: "Copy" }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(summary);
+    });
+  });
+
+  it("append and confirmed replace call through with the answer markdown", async () => {
+    const user = userEvent.setup();
+    const onAppendToNote = vi.fn();
+    const onReplaceNote = vi.fn();
+    const pane = await completeAnswer(user, "note-1", {
+      onAppendToNote,
+      onReplaceNote,
+    });
+    await user.click(
+      within(pane).getByRole("button", { name: "Append to current note" }),
+    );
+    expect(onAppendToNote).toHaveBeenCalledWith(summary);
+    await user.click(
+      within(pane).getByRole("button", { name: "Replace current note" }),
+    );
+    expect(onReplaceNote).not.toHaveBeenCalled();
+    await user.click(within(pane).getByRole("button", { name: "Replace" }));
+    expect(onReplaceNote).toHaveBeenCalledWith(summary);
+  });
+
+  it("declining replace does not call onReplaceNote", async () => {
+    const user = userEvent.setup();
+    const onReplaceNote = vi.fn();
+    const pane = await completeAnswer(user, "note-1", { onReplaceNote });
+    await user.click(
+      within(pane).getByRole("button", { name: "Replace current note" }),
+    );
+    await user.click(within(pane).getByRole("button", { name: "Cancel" }));
+    expect(onReplaceNote).not.toHaveBeenCalled();
+    expect(
+      within(pane).getByRole("button", { name: "Replace current note" }),
+    ).toBeInTheDocument();
+  });
+
+  it("daily append calls onAppendToDaily", async () => {
+    const user = userEvent.setup();
+    const onAppendToDaily = vi.fn();
+    const pane = await completeAnswer(user, null, { onAppendToDaily });
+    await user.click(
+      within(pane).getByRole("button", {
+        name: "Append to today's daily note",
+      }),
+    );
+    expect(onAppendToDaily).toHaveBeenCalledWith(summary);
+  });
+});
