@@ -34,6 +34,7 @@ describe("memory agent session (ENG-72)", () => {
       agent.lastOutgoing().filter((message) => message.role !== "system"),
     ).toEqual([{ role: "user", content: "hello" }]);
     expect(agent.lastOutgoing()[0]?.content).toContain("read-only tools");
+    expect(agent.lastOutgoing()[0]?.content).toContain("note-ready");
 
     await agent.sendChat({ message: "again", note_id: null });
     expect(
