@@ -23,7 +23,7 @@ pub const TOGGLE_EVENT: &str = "agent://toggle";
 /// Mockup 1i chip: ⌥⌘A (Option+Command+A / Alt+Meta+A).
 pub const TOGGLE_ACCELERATOR: &str = "Alt+CmdOrCtrl+A";
 pub const TOOL_EVENT: &str = "agent://tool";
-pub const TOOL_RESULT_EVENT: &str = "agent://tool.result";
+pub const TOOL_RESULT_EVENT: &str = "agent://tool-result";
 pub const MAX_TOOL_ITERATIONS: usize = 8;
 
 const TOOLS_SYSTEM: &str = "You have read-only tools for the user's notes, tasks, calendar, and daily notes. Use them to answer from real app data instead of guessing.";
@@ -566,7 +566,7 @@ mod tests {
         assert_eq!(TOGGLE_ACCELERATOR, "Alt+CmdOrCtrl+A");
         assert_eq!(TOGGLE_EVENT, "agent://toggle");
         assert_eq!(TOOL_EVENT, "agent://tool");
-        assert_eq!(TOOL_RESULT_EVENT, "agent://tool.result");
+        assert_eq!(TOOL_RESULT_EVENT, "agent://tool-result");
         assert!(register_assistant_shortcut().is_ok());
     }
 

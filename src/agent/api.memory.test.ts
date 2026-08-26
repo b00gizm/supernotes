@@ -180,7 +180,7 @@ describe("memory agent session (ENG-72)", () => {
     expect(notes[0]?.title).toBe("Mike Q3 sync");
     expect(notes[0]?.snippet).toContain("Q3 numbers");
     expect(AGENT_TOOL_EVENT).toBe("agent://tool");
-    expect(AGENT_TOOL_RESULT_EVENT).toBe("agent://tool.result");
+    expect(AGENT_TOOL_RESULT_EVENT).toBe("agent://tool-result");
     unlistenTool();
     unlistenResult();
   });

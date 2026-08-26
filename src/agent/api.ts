@@ -35,7 +35,7 @@ export const ASSISTANT_SHORTCUT_ACCELERATOR = "Alt+CmdOrCtrl+A";
 export const ASSISTANT_SHORTCUT_LABEL = "⌥⌘A";
 export const AGENT_TOGGLE_EVENT = "agent://toggle";
 export const AGENT_TOOL_EVENT = "agent://tool";
-export const AGENT_TOOL_RESULT_EVENT = "agent://tool.result";
+export const AGENT_TOOL_RESULT_EVENT = "agent://tool-result";
 export const MAX_TOOL_ITERATIONS = 8;
 
 const TOOLS_SYSTEM =
