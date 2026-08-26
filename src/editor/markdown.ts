@@ -29,7 +29,7 @@ export function appendMarkdown(editor: Editor, markdown: string): boolean {
   if (editor.isDestroyed) {
     return false;
   }
-  if (!editor.state.doc.textContent.trim()) {
+  if (!getEditorMarkdown(editor).trim()) {
     return replaceMarkdown(editor, markdown);
   }
   const parsed = parseMarkdown(editor, markdown);

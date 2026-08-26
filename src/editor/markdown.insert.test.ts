@@ -50,6 +50,15 @@ describe("appendMarkdown / replaceMarkdown", () => {
     expect(editor.getHTML()).not.toMatch(/<h2[^>]*>New plan<\/h2>/);
   });
 
+  it("appends after a task pill whose textContent is empty", () => {
+    editor = createEditor("[[task:t-keep]]");
+    expect(editor.state.doc.textContent.trim()).toBe("");
+    expect(appendMarkdown(editor, "More after the pill")).toBe(true);
+    const md = getEditorMarkdown(editor);
+    expect(md).toContain("[[task:t-keep]]");
+    expect(md).toContain("More after the pill");
+  });
+
   it("append on an empty doc is still formatted and undoable", () => {
     editor = createEditor("");
     expect(appendMarkdown(editor, "# Title\n\nParagraph")).toBe(true);
