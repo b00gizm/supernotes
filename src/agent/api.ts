@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { formatShortDay } from "../notes/format";
 import {
   createMemoryLlmApi,
   LLM_DONE_EVENT,
@@ -36,6 +37,9 @@ export const ASSISTANT_SHORTCUT_LABEL = "⌥⌘A";
 export const AGENT_TOGGLE_EVENT = "agent://toggle";
 export const AGENT_TOOL_EVENT = "agent://tool";
 export const AGENT_TOOL_RESULT_EVENT = "agent://tool-result";
+export const AGENT_PLAN_EVENT = "agent://plan";
+export const AGENT_PLAN_REASSURANCE = "Nothing is written until you approve.";
+export const AGENT_PLAN_DECLINE_LABEL = "Decline";
 export const MAX_TOOL_ITERATIONS = 8;
 
 /** Tauri 2 EventName: alphanumeric plus `-` `/` `:` `_`. A `.` is illegal. */
@@ -71,7 +75,7 @@ export function tauriListenPayload(event: unknown): unknown {
 }
 
 const TOOLS_SYSTEM =
-  "You have read-only tools for the user's notes, tasks, calendar, and daily notes. Use them to answer from real app data instead of guessing. The final reply must be note-ready: lead with the useful content (headings, lists, facts). No process narration. No closing offers or questions. Short tool-loop chatter is fine; the last assistant message is what gets copied into a note.";
+  "You have tools for the user's notes, tasks, calendar, and daily notes. Read tools return live app data. Write tools (create_task, update_task, create_calendar_event) only stage a plan; nothing is written until the user approves. Use tools instead of guessing. The final reply must be note-ready: lead with the useful content (headings, lists, facts). No process narration. No closing offers or questions. Short tool-loop chatter is fine; the last assistant message is what gets copied into a note.";
 
 export type SendAgentChatInput = {
   message: string;
@@ -178,9 +182,39 @@ export type AgentChatMessage = LlmChatMessage & {
   tool_call_id?: string;
 };
 
+export type PlanIdInput = {
+  plan_id: string;
+};
+
+export type AgentPlanItemView = {
+  kind: string;
+  title: string;
+  time_range?: string;
+  start?: string;
+  end?: string;
+  task_id?: string | null;
+  id?: string;
+  due_date?: string | null;
+  state?: string;
+  priority?: string;
+};
+
+export type AgentPlanEvent = {
+  stream_id: string;
+  plan_id: string;
+  title: string;
+  date_label: string | null;
+  items: AgentPlanItemView[];
+  approve_label: string;
+  decline_label: string;
+  reassurance: string;
+};
+
 export type AgentApi = {
   sendChat: (input: SendAgentChatInput) => Promise<LlmChatResult>;
   clearConversation: () => Promise<void>;
+  approvePlan?: (input: PlanIdInput) => Promise<ApprovePlanResult>;
+  declinePlan?: (input: PlanIdInput) => Promise<DeclinePlanResult>;
 };
 
 function toLlmError(err: unknown): LlmError {
@@ -227,6 +261,10 @@ const tauriAgentApi: AgentApi = {
   clearConversation: async () => {
     await invokeAgent<unknown>("clear_agent_conversation");
   },
+  approvePlan: (input) =>
+    invokeAgent<ApprovePlanResult>("approve_agent_plan", { input }),
+  declinePlan: (input) =>
+    invokeAgent<DeclinePlanResult>("decline_agent_plan", { input }),
 };
 
 function isTauriRuntime(): boolean {
@@ -259,6 +297,21 @@ export type MemoryCalendarEvent = {
   task_id: string | null;
 };
 
+export type AppliedPlanItem =
+  | { kind: "create_task"; task: MemoryTask }
+  | { kind: "update_task"; task: MemoryTask }
+  | { kind: "create_calendar_event"; event: MemoryCalendarEvent };
+
+export type ApprovePlanResult = {
+  plan_id: string;
+  items: AppliedPlanItem[];
+};
+
+export type DeclinePlanResult = {
+  plan_id: string;
+  declined: boolean;
+};
+
 export type MemoryAgentTurn = {
   tokens?: string[];
   tool_calls?: AgentToolCall[];
@@ -276,7 +329,143 @@ export type MemoryAgentOptions = {
 export type MemoryAgentApi = AgentApi & {
   history: () => AgentChatMessage[];
   lastOutgoing: () => AgentChatMessage[];
+  pendingPlan: () => AgentPlanEvent | null;
+  tasks: () => MemoryTask[];
+  events: () => MemoryCalendarEvent[];
+  approvePlan: (input: PlanIdInput) => Promise<ApprovePlanResult>;
+  declinePlan: (input: PlanIdInput) => Promise<DeclinePlanResult>;
 };
+
+type MemoryStaged = {
+  kind: "create_task" | "update_task" | "create_calendar_event";
+  title?: string;
+  today?: string;
+  due_date?: string | null;
+  priority?: string | null;
+  id?: string;
+  state?: string | null;
+  start?: string;
+  end?: string;
+  task_id?: string | null;
+};
+
+function hmFromIso(iso: string): string {
+  const match = /T(\d{2}):(\d{2})/.exec(iso);
+  if (!match) {
+    return iso;
+  }
+  const minute = match[2] ?? "00";
+  return `${String(Number(match[1]))}:${minute}`;
+}
+
+function summarizeMemoryPlan(items: MemoryStaged[]): {
+  title: string;
+  approve_label: string;
+  date_ymd: string | null;
+} {
+  const blocks = items.filter(
+    (item) => item.kind === "create_calendar_event",
+  ).length;
+  const tasks = items.filter((item) => item.kind === "create_task").length;
+  const updates = items.filter((item) => item.kind === "update_task").length;
+  let date_ymd: string | null = null;
+  for (const item of items) {
+    if (item.kind === "create_calendar_event" && item.start) {
+      date_ymd = item.start.slice(0, 10);
+      break;
+    }
+    if (item.kind === "create_task" && item.today) {
+      date_ymd = item.today;
+      break;
+    }
+  }
+  if (blocks > 0 && tasks === 0 && updates === 0) {
+    return {
+      title: blocks === 1 ? "1 time block" : `${String(blocks)} time blocks`,
+      approve_label:
+        blocks === 1 ? "Add 1 block" : `Add ${String(blocks)} blocks`,
+      date_ymd,
+    };
+  }
+  if (tasks > 0 && blocks === 0 && updates === 0) {
+    return {
+      title: tasks === 1 ? "1 task" : `${String(tasks)} tasks`,
+      approve_label: tasks === 1 ? "Add 1 task" : `Add ${String(tasks)} tasks`,
+      date_ymd,
+    };
+  }
+  return {
+    title: `${String(items.length)} changes`,
+    approve_label: `Apply ${String(items.length)} changes`,
+    date_ymd,
+  };
+}
+
+function memoryPlanItem(
+  item: MemoryStaged,
+  tasks: MemoryTask[],
+): AgentPlanItemView {
+  if (item.kind === "create_calendar_event") {
+    const start = item.start ?? "";
+    const end = item.end ?? "";
+    return {
+      kind: item.kind,
+      title: item.title ?? "",
+      time_range: `${hmFromIso(start)} – ${hmFromIso(end)}`,
+      start,
+      end,
+      task_id: item.task_id ?? null,
+    };
+  }
+  if (item.kind === "create_task") {
+    const view: AgentPlanItemView = {
+      kind: item.kind,
+      title: item.title ?? "",
+      due_date: item.due_date ?? null,
+    };
+    if (item.priority) {
+      view.priority = item.priority;
+    }
+    return view;
+  }
+  const view: AgentPlanItemView = {
+    kind: item.kind,
+    title: "",
+    due_date: item.due_date ?? null,
+  };
+  if (item.id) {
+    view.id = item.id;
+    const existing = tasks.find((task) => task.id === item.id);
+    if (existing) {
+      view.title = existing.title;
+    }
+  }
+  if (item.state) {
+    view.state = item.state;
+  }
+  if (item.priority) {
+    view.priority = item.priority;
+  }
+  return view;
+}
+
+function asStaged(result: unknown): MemoryStaged | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return null;
+  }
+  const record = result as Record<string, unknown>;
+  if (record.staged !== true || typeof record.kind !== "string") {
+    return null;
+  }
+  if (
+    record.kind !== "create_task" &&
+    record.kind !== "update_task" &&
+    record.kind !== "create_calendar_event"
+  ) {
+    return null;
+  }
+  return record as MemoryStaged;
+}
 
 function emitWindow(name: string, detail: object) {
   if (typeof window === "undefined") {
@@ -403,6 +592,61 @@ function executeMemoryTool(
     );
     return match ? { id: match[0], ...match[1] } : null;
   }
+  if (name === "create_task") {
+    const title = str("title");
+    if (!title) {
+      return { error: "title is required" };
+    }
+    const today = str("today") || new Date().toISOString().slice(0, 10);
+    return {
+      staged: true,
+      kind: "create_task",
+      title,
+      due_date: str("due_date") || null,
+      priority: str("priority") || null,
+      today,
+    };
+  }
+  if (name === "update_task") {
+    const id = str("id");
+    if (!id) {
+      return { error: "id is required" };
+    }
+    const state = str("state") || null;
+    const due = args.due_date === null ? null : str("due_date") || undefined;
+    const priority =
+      args.priority === null ? null : str("priority") || undefined;
+    if (!state && due === undefined && priority === undefined) {
+      return { error: "update_task needs state, due_date, or priority" };
+    }
+    return {
+      staged: true,
+      kind: "update_task",
+      id,
+      state,
+      due_date: due ?? null,
+      priority: priority ?? null,
+    };
+  }
+  if (name === "create_calendar_event") {
+    const title = str("title");
+    const start = str("start");
+    const end = str("end");
+    if (!title || !start || !end) {
+      return { error: "title, start, and end are required" };
+    }
+    if (end <= start) {
+      return { error: "event end must be after start" };
+    }
+    return {
+      staged: true,
+      kind: "create_calendar_event",
+      title,
+      start,
+      end,
+      task_id: str("task_id") || null,
+    };
+  }
   return { error: `unknown tool: ${name}` };
 }
 
@@ -420,11 +664,15 @@ export function createMemoryAgentApi(
   const llm = createMemoryLlmApi(llmOptions);
   const history: AgentChatMessage[] = [];
   let lastOutgoing: AgentChatMessage[] = [];
-  const notes = options.notes ?? {};
-  const tasks = options.tasks ?? [];
-  const events = options.events ?? [];
+  const notes: Record<string, MemoryNote> = { ...(options.notes ?? {}) };
+  const tasks = [...(options.tasks ?? [])];
+  const events = [...(options.events ?? [])];
   const queued = options.turns ? [...options.turns] : null;
   let streamSeq = 0;
+  let seq = 0;
+  let pending: AgentPlanEvent | null = null;
+  let pendingItems: MemoryStaged[] = [];
+  let applied: ApprovePlanResult | null = null;
 
   const nextTurn = (): MemoryAgentTurn => {
     if (queued && queued.length > 0) {
@@ -439,6 +687,95 @@ export function createMemoryAgentApi(
     },
     lastOutgoing() {
       return lastOutgoing.map((message) => ({ ...message }));
+    },
+    pendingPlan() {
+      return pending
+        ? { ...pending, items: pending.items.map((item) => ({ ...item })) }
+        : null;
+    },
+    tasks() {
+      return tasks.map((task) => ({ ...task }));
+    },
+    events() {
+      return events.map((event) => ({ ...event }));
+    },
+    approvePlan(input) {
+      const planId = input.plan_id.trim();
+      if (!planId) {
+        throw new LlmError("invalid", "plan_id is required");
+      }
+      if (applied && applied.plan_id === planId) {
+        return Promise.resolve(applied);
+      }
+      if (!pending || pending.plan_id !== planId) {
+        throw new LlmError("invalid", "plan not found");
+      }
+      const items: AppliedPlanItem[] = [];
+      for (const item of pendingItems) {
+        if (item.kind === "create_task") {
+          const date = item.today || new Date().toISOString().slice(0, 10);
+          let noteId = Object.entries(notes).find(
+            ([, note]) =>
+              note.title === date && (note.note_type ?? "daily") === "daily",
+          )?.[0];
+          if (!noteId) {
+            noteId = `daily-${date}`;
+            notes[noteId] = {
+              title: date,
+              body_markdown: "",
+              note_type: "daily",
+            };
+          }
+          const task: MemoryTask = {
+            id: `mem-task-${String((seq += 1))}`,
+            title: item.title ?? "",
+            state: "open",
+            due_date: item.due_date ?? null,
+            note_id: noteId,
+          };
+          tasks.push(task);
+          items.push({ kind: "create_task", task });
+        } else if (item.kind === "update_task") {
+          const task = tasks.find((row) => row.id === item.id);
+          if (!task) {
+            throw new LlmError("invalid", "task not found");
+          }
+          if (item.state) {
+            task.state = item.state;
+          }
+          if (item.due_date !== undefined) {
+            task.due_date = item.due_date;
+          }
+          items.push({ kind: "update_task", task: { ...task } });
+        } else {
+          const event: MemoryCalendarEvent = {
+            id: `mem-evt-${String((seq += 1))}`,
+            title: item.title ?? "",
+            start: item.start ?? "",
+            end: item.end ?? "",
+            task_id: item.task_id ?? null,
+          };
+          events.push(event);
+          items.push({ kind: "create_calendar_event", event });
+        }
+      }
+      applied = { plan_id: planId, items };
+      pending = null;
+      pendingItems = [];
+      return Promise.resolve(applied);
+    },
+    declinePlan(input) {
+      const planId = input.plan_id.trim();
+      if (!planId) {
+        throw new LlmError("invalid", "plan_id is required");
+      }
+      if (pending && pending.plan_id === planId) {
+        pending = null;
+        pendingItems = [];
+        applied = null;
+        return Promise.resolve({ plan_id: planId, declined: true });
+      }
+      throw new LlmError("invalid", "plan not found");
     },
     async sendChat(input) {
       const message = input.message.trim();
@@ -473,6 +810,7 @@ export function createMemoryAgentApi(
         queueMicrotask(() => {
           try {
             let text = "";
+            const staged: MemoryStaged[] = [];
             for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
               const turn = nextTurn();
               lastOutgoing = outgoing.map((item) => ({ ...item }));
@@ -507,6 +845,10 @@ export function createMemoryAgentApi(
                   tasks,
                   events,
                 );
+                const stagedItem = asStaged(result);
+                if (stagedItem) {
+                  staged.push(stagedItem);
+                }
                 emitWindow(AGENT_TOOL_RESULT_EVENT, {
                   stream_id: streamId,
                   id: call.id,
@@ -519,6 +861,25 @@ export function createMemoryAgentApi(
                   tool_call_id: call.id,
                 });
               }
+            }
+            if (staged.length > 0) {
+              const summary = summarizeMemoryPlan(staged);
+              const event: AgentPlanEvent = {
+                stream_id: streamId,
+                plan_id: `plan-${streamId}`,
+                title: summary.title,
+                date_label: summary.date_ymd
+                  ? formatShortDay(summary.date_ymd)
+                  : null,
+                items: staged.map((item) => memoryPlanItem(item, tasks)),
+                approve_label: summary.approve_label,
+                decline_label: AGENT_PLAN_DECLINE_LABEL,
+                reassurance: AGENT_PLAN_REASSURANCE,
+              };
+              pending = event;
+              pendingItems = staged;
+              applied = null;
+              emitWindow(AGENT_PLAN_EVENT, event);
             }
             emitWindow(LLM_DONE_EVENT, { stream_id: streamId, text });
             history.push({ role: "assistant", content: text });
@@ -537,6 +898,9 @@ export function createMemoryAgentApi(
     clearConversation() {
       history.length = 0;
       lastOutgoing = [];
+      pending = null;
+      pendingItems = [];
+      applied = null;
       return Promise.resolve();
     },
   };
@@ -572,6 +936,101 @@ export async function subscribeAgentToolResults(
 ): Promise<() => void> {
   return subscribeEvent(AGENT_TOOL_RESULT_EVENT, (payload) => {
     const event = parseAgentToolResultEvent(payload);
+    if (event) {
+      handler(event);
+    }
+  });
+}
+
+export function parseAgentPlanEvent(payload: unknown): AgentPlanEvent | null {
+  const record = asRecord(payload);
+  if (!record) {
+    return null;
+  }
+  const stream_id = readString(record, ["stream_id", "streamId"]);
+  const plan_id = readString(record, ["plan_id", "planId"]);
+  const title = readString(record, ["title"]);
+  if (!stream_id || !plan_id || !title || !Array.isArray(record.items)) {
+    return null;
+  }
+  const items: AgentPlanItemView[] = [];
+  for (const raw of record.items) {
+    const item = asRecord(raw);
+    if (!item) {
+      continue;
+    }
+    const kind = readString(item, ["kind"]);
+    if (!kind) {
+      continue;
+    }
+    const view: AgentPlanItemView = {
+      kind,
+      title: typeof item.title === "string" ? item.title : "",
+    };
+    const timeRange =
+      typeof item.time_range === "string"
+        ? item.time_range
+        : typeof item.timeRange === "string"
+          ? item.timeRange
+          : null;
+    if (timeRange) {
+      view.time_range = timeRange;
+    }
+    if (typeof item.start === "string") {
+      view.start = item.start;
+    }
+    if (typeof item.end === "string") {
+      view.end = item.end;
+    }
+    const taskId =
+      typeof item.task_id === "string"
+        ? item.task_id
+        : typeof item.taskId === "string"
+          ? item.taskId
+          : null;
+    if (taskId) {
+      view.task_id = taskId;
+    }
+    if (typeof item.id === "string") {
+      view.id = item.id;
+    }
+    const due =
+      typeof item.due_date === "string"
+        ? item.due_date
+        : typeof item.dueDate === "string"
+          ? item.dueDate
+          : null;
+    if (due) {
+      view.due_date = due;
+    }
+    if (typeof item.state === "string") {
+      view.state = item.state;
+    }
+    if (typeof item.priority === "string") {
+      view.priority = item.priority;
+    }
+    items.push(view);
+  }
+  const dateLabel = record.date_label ?? record.dateLabel;
+  return {
+    stream_id,
+    plan_id,
+    title,
+    date_label: typeof dateLabel === "string" ? dateLabel : null,
+    items,
+    approve_label: readString(record, ["approve_label", "approveLabel"]) ?? "",
+    decline_label:
+      readString(record, ["decline_label", "declineLabel"]) ??
+      AGENT_PLAN_DECLINE_LABEL,
+    reassurance: readString(record, ["reassurance"]) ?? AGENT_PLAN_REASSURANCE,
+  };
+}
+
+export async function subscribeAgentPlan(
+  handler: (event: AgentPlanEvent) => void,
+): Promise<() => void> {
+  return subscribeEvent(AGENT_PLAN_EVENT, (payload) => {
+    const event = parseAgentPlanEvent(payload);
     if (event) {
       handler(event);
     }

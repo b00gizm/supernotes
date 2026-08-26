@@ -11,6 +11,21 @@ pub fn utc_now(conn: &Connection) -> DbResult<String> {
     )
 }
 
+/// Local calendar date (`YYYY-MM-DD`) from SQLite `localtime`, not a UTC prefix.
+pub fn local_today(conn: &Connection) -> DbResult<String> {
+    let date: String = conn.query_row(
+        "SELECT strftime('%Y-%m-%d', 'now', 'localtime')",
+        [],
+        |row| row.get(0),
+    )?;
+    if date.len() != 10 {
+        return Err(DbError::Invalid(format!(
+            "could not read local today: {date:?}"
+        )));
+    }
+    Ok(date)
+}
+
 /// Local calendar date (`YYYY-MM-DD`) and clock (`HH:MM`) for a UTC ISO instant.
 pub fn local_date_and_hm(conn: &Connection, iso: &str) -> DbResult<(String, String)> {
     let normalized = normalize_iso_utc(iso)?;

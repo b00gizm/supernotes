@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_PLAN_EVENT,
+  AGENT_PLAN_REASSURANCE,
   AGENT_TOGGLE_EVENT,
   AGENT_TOOL_EVENT,
   AGENT_TOOL_RESULT_EVENT,
@@ -12,6 +14,7 @@ import {
   LlmError,
   MAX_TOOL_ITERATIONS,
   parseLlmChatResult,
+  subscribeAgentPlan,
   subscribeAgentToolResults,
   subscribeAgentTools,
   subscribeAssistantToggle,
@@ -33,7 +36,7 @@ describe("memory agent session (ENG-72)", () => {
     expect(
       agent.lastOutgoing().filter((message) => message.role !== "system"),
     ).toEqual([{ role: "user", content: "hello" }]);
-    expect(agent.lastOutgoing()[0]?.content).toContain("read-only tools");
+    expect(agent.lastOutgoing()[0]?.content).toContain("only stage a plan");
     expect(agent.lastOutgoing()[0]?.content).toContain("note-ready");
 
     await agent.sendChat({ message: "again", note_id: null });
@@ -348,6 +351,120 @@ describe("memory agent session (ENG-72)", () => {
     );
     expect(seen).toEqual([null]);
     unlisten();
+  });
+
+  it("stages write tools, approve writes, decline does not", async () => {
+    const plans: string[] = [];
+    const unlisten = await subscribeAgentPlan((event) => {
+      plans.push(event.title);
+    });
+    const agent = createMemoryAgentApi({
+      tasks: [
+        {
+          id: "t1",
+          title: "Finish pricing",
+          state: "open",
+          due_date: "2026-08-13",
+        },
+      ],
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "c1",
+              name: "create_calendar_event",
+              arguments:
+                '{"title":"Finalize tier table","start":"2026-08-13T09:00:00.000Z","end":"2026-08-13T10:30:00.000Z","task_id":"t1"}',
+            },
+            {
+              id: "c2",
+              name: "create_calendar_event",
+              arguments:
+                '{"title":"Pricing survey email","start":"2026-08-13T13:00:00.000Z","end":"2026-08-13T13:45:00.000Z","task_id":"t1"}',
+            },
+            {
+              id: "c3",
+              name: "create_calendar_event",
+              arguments:
+                '{"title":"Update roadmap note","start":"2026-08-13T15:00:00.000Z","end":"2026-08-13T16:00:00.000Z","task_id":"t1"}',
+            },
+          ],
+        },
+        { tokens: ["Thursday has room."] },
+      ],
+    });
+    await agent.sendChat({
+      message: "Block time Thursday to finish it",
+      note_id: null,
+    });
+    expect(agent.events()).toEqual([]);
+    const plan = agent.pendingPlan();
+    expect(plan?.title).toBe("3 time blocks");
+    expect(plan?.approve_label).toBe("Add 3 blocks");
+    expect(plan?.date_label).toBe("Thu, Aug 13");
+    expect(plan?.reassurance).toBe(AGENT_PLAN_REASSURANCE);
+    expect(plan?.items[0]?.time_range).toBe("9:00 – 10:30");
+    expect(plans).toEqual(["3 time blocks"]);
+    expect(AGENT_PLAN_EVENT).toBe("agent://plan");
+
+    const declined = createMemoryAgentApi({
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "c1",
+              name: "create_calendar_event",
+              arguments:
+                '{"title":"Focus","start":"2026-08-13T15:00:00.000Z","end":"2026-08-13T16:00:00.000Z"}',
+            },
+          ],
+        },
+        { tokens: ["ok"] },
+      ],
+    });
+    await declined.sendChat({ message: "block", note_id: null });
+    const declineId = declined.pendingPlan()?.plan_id ?? "";
+    await declined.declinePlan({ plan_id: declineId });
+    expect(declined.events()).toEqual([]);
+
+    const applied = await agent.approvePlan({
+      plan_id: plan?.plan_id ?? "",
+    });
+    expect(applied.items).toHaveLength(3);
+    expect(agent.events()).toHaveLength(3);
+    expect(agent.events().every((event) => event.task_id === "t1")).toBe(true);
+    unlisten();
+  });
+
+  it("fills update_task plan item title from the existing task", async () => {
+    const agent = createMemoryAgentApi({
+      tasks: [
+        {
+          id: "t1",
+          title: "Finish pricing",
+          state: "open",
+          due_date: "2026-08-13",
+        },
+      ],
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "c1",
+              name: "update_task",
+              arguments: '{"id":"t1","state":"done"}',
+            },
+          ],
+        },
+        { tokens: ["Staged."] },
+      ],
+    });
+    await agent.sendChat({ message: "mark it done", note_id: null });
+    expect(agent.tasks()[0]?.state).toBe("open");
+    const item = agent.pendingPlan()?.items[0];
+    expect(item?.kind).toBe("update_task");
+    expect(item?.title).toBe("Finish pricing");
+    expect(item?.id).toBe("t1");
   });
 
   it("rejects an empty message", async () => {

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { invoke } = vi.hoisted(() => ({
-  invoke: vi.fn(() =>
+  invoke: vi.fn((): Promise<unknown> =>
     Promise.resolve({
       streamId: "ipc-1",
       text: "",
@@ -47,5 +47,23 @@ describe("tauri agent IPC arg keys (ENG-72)", () => {
       },
     });
     expect(invoke).toHaveBeenCalledWith("clear_agent_conversation");
+  });
+
+  it("approve / decline pass camelCase top-level keys and snake_case plan_id", async () => {
+    invoke.mockImplementationOnce(() =>
+      Promise.resolve({ plan_id: "p1", items: [] }),
+    );
+    invoke.mockImplementationOnce(() =>
+      Promise.resolve({ plan_id: "p1", declined: true }),
+    );
+    const { agentApi } = await import("./api");
+    await agentApi.approvePlan?.({ plan_id: "p1" });
+    await agentApi.declinePlan?.({ plan_id: "p1" });
+    expect(invoke).toHaveBeenCalledWith("approve_agent_plan", {
+      input: { plan_id: "p1" },
+    });
+    expect(invoke).toHaveBeenCalledWith("decline_agent_plan", {
+      input: { plan_id: "p1" },
+    });
   });
 });

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AGENT_PLAN_EVENT,
   AGENT_TOOL_EVENT,
   AGENT_TOOL_RESULT_EVENT,
   isLegalTauriEventName,
+  subscribeAgentPlan,
   subscribeAgentToolResults,
   subscribeAgentTools,
   tauriListenPayload,
@@ -111,5 +113,41 @@ describe("tauri event name charset", () => {
     expect(isLegalTauriEventName("agent://tool.result")).toBe(false);
     expect(isLegalTauriEventName(AGENT_TOOL_RESULT_EVENT)).toBe(true);
     expect(AGENT_TOOL_RESULT_EVENT).toBe("agent://tool-result");
+    expect(isLegalTauriEventName(AGENT_PLAN_EVENT)).toBe(true);
+    expect(isLegalTauriEventName("agent://plan.ready")).toBe(false);
+    expect(AGENT_PLAN_EVENT).toBe("agent://plan");
+  });
+});
+
+describe("tauri plan listen", () => {
+  beforeEach(() => {
+    listeners.clear();
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("unwraps agent://plan payload for the card", async () => {
+    const seen: string[] = [];
+    const unlisten = await subscribeAgentPlan((event) => {
+      seen.push(`${event.title} · ${event.date_label ?? ""}`);
+    });
+    emitTauriListen(AGENT_PLAN_EVENT, {
+      streamId: "s1",
+      planId: "p1",
+      title: "3 time blocks",
+      dateLabel: "Thu, Aug 13",
+      items: [],
+      approveLabel: "Add 3 blocks",
+      declineLabel: "Decline",
+      reassurance: "Nothing is written until you approve.",
+    });
+    expect(seen).toEqual(["3 time blocks · Thu, Aug 13"]);
+    unlisten();
   });
 });
