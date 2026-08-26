@@ -3736,6 +3736,19 @@ button {
   padding: 0.05rem 0.25rem;
 }
 
+.assistant-answer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.assistant-answer-confirm {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
 .assistant-error {
   margin: 0 var(--space-4) var(--space-2);
   color: var(--danger);

@@ -1983,4 +1983,168 @@ describe("App shell", () => {
       screen.queryByRole("complementary", { name: "Assistant" }),
     ).not.toBeInTheDocument();
   });
+
+  const summaryMd = "## Executive summary\n\n- Ship importer";
+
+  async function askForSummary(
+    user: ReturnType<typeof userEvent.setup>,
+    agent: AgentApi,
+  ) {
+    render(<App agent={agent} />);
+    await screen.findByLabelText("Note title");
+    await toggleAssistant(user);
+    await user.type(
+      await screen.findByLabelText("Ask the Assistant"),
+      "Create an executive summary for the H2 roadmap planning meeting",
+    );
+    await user.keyboard("{Enter}");
+    const pane = await screen.findByRole("complementary", {
+      name: "Assistant",
+    });
+    await waitFor(() => {
+      expect(within(pane).getByText("Executive summary")).toBeInTheDocument();
+    });
+    return pane;
+  }
+
+  it("appends a completed answer into the open note as formatted markdown (ENG-74)", async () => {
+    const user = userEvent.setup();
+    const today = formatDailyTitle();
+    const stamp = "2026-08-06T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily-1",
+        title: today,
+        body_markdown: "Roadmap notes",
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    const pane = await askForSummary(
+      user,
+      createMemoryAgentApi({ tokens: [summaryMd] }),
+    );
+    await user.click(
+      within(pane).getByRole("button", { name: "Append to current note" }),
+    );
+    const body = await screen.findByLabelText("Note body");
+    await waitFor(() => {
+      expect(body).toHaveTextContent("Roadmap notes");
+      expect(body.querySelector("h2")?.textContent).toBe("Executive summary");
+      expect(body).toHaveTextContent("Ship importer");
+    });
+  });
+
+  it("replace with confirmation overwrites the note and Cmd+Z restores it (ENG-74)", async () => {
+    const user = userEvent.setup();
+    const today = formatDailyTitle();
+    const stamp = "2026-08-06T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily-1",
+        title: today,
+        body_markdown: "Keep this body",
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    const pane = await askForSummary(
+      user,
+      createMemoryAgentApi({ tokens: [summaryMd] }),
+    );
+    const body = await screen.findByLabelText("Note body");
+    expect(body).toHaveTextContent("Keep this body");
+    await user.click(
+      within(pane).getByRole("button", { name: "Replace current note" }),
+    );
+    await user.click(within(pane).getByRole("button", { name: "Replace" }));
+    await waitFor(() => {
+      expect(body.querySelector("h2")?.textContent).toBe("Executive summary");
+      expect(body).not.toHaveTextContent("Keep this body");
+    });
+    await user.click(body);
+    await user.keyboard("{Control>}z{/Control}");
+    await waitFor(() => {
+      expect(body).toHaveTextContent("Keep this body");
+      expect(body.querySelector("h2")).toBeNull();
+    });
+  });
+
+  it("declining replace leaves the note untouched (ENG-74)", async () => {
+    const user = userEvent.setup();
+    const today = formatDailyTitle();
+    const stamp = "2026-08-06T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily-1",
+        title: today,
+        body_markdown: "Keep this body",
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    const pane = await askForSummary(
+      user,
+      createMemoryAgentApi({ tokens: [summaryMd] }),
+    );
+    await user.click(
+      within(pane).getByRole("button", { name: "Replace current note" }),
+    );
+    await user.click(within(pane).getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByLabelText("Note body")).toHaveTextContent(
+      "Keep this body",
+    );
+  });
+
+  it("appends to today's daily when no note is open (ENG-74)", async () => {
+    const user = userEvent.setup();
+    const today = formatDailyTitle();
+    const stamp = "2026-08-06T10:00:00.000Z";
+    apiRef.current = createMemoryNotesApi([
+      {
+        id: "daily-1",
+        title: today,
+        body_markdown: "Already here",
+        note_type: "daily",
+        pinned: false,
+        created_at: stamp,
+        updated_at: stamp,
+      },
+    ]);
+    render(<App agent={createMemoryAgentApi({ tokens: [summaryMd] })} />);
+    await screen.findByLabelText("Note title");
+    await user.click(screen.getByRole("button", { name: "Notes" }));
+    await screen.findByRole("region", { name: "Notes overview" });
+    await toggleAssistant(user);
+    await user.type(
+      await screen.findByLabelText("Ask the Assistant"),
+      "Create an executive summary for the H2 roadmap planning meeting",
+    );
+    await user.keyboard("{Enter}");
+    const pane = await screen.findByRole("complementary", {
+      name: "Assistant",
+    });
+    await waitFor(() => {
+      expect(within(pane).getByText("Executive summary")).toBeInTheDocument();
+    });
+    expect(
+      within(pane).queryByRole("button", { name: "Append to current note" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(pane).getByRole("button", {
+        name: "Append to today's daily note",
+      }),
+    );
+    const body = await screen.findByLabelText("Note body");
+    await waitFor(() => {
+      expect(body).toHaveTextContent("Already here");
+      expect(body.querySelector("h2")?.textContent).toBe("Executive summary");
+    });
+  });
 });
