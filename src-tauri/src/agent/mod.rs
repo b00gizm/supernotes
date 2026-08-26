@@ -26,7 +26,7 @@ pub const TOOL_EVENT: &str = "agent://tool";
 pub const TOOL_RESULT_EVENT: &str = "agent://tool-result";
 pub const MAX_TOOL_ITERATIONS: usize = 8;
 
-const TOOLS_SYSTEM: &str = "You have read-only tools for the user's notes, tasks, calendar, and daily notes. Use them to answer from real app data instead of guessing.";
+const TOOLS_SYSTEM: &str = "You have read-only tools for the user's notes, tasks, calendar, and daily notes. Use them to answer from real app data instead of guessing. The final reply must be note-ready: lead with the useful content (headings, lists, facts). No process narration. No closing offers or questions. Short tool-loop chatter is fine; the last assistant message is what gets copied into a note.";
 
 #[derive(Debug, Default)]
 struct SessionInner {
@@ -479,6 +479,24 @@ mod tests {
             without_system(&recorder.last_messages()),
             [ChatMessage::new("user", "fresh")]
         );
+    }
+
+    #[test]
+    fn outgoing_system_message_requires_note_ready_final_reply() {
+        let (db, llm, session, recorder) = harness(FakeClient::scripted(&["ok"]));
+        let sink = CollectingSink::default();
+        let tools = CollectingTools::default();
+
+        session
+            .send(&db, &llm, &sink, &tools, "hello", None)
+            .unwrap();
+        let sent = recorder.last_messages();
+        assert_eq!(sent[0].role, "system");
+        assert!(sent[0].content.contains("read-only tools"));
+        assert!(sent[0].content.contains("note-ready"));
+        assert!(sent[0].content.contains("lead with the useful content"));
+        assert!(sent[0].content.contains("No process narration"));
+        assert!(sent[0].content.contains("No closing offers"));
     }
 
     #[test]
