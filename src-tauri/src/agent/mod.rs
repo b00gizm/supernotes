@@ -1213,4 +1213,46 @@ mod tests {
             .unwrap();
         assert_eq!(second.text, "next works");
     }
+
+    #[test]
+    fn update_task_plan_item_carries_existing_title() {
+        let db = Db::open_in_memory().unwrap();
+        let note_id = insert_note(&db, "Work", "");
+        let task_id = db
+            .with_conn(|conn| {
+                Repository::new(conn).create_task(
+                    &note_id,
+                    "Finish pricing",
+                    crate::db::TaskState::Open,
+                    None,
+                    None,
+                )
+            })
+            .unwrap()
+            .id;
+        let args = format!(r#"{{"id":"{task_id}","state":"done"}}"#);
+        let recorder = Arc::new(RecordingClient::new(FakeClient::scripted_turns(vec![
+            FakeChatTurn::tool_calls(vec![ToolCall::function("call_u", "update_task", &args)]),
+            FakeChatTurn::tokens(&["Staged."]),
+        ])));
+        let llm = Llm::new(recorder, Arc::new(MemorySecretStore::default()));
+        let session = AgentSession::default();
+        let sink = CollectingSink::default();
+        let tools = CollectingTools::default();
+        session
+            .send(&db, &llm, &sink, &tools, "mark it done", None)
+            .unwrap();
+        assert_eq!(tools.plans().len(), 1);
+        assert_eq!(tools.plans()[0].items[0].kind, "update_task");
+        assert_eq!(tools.plans()[0].items[0].title, "Finish pricing");
+        assert_eq!(
+            tools.plans()[0].items[0].id.as_deref(),
+            Some(task_id.as_str())
+        );
+        let still = db
+            .with_conn(|conn| Repository::new(conn).get_task(&task_id))
+            .unwrap();
+        assert_eq!(still.state, crate::db::TaskState::Open);
+        assert_eq!(still.title, "Finish pricing");
+    }
 }

@@ -401,7 +401,10 @@ function summarizeMemoryPlan(items: MemoryStaged[]): {
   };
 }
 
-function memoryPlanItem(item: MemoryStaged): AgentPlanItemView {
+function memoryPlanItem(
+  item: MemoryStaged,
+  tasks: MemoryTask[],
+): AgentPlanItemView {
   if (item.kind === "create_calendar_event") {
     const start = item.start ?? "";
     const end = item.end ?? "";
@@ -432,6 +435,10 @@ function memoryPlanItem(item: MemoryStaged): AgentPlanItemView {
   };
   if (item.id) {
     view.id = item.id;
+    const existing = tasks.find((task) => task.id === item.id);
+    if (existing) {
+      view.title = existing.title;
+    }
   }
   if (item.state) {
     view.state = item.state;
@@ -864,7 +871,7 @@ export function createMemoryAgentApi(
                 date_label: summary.date_ymd
                   ? formatShortDay(summary.date_ymd)
                   : null,
-                items: staged.map(memoryPlanItem),
+                items: staged.map((item) => memoryPlanItem(item, tasks)),
                 approve_label: summary.approve_label,
                 decline_label: AGENT_PLAN_DECLINE_LABEL,
                 reassurance: AGENT_PLAN_REASSURANCE,

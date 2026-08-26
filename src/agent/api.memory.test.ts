@@ -436,6 +436,37 @@ describe("memory agent session (ENG-72)", () => {
     unlisten();
   });
 
+  it("fills update_task plan item title from the existing task", async () => {
+    const agent = createMemoryAgentApi({
+      tasks: [
+        {
+          id: "t1",
+          title: "Finish pricing",
+          state: "open",
+          due_date: "2026-08-13",
+        },
+      ],
+      turns: [
+        {
+          tool_calls: [
+            {
+              id: "c1",
+              name: "update_task",
+              arguments: '{"id":"t1","state":"done"}',
+            },
+          ],
+        },
+        { tokens: ["Staged."] },
+      ],
+    });
+    await agent.sendChat({ message: "mark it done", note_id: null });
+    expect(agent.tasks()[0]?.state).toBe("open");
+    const item = agent.pendingPlan()?.items[0];
+    expect(item?.kind).toBe("update_task");
+    expect(item?.title).toBe("Finish pricing");
+    expect(item?.id).toBe("t1");
+  });
+
   it("rejects an empty message", async () => {
     const agent = createMemoryAgentApi();
     await expect(

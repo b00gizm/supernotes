@@ -396,8 +396,16 @@ fn build_plan_event_on_fallback(stream_id: &str, plan: &PendingPlan) -> AgentPla
 
 fn item_view(conn: &Connection, action: &StagedAction) -> AgentPlanItemView {
     let mut view = item_view_fallback(action);
-    if let StagedAction::CreateCalendarEvent { start, end, .. } = action {
-        view.time_range = Some(format_time_range(conn, start, end));
+    match action {
+        StagedAction::CreateCalendarEvent { start, end, .. } => {
+            view.time_range = Some(format_time_range(conn, start, end));
+        }
+        StagedAction::UpdateTask { id, .. } => {
+            if let Ok(task) = Repository::new(conn).get_task(id) {
+                view.title = task.title;
+            }
+        }
+        _ => {}
     }
     view
 }
