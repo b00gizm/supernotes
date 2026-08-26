@@ -71,7 +71,7 @@ export function tauriListenPayload(event: unknown): unknown {
 }
 
 const TOOLS_SYSTEM =
-  "You have read-only tools for the user's notes, tasks, calendar, and daily notes. Use them to answer from real app data instead of guessing.";
+  "You have read-only tools for the user's notes, tasks, calendar, and daily notes. Use them to answer from real app data instead of guessing. The final reply must be note-ready: lead with the useful content (headings, lists, facts). No process narration. No closing offers or questions. Short tool-loop chatter is fine; the last assistant message is what gets copied into a note.";
 
 export type SendAgentChatInput = {
   message: string;
