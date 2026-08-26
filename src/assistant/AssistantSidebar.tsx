@@ -1,16 +1,20 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   agentApi as defaultAgentApi,
   ASSISTANT_PANEL_TITLE,
   ASSISTANT_SHORTCUT_LABEL,
+  subscribeAgentPlan,
   subscribeAgentToolResults,
   subscribeAgentTools,
   subscribeLlmDone,
   subscribeLlmErrors,
   subscribeLlmTokens,
   type AgentApi,
+  type AgentPlanEvent,
 } from "../agent/api";
+import { emitCalendarChanged } from "../calendar/api";
 import { llmErrorCopy } from "../settings/errors";
+import { emitTasksChanged } from "../tasks/events";
 import {
   ANSWER_ACTION_LABEL,
   actionsFor,
@@ -18,6 +22,7 @@ import {
   type AnswerActionId,
 } from "./answerActions";
 import { AssistantMarkdown } from "./markdown";
+import { planCardHeader, planItemLabel, type PlanUi } from "./planCard";
 import { formatToolResult, formatToolRowLabel } from "./toolRow";
 
 export const ASSISTANT_PLACEHOLDER = "Ask, or ⌘↵ to act on this note";
@@ -208,6 +213,60 @@ function AnswerActionRow({
   );
 }
 
+function PlanCard({
+  plan,
+  busy,
+  onApprove,
+  onDecline,
+}: {
+  plan: AgentPlanEvent;
+  busy: boolean;
+  onApprove: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className="assistant-plan">
+      <div className="assistant-plan-card">
+        <div className="assistant-plan-header">{planCardHeader(plan)}</div>
+        <ul className="assistant-plan-items">
+          {plan.items.map((item, index) => (
+            <li
+              key={item.id ?? `${item.kind}-${String(index)}`}
+              className="assistant-plan-item"
+            >
+              <span className="assistant-plan-time">
+                {item.time_range ?? ""}
+              </span>
+              <span className="assistant-plan-title">
+                {planItemLabel(item)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="assistant-plan-actions">
+          <button
+            type="button"
+            className="assistant-plan-approve"
+            disabled={busy}
+            onClick={onApprove}
+          >
+            {plan.approve_label}
+          </button>
+          <button
+            type="button"
+            className="assistant-plan-decline"
+            disabled={busy}
+            onClick={onDecline}
+          >
+            {plan.decline_label}
+          </button>
+        </div>
+      </div>
+      <p className="assistant-plan-reassurance">{plan.reassurance}</p>
+    </div>
+  );
+}
+
 function ToolReadRow({ turn }: { turn: ToolTurn }) {
   const [open, setOpen] = useState(false);
   const label = formatToolRowLabel(turn);
@@ -285,10 +344,17 @@ export function AssistantSidebar({
   const streamIdRef = useRef<string | null>(null);
   const generationRef = useRef(0);
   const idRef = useRef(0);
+  const planUiRef = useRef<PlanUi>({ status: "idle" });
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatTurn[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [planUi, setPlanUi] = useState<PlanUi>({ status: "idle" });
+
+  const updatePlanUi = useCallback((next: PlanUi) => {
+    planUiRef.current = next;
+    setPlanUi(next);
+  }, []);
 
   const nextId = () => {
     idRef.current += 1;
@@ -431,6 +497,23 @@ export function AssistantSidebar({
           );
         }),
       );
+      unsubs.push(
+        await subscribeAgentPlan((event) => {
+          if (
+            !acceptToolEvent(
+              cancelled,
+              acceptingRef.current,
+              streamIdRef.current,
+              event.stream_id,
+            )
+          ) {
+            return;
+          }
+          streamIdRef.current = event.stream_id;
+          setError(null);
+          updatePlanUi({ status: "ready", plan: event });
+        }),
+      );
     })();
     return () => {
       cancelled = true;
@@ -438,7 +521,7 @@ export function AssistantSidebar({
         unsub();
       }
     };
-  }, []);
+  }, [updatePlanUi]);
 
   useEffect(() => {
     const thread = threadRef.current;
@@ -446,7 +529,7 @@ export function AssistantSidebar({
       return;
     }
     thread.scrollTop = thread.scrollHeight;
-  }, [messages, streaming]);
+  }, [messages, planUi, streaming]);
 
   useEffect(() => {
     if (!open) {
@@ -478,6 +561,7 @@ export function AssistantSidebar({
     sendingRef.current = false;
     streamIdRef.current = null;
     setStreaming(false);
+    updatePlanUi({ status: "idle" });
     void api
       .clearConversation()
       .then(() => {
@@ -556,6 +640,52 @@ export function AssistantSidebar({
     }
   };
 
+  const resolvePlan = async (action: "approve" | "decline") => {
+    const current = planUiRef.current;
+    if (current.status === "idle" || current.status === "busy") {
+      return;
+    }
+    const run = action === "approve" ? api.approvePlan : api.declinePlan;
+    if (!run) {
+      setError(
+        action === "approve"
+          ? "This session cannot approve a plan."
+          : "This session cannot decline a plan.",
+      );
+      return;
+    }
+    const generation = generationRef.current;
+    const plan = current.plan;
+    const planId = plan.plan_id;
+    setError(null);
+    updatePlanUi({ status: "busy", plan });
+    try {
+      await run({ plan_id: planId });
+      if (generationRef.current !== generation) {
+        return;
+      }
+      if (action === "approve") {
+        emitTasksChanged();
+        emitCalendarChanged();
+      }
+      const latest = planUiRef.current;
+      if (latest.status !== "idle" && latest.plan.plan_id === planId) {
+        updatePlanUi({ status: "idle" });
+      }
+    } catch (err) {
+      if (generationRef.current !== generation) {
+        return;
+      }
+      const latest = planUiRef.current;
+      if (latest.status === "idle" || latest.plan.plan_id !== planId) {
+        return;
+      }
+      const message = llmErrorCopy(err);
+      updatePlanUi({ status: "error", plan: latest.plan, message });
+      setError(message);
+    }
+  };
+
   const submit = (actOnNote: boolean) => {
     const text = draft.trim();
     if (text) {
@@ -588,7 +718,9 @@ export function AssistantSidebar({
           <button
             type="button"
             className="text-button assistant-clear"
-            disabled={messages.length === 0 && !error}
+            disabled={
+              messages.length === 0 && !error && planUi.status === "idle"
+            }
             onClick={clearConversation}
           >
             Clear
@@ -645,6 +777,22 @@ export function AssistantSidebar({
             </div>
           );
         })}
+        {planUi.status !== "idle" ? (
+          <PlanCard
+            plan={planUi.plan}
+            busy={planUi.status === "busy"}
+            onApprove={() => {
+              void resolvePlan("approve").catch((err: unknown) => {
+                setError(llmErrorCopy(err));
+              });
+            }}
+            onDecline={() => {
+              void resolvePlan("decline").catch((err: unknown) => {
+                setError(llmErrorCopy(err));
+              });
+            }}
+          />
+        ) : null}
       </div>
 
       {error ? (

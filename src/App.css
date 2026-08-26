@@ -3776,3 +3776,83 @@ button {
 .assistant-input:disabled {
   color: var(--text-secondary);
 }
+
+.assistant-plan {
+  align-self: stretch;
+}
+
+.assistant-plan-card {
+  padding: var(--space-3);
+  background: var(--bg-main);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 8%, transparent);
+}
+
+.assistant-plan-header {
+  margin: 0 0 var(--space-3);
+  font-weight: var(--weight-bold);
+}
+
+.assistant-plan-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.assistant-plan-item {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.assistant-plan-time {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: right;
+}
+
+.assistant-plan-title {
+  color: var(--text);
+}
+
+.assistant-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.assistant-plan-approve {
+  padding: 0.35rem 0.7rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.assistant-plan-decline {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-main);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.assistant-plan-approve:disabled,
+.assistant-plan-decline:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.assistant-plan-reassurance {
+  margin: var(--space-2) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}

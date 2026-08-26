@@ -2,14 +2,19 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
+  AGENT_PLAN_EVENT,
   AGENT_TOOL_EVENT,
   AGENT_TOOL_RESULT_EVENT,
   ASSISTANT_PANEL_TITLE,
   ASSISTANT_SHORTCUT_LABEL,
+  LlmError,
   createMemoryAgentApi,
   type AgentApi,
+  type AgentPlanEvent,
   type SendAgentChatInput,
 } from "../agent/api";
+import { subscribeCalendarChanged } from "../calendar/api";
+import { subscribeTasksChanged } from "../tasks/events";
 import {
   ACT_ON_NOTE_PROMPT,
   ASSISTANT_PLACEHOLDER,
@@ -1051,5 +1056,289 @@ describe("AssistantSidebar answer actions (ENG-74)", () => {
       }),
     );
     expect(onAppendToDaily).toHaveBeenCalledWith(summary);
+  });
+});
+
+const threeBlockTurns = [
+  {
+    tool_calls: [
+      {
+        id: "c1",
+        name: "create_calendar_event",
+        arguments:
+          '{"title":"Finalize tier table","start":"2026-08-13T09:00:00.000Z","end":"2026-08-13T10:30:00.000Z","task_id":"t1"}',
+      },
+      {
+        id: "c2",
+        name: "create_calendar_event",
+        arguments:
+          '{"title":"Pricing survey email","start":"2026-08-13T13:00:00.000Z","end":"2026-08-13T13:45:00.000Z","task_id":"t1"}',
+      },
+      {
+        id: "c3",
+        name: "create_calendar_event",
+        arguments:
+          '{"title":"Update roadmap note","start":"2026-08-13T15:00:00.000Z","end":"2026-08-13T16:00:00.000Z","task_id":"t1"}',
+      },
+    ],
+  },
+  { tokens: ["Thursday has room."] },
+];
+
+function writePlanApi() {
+  return createMemoryAgentApi({
+    tasks: [
+      {
+        id: "t1",
+        title: "Finish pricing",
+        state: "open",
+        due_date: "2026-08-13",
+      },
+    ],
+    turns: [...threeBlockTurns],
+  });
+}
+
+async function sendAndWaitForPlan(
+  user: ReturnType<typeof userEvent.setup>,
+  api: ReturnType<typeof createMemoryAgentApi>,
+  message = "Block time Thursday to finish it",
+) {
+  render(<AssistantSidebar open onClose={() => {}} noteId={null} api={api} />);
+  await user.type(screen.getByLabelText("Ask the Assistant"), message);
+  await user.keyboard("{Enter}");
+  const pane = screen.getByRole("complementary", {
+    name: ASSISTANT_PANEL_TITLE,
+  });
+  await waitFor(() => {
+    expect(pane.querySelector(".assistant-plan-card")).toBeTruthy();
+  });
+  return pane;
+}
+
+describe("AssistantSidebar plan card (ENG-75)", () => {
+  it("renders event copy after agent://plan, with tool rows and answer actions", async () => {
+    const user = userEvent.setup();
+    const api = writePlanApi();
+    const pane = await sendAndWaitForPlan(user, api);
+    const plan = api.pendingPlan();
+    if (!plan?.date_label) {
+      throw new Error("expected a pending plan with a date label");
+    }
+    expect(pane.querySelector(".assistant-plan-header")).toHaveTextContent(
+      `${plan.title} · ${plan.date_label}`,
+    );
+    const times = [...pane.querySelectorAll(".assistant-plan-time")].map(
+      (node) => node.textContent,
+    );
+    const titles = [...pane.querySelectorAll(".assistant-plan-title")].map(
+      (node) => node.textContent,
+    );
+    expect(times).toEqual(plan.items.map((item) => item.time_range));
+    expect(titles).toEqual(plan.items.map((item) => item.title));
+    expect(
+      within(pane).getByRole("button", { name: plan.approve_label }),
+    ).toBeEnabled();
+    expect(
+      within(pane).getByRole("button", { name: plan.decline_label }),
+    ).toBeEnabled();
+    const card = pane.querySelector<HTMLElement>(".assistant-plan-card");
+    const reassurance = pane.querySelector<HTMLElement>(
+      ".assistant-plan-reassurance",
+    );
+    expect(reassurance).toHaveTextContent(plan.reassurance);
+    expect(card?.contains(reassurance)).toBe(false);
+    expect(reassurance?.parentElement).toBe(card?.parentElement);
+    expect(pane.querySelector(".assistant-tool-row")).toBeTruthy();
+    expect(
+      within(pane).getByRole("button", { name: "Copy" }),
+    ).toBeInTheDocument();
+    expect(
+      pane.querySelector(".assistant-plan")?.closest(".assistant-turn"),
+    ).toBeNull();
+  });
+
+  it("approve writes via the engine and reloads tasks plus calendar", async () => {
+    const user = userEvent.setup();
+    const api = writePlanApi();
+    const pane = await sendAndWaitForPlan(user, api);
+    const seen: string[] = [];
+    const unsubscribeTasks = subscribeTasksChanged(() => {
+      seen.push("tasks");
+    });
+    const unsubscribeCalendar = subscribeCalendarChanged(() => {
+      seen.push("calendar");
+    });
+    const approve = api.pendingPlan()?.approve_label ?? "";
+    await user.click(within(pane).getByRole("button", { name: approve }));
+    await waitFor(() => {
+      expect(api.events()).toHaveLength(3);
+    });
+    expect(seen).toEqual(["tasks", "calendar"]);
+    expect(pane.querySelector(".assistant-plan-card")).toBeNull();
+    unsubscribeTasks();
+    unsubscribeCalendar();
+  });
+
+  it("decline writes nothing", async () => {
+    const user = userEvent.setup();
+    const api = writePlanApi();
+    const pane = await sendAndWaitForPlan(user, api);
+    const decline = api.pendingPlan()?.decline_label ?? "";
+    await user.click(within(pane).getByRole("button", { name: decline }));
+    await waitFor(() => {
+      expect(pane.querySelector(".assistant-plan-card")).toBeNull();
+    });
+    expect(api.events()).toEqual([]);
+    expect(api.tasks()).toHaveLength(1);
+  });
+
+  it("disables both buttons while a request is in flight", async () => {
+    const user = userEvent.setup();
+    const inner = writePlanApi();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const api: ReturnType<typeof createMemoryAgentApi> = {
+      ...inner,
+      approvePlan(input) {
+        return gate.then(() => inner.approvePlan(input));
+      },
+    };
+    const pane = await sendAndWaitForPlan(user, api);
+    const plan = api.pendingPlan();
+    await user.click(
+      within(pane).getByRole("button", { name: plan?.approve_label ?? "" }),
+    );
+    expect(
+      within(pane).getByRole("button", { name: plan?.approve_label ?? "" }),
+    ).toBeDisabled();
+    expect(
+      within(pane).getByRole("button", { name: plan?.decline_label ?? "" }),
+    ).toBeDisabled();
+    release();
+    await waitFor(() => {
+      expect(pane.querySelector(".assistant-plan-card")).toBeNull();
+    });
+    expect(api.events()).toHaveLength(3);
+  });
+
+  it("shows an approve error and leaves the card", async () => {
+    const user = userEvent.setup();
+    const inner = writePlanApi();
+    const api: ReturnType<typeof createMemoryAgentApi> = {
+      ...inner,
+      approvePlan() {
+        return Promise.reject(new LlmError("invalid", "plan not found"));
+      },
+    };
+    const pane = await sendAndWaitForPlan(user, api);
+    const approve = api.pendingPlan()?.approve_label ?? "";
+    await user.click(within(pane).getByRole("button", { name: approve }));
+    await waitFor(() => {
+      expect(within(pane).getByRole("alert")).toHaveTextContent(
+        "plan not found",
+      );
+    });
+    expect(pane.querySelector(".assistant-plan-card")).toBeTruthy();
+    expect(within(pane).getByRole("button", { name: approve })).toBeEnabled();
+    expect(api.events()).toEqual([]);
+  });
+
+  it("replaces the card when a later agent://plan arrives", async () => {
+    const user = userEvent.setup();
+    const api = writePlanApi();
+    const pane = await sendAndWaitForPlan(user, api);
+    const first = api.pendingPlan();
+    if (!first?.date_label) {
+      throw new Error("expected a pending plan with a date label");
+    }
+    const next: AgentPlanEvent = {
+      stream_id: first.stream_id,
+      plan_id: "plan-later",
+      title: "1 task",
+      date_label: null,
+      items: [{ kind: "create_task", title: "Ship importer" }],
+      approve_label: "Add 1 task",
+      decline_label: "Decline",
+      reassurance: "Nothing is written until you approve.",
+    };
+    window.dispatchEvent(new CustomEvent(AGENT_PLAN_EVENT, { detail: next }));
+    await waitFor(() => {
+      expect(pane.querySelector(".assistant-plan-header")).toHaveTextContent(
+        "1 task",
+      );
+    });
+    expect(
+      within(pane).queryByText(`${first.title} · ${first.date_label}`),
+    ).not.toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: "Add 1 task" }),
+    ).toBeInTheDocument();
+    expect(within(pane).getByText("Ship importer")).toBeInTheDocument();
+  });
+
+  it("keeps the card after a read-only follow-up", async () => {
+    const user = userEvent.setup();
+    const api = createMemoryAgentApi({
+      tasks: [
+        {
+          id: "t1",
+          title: "Finish pricing",
+          state: "open",
+          due_date: "2026-08-13",
+        },
+      ],
+      turns: [...threeBlockTurns, { tokens: ["Calendar is still open."] }],
+    });
+    const pane = await sendAndWaitForPlan(user, api);
+    const header = pane.querySelector(".assistant-plan-header")?.textContent;
+    await user.type(screen.getByLabelText("Ask the Assistant"), "and Friday?");
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(
+        within(pane).getByText("Calendar is still open."),
+      ).toBeInTheDocument();
+    });
+    expect(pane.querySelector(".assistant-plan-header")).toHaveTextContent(
+      header ?? "",
+    );
+  });
+
+  it("falls back to id and patch fields when update_task title is empty", async () => {
+    const user = userEvent.setup();
+    const api = writePlanApi();
+    const pane = await sendAndWaitForPlan(user, api);
+    const first = api.pendingPlan();
+    window.dispatchEvent(
+      new CustomEvent(AGENT_PLAN_EVENT, {
+        detail: {
+          stream_id: first?.stream_id ?? "",
+          plan_id: "plan-update",
+          title: "1 change",
+          date_label: null,
+          items: [
+            {
+              kind: "update_task",
+              title: "",
+              id: "task-9",
+              state: "done",
+              due_date: "2026-08-13",
+              priority: "high",
+            },
+          ],
+          approve_label: "Apply 1 change",
+          decline_label: "Decline",
+          reassurance: "Nothing is written until you approve.",
+        },
+      }),
+    );
+    await waitFor(() => {
+      expect(pane.querySelector(".assistant-plan-title")).toHaveTextContent(
+        "task-9 · done · 2026-08-13 · high",
+      );
+    });
+    expect(within(pane).queryByText("Untitled")).not.toBeInTheDocument();
   });
 });
