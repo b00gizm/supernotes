@@ -17,9 +17,11 @@ use uuid::Uuid;
 use crate::db::Db;
 
 pub use client::{
-    ChatMessage, ChatOutcome, ChatRequest, ChatTool, FakeChatTurn, FakeClient, LlmClient,
-    OpenAiCompatibleClient, ToolCall, TEST_MAX_TOKENS, TEST_PROMPT,
+    ChatMessage, ChatRequest, ChatTool, FakeClient, LlmClient, OpenAiCompatibleClient, ToolCall,
+    TEST_MAX_TOKENS, TEST_PROMPT,
 };
+#[cfg(test)]
+pub use client::{ChatOutcome, FakeChatTurn};
 pub use secrets::{KeyringSecretStore, MemorySecretStore, SecretStore};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";

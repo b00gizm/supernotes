@@ -145,6 +145,7 @@ pub struct FakeChatTurn {
     pub tool_calls: Vec<ToolCall>,
 }
 
+#[cfg(test)]
 impl FakeChatTurn {
     pub fn tokens(tokens: &[&str]) -> Self {
         Self {
@@ -180,6 +181,7 @@ impl Default for FakeClient {
 }
 
 impl FakeClient {
+    #[cfg(test)]
     pub fn failing(error: LlmIpcError) -> Self {
         Self {
             tokens: Mutex::new(Vec::new()),
@@ -188,6 +190,7 @@ impl FakeClient {
         }
     }
 
+    #[cfg(test)]
     pub fn scripted(tokens: &[&str]) -> Self {
         Self {
             tokens: Mutex::new(tokens.iter().map(|t| (*t).to_string()).collect()),
@@ -196,6 +199,7 @@ impl FakeClient {
         }
     }
 
+    #[cfg(test)]
     pub fn scripted_turns(turns: Vec<FakeChatTurn>) -> Self {
         Self {
             tokens: Mutex::new(Vec::new()),
