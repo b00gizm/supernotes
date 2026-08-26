@@ -38,6 +38,38 @@ export const AGENT_TOOL_EVENT = "agent://tool";
 export const AGENT_TOOL_RESULT_EVENT = "agent://tool-result";
 export const MAX_TOOL_ITERATIONS = 8;
 
+/** Tauri 2 EventName: alphanumeric plus `-` `/` `:` `_`. A `.` is illegal. */
+export function isLegalTauriEventName(name: string): boolean {
+  if (!name) {
+    return false;
+  }
+  for (const c of name) {
+    const ok =
+      (c >= "0" && c <= "9") ||
+      (c >= "A" && c <= "Z") ||
+      (c >= "a" && c <= "z") ||
+      c === "-" ||
+      c === "/" ||
+      c === ":" ||
+      c === "_";
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** `listen` delivers `{ event, id, payload }`. Use `payload`, not the Event `id`. */
+export function tauriListenPayload(event: unknown): unknown {
+  if (event && typeof event === "object" && "payload" in event) {
+    const payload = event.payload;
+    if (payload !== undefined) {
+      return payload;
+    }
+  }
+  return event;
+}
+
 const TOOLS_SYSTEM =
   "You have read-only tools for the user's notes, tasks, calendar, and daily notes. Use them to answer from real app data instead of guessing.";
 
@@ -577,7 +609,7 @@ async function subscribeEvent(
     try {
       const { listen } = await import("@tauri-apps/api/event");
       return await listen(name, (event) => {
-        handler(event.payload);
+        handler(tauriListenPayload(event));
       });
     } catch {
       // jsdom tests stub `__TAURI_INTERNALS__` without listen.
